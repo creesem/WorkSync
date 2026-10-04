@@ -1,7 +1,7 @@
 # 03 — Capability inventory and v1 scope cut
 
 Type: grilling
-Status: open
+Status: resolved
 Blocked by: none
 
 ## Question
@@ -27,4 +27,28 @@ with a one-line reason each.
 
 ## Answer
 
-<!-- the capability table: capability | v1/v2/deferred/dropped | reason -->
+Agreed scope cut. Phases: V1 (first buildable foundation), V2 (after V1), Deferred
+(later, maybe never), Drop (won't port).
+
+| Capability | Phase | Reason |
+|---|---|---|
+| Single scanner + typed frontmatter + FTS index (preserve `fts_repaired`/`index_outdated`) | V1 | one parser, foundation for everything |
+| Work entities + validation + relationships (`project/person/ticket/meeting/action`) | V1 | core model |
+| Attention/review + rollups | V1 | directly answers "what needs attention" |
+| Generated management views (Today/Projects/Team/Tickets/Waiting/Manager Review) | V1 | first, contained write path |
+| Unified CLI | V1 | exposes the services |
+| Retrieval/context + project registry/association + generated project context + managed-block integrate | V1 | existing high-value agent workflow |
+| Read-only MCP adapter (pinned protocol) | V1 | pure read; no write helpers |
+| `mutation_safety` gateway (backup/rollback/settled snapshot) | V1 | write infrastructure for all later surfaces |
+| GUI workspace | V1 read-only; V2 writes | daily value early; writes await the unified contract |
+| Work mutations (action/ticket edit, quick-complete, team assignment, view writes) | V2 | write surfaces depend on ticket 08 |
+| Inbox triage, note backfill, note routing | V2 | write surfaces |
+| Duplicate detection, clarification cleanup | V2 | write surfaces |
+| Issue lifecycle (reported defects) | V2 | depends on schemas (07) + lifecycle infra |
+| Delivery/report acceptance, date gaps, waiting lanes | V2 | depends on schemas (07) |
+| Project control center, project briefing, meeting walkthrough | V2 | depends on schemas (07) |
+| Krisp transcript pipeline | V2 | main meeting-capture path |
+| Workbench + local AI (Ollama), workload agent | V2 | suggestions only; output non-authoritative |
+| Email intake + prepared communications | V2 | operationally important; documented contract |
+| PDF/Patron ingestion (Docling) | Deferred | heavy optional dependency; port the promotion pattern only |
+| Superseded shims/servers/parsers/helpers | Drop | `interactive_launcher`, `review_launcher`, `meeting_walkthrough_cli`, librarian `indexer` shim, duplicate HTTP servers, duplicate parsers/scanners/atomic-write helpers |
