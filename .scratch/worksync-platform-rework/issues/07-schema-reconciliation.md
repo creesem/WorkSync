@@ -4,6 +4,10 @@ Type: grilling
 Status: open
 Blocked by: 02, 04
 
+Context: ticket 02 (ADR-0002) retired `task`; canonical entities are
+`project`/`person`/`ticket`/`meeting`/`action`. Every existing `type: task` note maps
+to `action`, and its task-only fields become optional action fields.
+
 ## Question
 
 Reconcile the **existing** vault's frontmatter with the operator entities

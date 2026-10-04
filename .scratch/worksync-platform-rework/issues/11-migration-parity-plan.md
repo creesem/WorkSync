@@ -4,6 +4,9 @@ Type: grilling
 Status: open
 Blocked by: 03, 06
 
+Context: ticket 02 (ADR-0002) retired `task`, so the migration includes converting
+existing `type: task` vault notes to `type: action` with their extra fields preserved.
+
 ## Question
 
 Decide, per surviving capability, **port vs rewrite**, and define how the rework is
