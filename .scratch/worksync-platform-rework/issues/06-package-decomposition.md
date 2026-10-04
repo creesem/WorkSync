@@ -4,6 +4,10 @@ Type: grilling
 Status: open
 Blocked by: 02, 03, 04
 
+Context: layers are fixed by ADR-0001 (`inventory`/`ingest`/`work`/`context` +
+consumers); `inventory` itself is split into `parse` + `index` by ADR-0003; the V1
+capability set is fixed by ticket 03.
+
 ## Question
 
 Define the target package tree and one-way dependency direction for the merged

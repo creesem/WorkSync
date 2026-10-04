@@ -7,6 +7,9 @@ Blocked by: 02, 04
 Context: ticket 02 (ADR-0002) retired `task`; canonical entities are
 `project`/`person`/`ticket`/`meeting`/`action`. Every existing `type: task` note maps
 to `action`, and its task-only fields become optional action fields.
+Validation boundary (ticket 04 / ADR-0003): `inventory` owns structural/health
+findings (parse errors, duplicate ids, unresolved links); this ticket owns the
+`work`-layer entity validation rules.
 
 ## Question
 
