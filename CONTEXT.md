@@ -166,6 +166,91 @@ A stored Vault path pointing at a former root that must be rebased to the config
 root at read time.
 _Avoid_: broken path
 
+### Mutation
+
+**Write zone**:
+A configured writable root with a policy (`trusted`, `staging`, `ingest`, `views`,
+`runtime`) that determines the write class and gate for anything written inside it.
+_Avoid_: scope, folder
+
+**Derived write**:
+A write to a non-authoritative zone — index, generated views, staging, or quarantine
+— that is regenerable and never the source of truth.
+_Avoid_: safe write, non-canonical write
+
+**Canonical write**:
+A write that changes the authoritative state of a canonical note; it always carries
+a named reviewer, a human-readable reason, and a recoverable backup.
+_Avoid_: vault write, mutation
+
+**Mutation gateway**:
+The single `safety` seam through which every canonical write passes; the caller
+supplies intent and the reason, and the gateway owns preconditions, backups,
+rollback, and the journal.
+_Avoid_: writer, file IO
+
+**Mutation journal**:
+The authoritative per-transaction record of a canonical write — operations,
+before/after hashes, reviewer, reason, and outcome — kept in the runtime zone;
+rollback reads it.
+_Avoid_: audit log, history
+
+**Disposition move**:
+Relocating a consumed source into a contained archive only after the destination
+write is verified; the sanctioned alternative to deletion.
+_Avoid_: delete, cleanup
+
+**Change set**:
+The visible record of a mutation — its file operations, their write zones, and their
+before/after state — returned to the caller that requested it.
+_Avoid_: diff, patch
+
+### Interface
+
+**GUI workspace**:
+The local, tokenized browser surface over the retrieval service; it reads through
+that one seam and, from V2, writes through the mutation gateway.
+_Avoid_: dashboard, frontend, app
+
+**Equivalent command**:
+The exact CLI command an interface action is equivalent to, surfaced so the CLI
+remains the reference implementation.
+_Avoid_: mirror command, echo
+
+**Runtime root**:
+The configurable directory holding non-canonical state — index, sessions, journals,
+backups, logs — outside the vault; it defaults to the repo-local `var/`.
+_Avoid_: data dir, cache dir
+
+**Machine config**:
+The gitignored, per-machine settings file (`vault_path`, runtime root, port) seeded
+from the committed example; it never carries a development-machine absolute path.
+_Avoid_: local settings, env file
+
+### Local model
+
+**Local model**:
+The on-machine language model (Ollama or an OpenAI-compatible endpoint) that enriches
+deterministic results with suggestions and never asserts vault truth.
+_Avoid_: LLM, AI
+
+**Suggestion**:
+Model output offered for human review, carrying confidence and provenance and holding
+no authority to change state.
+_Avoid_: recommendation, answer
+
+**Evidence packet**:
+The compact, cited set of note contents a model request is grounded in, assembled
+through the retrieval service and never by a second vault walk.
+_Avoid_: context blob, prompt
+
+### Observability
+
+**Activity log**:
+The derived, append-only, human-facing record of write outcomes and system events in
+the runtime zone; regenerable, discardable, and never the source of truth.
+_Avoid_: audit log, history
+
 ### State kinds
 
 **Source state**:
