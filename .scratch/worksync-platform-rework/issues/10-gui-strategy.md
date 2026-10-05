@@ -4,6 +4,9 @@ Type: grilling
 Status: open
 Blocked by: 06
 
+Context: `docs/architecture.md` fixes `gui` as a consumer of `work`/`context` (no
+GUI-only rules); V1 is read-only, writes V2.
+
 ## Question
 
 Choose the GUI base — WorkSync `worksync_ui` HTTP server (port 8765, vanilla JS)

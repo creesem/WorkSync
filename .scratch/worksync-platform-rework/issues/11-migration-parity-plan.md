@@ -6,6 +6,7 @@ Blocked by: 03, 06
 
 Context: ticket 02 (ADR-0002) retired `task`, so the migration includes converting
 existing `type: task` vault notes to `type: action` with their extra fields preserved.
+Package moves are fixed by `docs/architecture.md` (ticket 06).
 
 ## Question
 

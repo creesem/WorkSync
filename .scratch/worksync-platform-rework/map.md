@@ -31,12 +31,12 @@ contract, and a defined capability set — ready to hand to `/to-spec` → `/to-
 - [03 — Capability inventory and v1 scope cut](issues/03-capability-inventory-scope-cut.md): V1 = scanner/entities/relationships/attention/generated views/CLI/context+MCP/safety gateway + read-only GUI; V2 = all write surfaces, lifecycles, control center, Krisp, workbench/local AI, email intake; Deferred = PDF/Patron; Drop = superseded shims/servers/parsers.
 - [04 — Choose the single shared scanner and typed frontmatter](issues/04-single-shared-scanner.md): `worksync.inventory` split into `parse` (YAML-faithful `IndexRecord`, one reader/writer, `utf-8-sig`) + `index` (SQLite/FTS consuming records, preserving `fts_repaired`/`index_outdated`); lossy parsers retired; scopes config-driven; inventory owns structural validation, `work` owns entity validation (ADR-0003).
 - [05 — Audit reusable code and reconcile test/lint stacks](issues/05-codebase-teststack-audit.md): 105 modules classified; port `mutation_safety`, `similarity`, `triage`, issue/delivery lifecycles, Krisp pipeline, and the `context_service` + `mcp_server` read boundary; preserve the `fts_repaired` / `index_outdated` FTS invariant; adopt pytest + one 120-char ruff config; schema conflict (`task_from` dict vs typed entities) is the merge blocker. Report: `research/05-codebase-teststack-audit.md`.
+- [06 — Package decomposition and dependency direction](issues/06-package-decomposition.md): `src/worksync/` = `core` + `inventory`/`safety` (foundations) → `work` → `context`/`ingest` → consumers `cli`/`gui`/`mcp`; one-way, no cycles; project identity in `work`, repo registration in `context`. Durable artifact `docs/architecture.md` + ADR-0004.
 
 ## Not yet specified
 
 <!-- in-scope fog; graduates into tickets as the frontier advances -->
 
-- Per-domain module designs (which domains survive; how each maps to existing code).
 - Existing-vault frontmatter migration if the schema changes (possibly its own effort).
 - Local Ollama / local-model integration and its place relative to retrieval.
 - Runtime data migration (`var/` ledgers, sessions, backups, promotions).
