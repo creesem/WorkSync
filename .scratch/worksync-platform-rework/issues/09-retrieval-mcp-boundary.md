@@ -4,6 +4,10 @@ Type: grilling
 Status: open
 Blocked by: 06, 07
 
+Context: entity schemas + relationship keys are fixed by
+`docs/operational-note-schemas.md` (ticket 07); `context` is a consumer of `work`
+per `docs/architecture.md`.
+
 ## Question
 
 Converge WorkSync's `context_service` / `query_layer` with the operator retrieval
