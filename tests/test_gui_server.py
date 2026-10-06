@@ -114,6 +114,28 @@ def test_every_section_carries_an_equivalent_command(gui_server: tuple[str, GuiS
         assert _json(body)["equivalent_cli"].startswith("worksync "), endpoint
 
 
+def test_gui_read_surface_does_not_write(gui_server: tuple[str, GuiService], vault: Path) -> None:
+    base, gui = gui_server
+    before_vault = {path: path.read_bytes() for path in vault.rglob("*.md")}
+    before_db = gui.db_path.read_bytes()
+    endpoints = [
+        f"/api/today?today={TODAY}",
+        f"/api/review?today={TODAY}",
+        "/api/projects",
+        f"/api/project?name=Alpha&today={TODAY}",
+        f"/api/team?today={TODAY}",
+        f"/api/person?name=Myles&today={TODAY}",
+        f"/api/tickets?today={TODAY}",
+        "/api/search?q=Alpha",
+        "/api/health",
+        "/api/settings",
+    ]
+    for endpoint in endpoints:
+        assert _get(base, endpoint, TOKEN)[0] == 200, endpoint
+    assert {path: path.read_bytes() for path in vault.rglob("*.md")} == before_vault
+    assert gui.db_path.read_bytes() == before_db
+
+
 def test_health_endpoint_surfaces_validation_issues(
     gui_server: tuple[str, GuiService], vault: Path, write_note: Callable[..., Path]
 ) -> None:

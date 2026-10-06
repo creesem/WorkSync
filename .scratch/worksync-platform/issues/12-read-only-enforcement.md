@@ -4,11 +4,10 @@
 
 **Blocked by:** 10: Read-only MCP adapter; 11: Read-only GUI workspace
 
-**Status:** ready-for-agent — core unblocked (boundary tests + derived-writer adapter); remaining items need tickets 10/11
+**Status:** done
 
 - [x] the retrieval layer opens the index read-only and imports no write helper
-- [ ] each layer imports only its allowed dependencies; there are no cycles
-      (hard rules + acyclicity done; full allowed-dependency matrix pending)
+- [x] each layer imports only its allowed dependencies; there are no cycles
 - [x] a structural test proves no read path can reach a write helper
 
 ## Test plan
@@ -32,10 +31,9 @@ read seam.
 - [x] **No-write proof.** Snapshot the vault bytes and the index bytes; run the full
   read surface (`resolve`, `list`, `search`, `read_context`, `get_staleness`); assert
   both snapshots are byte-identical afterward.
-- [ ] **Layer direction and acyclicity.** Assert `inventory` imports no
+- [x] **Layer direction and acyclicity.** Assert `inventory` imports no
   `work`/`context`/`ingest`, `safety` imports no domain layer, consumers import only
-  their allowed layers, and the import graph has no cycle. (Hard rules and acyclicity
-  are tested; the full per-consumer allowed-dependency matrix is pending.)
+  their allowed layers, and the import graph has no cycle.
 - [x] **Derived-writer seam (with ticket 08).** `context.association` persists
   `note_project_links` through an `inventory`-owned derived-write function rather than
   a raw `connect`; the pure row-building logic (`associate_note`, `build_link_rows`)
@@ -50,6 +48,14 @@ read seam.
 - The derived-write adapter now lives in `inventory` (`read_note_properties`,
   `replace_membership`); `context.association` no longer imports `sqlite3`, `connect`,
   or `SCHEMA`. Ticket 08 formalizes the same seam as `safety`'s derived-write path.
-- Remaining for this ticket: the full per-consumer allowed-dependency matrix, and
-  extending the read-surface proof to the MCP adapter (ticket 10) and GUI (ticket 11)
-  once they exist.
+- **Full allowed-dependency matrix** is now enforced in
+  `tests/test_read_only_boundary.py::test_layer_direction_and_acyclicity`:
+  `core` -> `{}`; `inventory`/`safety` -> `{core}`; `work` -> `{core, inventory, safety}`;
+  `context`/`ingest` -> `{core, inventory, safety, work}`; `cli`/`gui` -> the layers plus
+  `{context, ingest}`; `mcp` -> `{context}`. Acyclicity is checked over the same graph.
+- **Read-surface no-write proof** now covers all three consumers: the retrieval
+  functions (`test_full_read_surface_does_not_write`), the MCP adapter
+  (`test_mcp_read_surface_does_not_write`), and the GUI
+  (`test_gui_read_surface_does_not_write`, in `tests/test_gui_server.py`). Each
+  snapshots the vault markdown and the index bytes and asserts both are byte-identical
+  after the full read surface runs.

@@ -11,6 +11,7 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Callable
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from worksync.context.projection import get_staleness, read_context
 from worksync.context.registry import list_projects, resolve_project
 from worksync.context.retrieval import read_evidence, search_evidence
 from worksync.inventory.index import connect_readonly, index_vault, search
+from worksync.mcp.main import Server
 from worksync.work.repository import WorkIndex
 
 RETRIEVAL_ENTRY_POINTS = ("worksync.context.registry", "worksync.context.projection", "worksync.context.retrieval")
@@ -143,9 +145,20 @@ def test_layer_direction_and_acyclicity() -> None:
             if len(dep_parts) >= 2 and dep_parts[1] in packages and dep_parts[1] != package:
                 edges[package].add(dep_parts[1])
 
-    domain_layers = {"work", "context", "ingest", "cli", "gui", "mcp"}
-    assert edges["inventory"].isdisjoint(domain_layers)
-    assert edges.get("safety", set()).isdisjoint(domain_layers)
+    allowed = {
+        "core": set(),
+        "inventory": {"core"},
+        "safety": {"core"},
+        "work": {"core", "inventory", "safety"},
+        "context": {"core", "inventory", "safety", "work"},
+        "ingest": {"core", "inventory", "safety", "work"},
+        "cli": {"core", "inventory", "safety", "work", "context", "ingest"},
+        "gui": {"core", "inventory", "safety", "work", "context", "ingest"},
+        "mcp": {"context"},
+    }
+    for package, deps in edges.items():
+        permitted = allowed.get(package, set())
+        assert deps <= permitted, f"{package} imports outside its allowed layers: {deps - permitted}"
 
     visiting: set[str] = set()
     visited: set[str] = set()
@@ -218,6 +231,40 @@ def test_full_read_surface_does_not_write(vault: Path, write_note: Callable[...,
     read_evidence(db, "eleos", MEETING_NOTE, vault=vault)
     read_context(index, db, "eleos")
     get_staleness(index, db, "eleos")
+
+    assert {path: path.read_bytes() for path in vault.rglob("*.md")} == before_vault
+    assert db.read_bytes() == before_db
+
+
+def test_mcp_read_surface_does_not_write(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    _seed(vault, write_note, repo)
+    db = tmp_path / "index.sqlite3"
+    index_vault(db, vault)
+    index_associations(db, vault)
+    before_vault = {path: path.read_bytes() for path in vault.rglob("*.md")}
+    before_db = db.read_bytes()
+
+    server = Server(vault, db, stdin=StringIO(), stdout=StringIO(), stderr=StringIO())
+    calls = [
+        ("project_list", {}),
+        ("project_resolve", {"name": "Eleos"}),
+        ("entity_list", {"type": "meeting"}),
+        ("entity_read", {"type": "project", "name": "Eleos"}),
+        ("relationships", {"type": "project", "name": "Eleos"}),
+        ("attention_list", {"today": "2026-02-01"}),
+        ("project_review", {"name": "Eleos", "today": "2026-02-01"}),
+        ("person_workload", {"name": "Myles", "today": "2026-02-01"}),
+        ("context_search", {"project_id": "eleos", "query": "Kickoff"}),
+        ("evidence_read", {"project_id": "eleos", "source_id": MEETING_NOTE}),
+        ("context_staleness", {"project_id": "eleos"}),
+    ]
+    for name, arguments in calls:
+        response = server.handle_message(
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
+        )
+        assert response is not None, name
+        assert "error" not in response, response
 
     assert {path: path.read_bytes() for path in vault.rglob("*.md")} == before_vault
     assert db.read_bytes() == before_db
