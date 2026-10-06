@@ -58,6 +58,11 @@ Arrows point from a package to what it depends on.
 - `cli`, `gui`, `mcp` are consumers and depend on the layers.
 - Dependency direction is one-way; no cycles. `inventory` never imports `work`,
   `context`, or `ingest`. `safety` never imports a domain layer.
+- Within `context`, the retrieval layer (`registry`, `projection`, and the future
+  `search`/`evidence`) is read-only: it opens the index `mode=ro` and imports no write
+  helper. `context.association` is the sole derived-index writer; it builds membership
+  rows purely and persists them through an `inventory`-owned derived-write adapter.
+  See [ADR-0013](adr/0013-read-only-boundary-scope.md).
 - No GUI-only business rules: `gui` calls `work`/`context` services.
 
 ## Source mapping

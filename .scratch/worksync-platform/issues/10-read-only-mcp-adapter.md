@@ -4,9 +4,9 @@
 
 **Blocked by:** 06: Evidence search with provenance tiers and evidence read; 07: Generated context projection read and staleness
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `worksync-mcp` speaks JSON-RPC 2.0 over stdio and pins protocol `2025-11-25`
-- [ ] the read tool set maps one-to-one onto the retrieval functions and returns the same provenance/tier/staleness
-- [ ] no write helper is reachable from the adapter
-- [ ] no mutating tool is present
+- [x] `worksync-mcp` speaks JSON-RPC 2.0 over stdio and pins protocol `2025-11-25`
+- [x] the read tool set maps one-to-one onto the retrieval functions and returns the same provenance/tier/staleness
+- [x] no write helper is reachable from the adapter
+- [x] no mutating tool is present

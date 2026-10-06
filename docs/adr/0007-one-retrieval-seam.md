@@ -36,3 +36,6 @@ relationship/review surface the convergence produces).
 `interactive_launcher` retire; relationships/reviews must read membership from
 `note_project_links` rather than recompute it; the MCP server grows read tools but
 still carries no domain logic. Artifact: `docs/retrieval-service.md`.
+
+**Clarified by ADR-0013:** the read-only import boundary applies to the retrieval
+layer (the read modules), not to every module in the `context` package.

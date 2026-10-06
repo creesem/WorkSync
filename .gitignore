@@ -8,6 +8,7 @@ var/
 runtime/
 tmp/
 config/secrets.json
+config/worksync.json
 .pre-commit-cache/
 .pytest_cache/
 .ruff_cache/

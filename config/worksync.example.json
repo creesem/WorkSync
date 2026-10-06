@@ -1,0 +1,7 @@
+{
+  "vault_path": "PASTE_YOUR_VAULT_PATH_HERE",
+  "vault_name": "WorkSync",
+  "runtime_root": "var",
+  "ui_port": 8765,
+  "legacy_vault_roots": []
+}

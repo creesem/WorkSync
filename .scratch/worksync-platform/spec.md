@@ -259,4 +259,4 @@ artifacts: `CONTEXT.md` (glossary), `docs/architecture.md`,
 `docs/operational-note-schemas.md`, `docs/mutation-contract.md`,
 `docs/retrieval-service.md`, `docs/gui-strategy.md`,
 `docs/migration-parity-plan.md`, `docs/packaging-distribution.md`,
-`docs/local-model.md`, `docs/observability.md`, and ADRs 0001–0012.
+`docs/local-model.md`, `docs/observability.md`, and ADRs 0001–0013.

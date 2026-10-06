@@ -4,9 +4,9 @@
 
 **Blocked by:** 01: Package skeleton, entry points, config, and runtime root
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] frontmatter lists and nested maps round-trip through the typed reader
-- [ ] malformed frontmatter reads tolerantly and is reported; one bad note never aborts a scan
-- [ ] `worksync index` builds and updates the index; an unchanged note missing an FTS row is repaired (`fts_repaired`)
-- [ ] `worksync search <query>` returns relevance-ranked results with per-result staleness and detects an inconsistent index (`index_outdated`)
+- [x] frontmatter lists and nested maps round-trip through the typed reader
+- [x] malformed frontmatter reads tolerantly and is reported; one bad note never aborts a scan
+- [x] `worksync index` builds and updates the index; an unchanged note missing an FTS row is repaired (`fts_repaired`)
+- [x] `worksync search <query>` returns relevance-ranked results with per-result staleness and detects an inconsistent index (`index_outdated`)

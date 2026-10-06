@@ -4,9 +4,10 @@
 
 **Blocked by:** 04: Relationships and attention/review rollups; 05: Project identity, membership model, and resolve/list
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] search annotates each result with association method, authority/tier, and per-result staleness
-- [ ] FTS is relevance only; a Tier B candidate never becomes project truth
-- [ ] evidence read resolves the source through the index (never a caller-supplied path) and enforces vault containment
-- [ ] the same provenance envelope is returned by the CLI, GUI, and MCP consumers
+- [x] search annotates each result with association method, authority/tier, and per-result staleness
+- [x] FTS is relevance only; a Tier B candidate never becomes project truth
+- [x] evidence read resolves the source through the index (never a caller-supplied path) and enforces vault containment
+- [x] the same provenance envelope is returned by the CLI, GUI, and MCP consumers
+      (CLI `search` returns it now; GUI and MCP consume the same seam in tickets 11 and 10)

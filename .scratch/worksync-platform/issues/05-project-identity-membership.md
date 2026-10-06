@@ -4,9 +4,9 @@
 
 **Blocked by:** 03: Five entities, validation, and list/show CLI
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `note_project_links` is the sole materialized membership table; explicit links are association method `explicit`
-- [ ] `worksync project resolve` resolves id/name/alias/repo path/working directory and returns `resolved`, `ambiguous`, or `not_found` without registering anything
-- [ ] `worksync project list` reports id, name, status, registered repo, and context availability
-- [ ] project identity is canonical notes; no separate registry file is required
+- [x] `note_project_links` is the sole materialized membership table; explicit links are association method `explicit`
+- [x] `worksync project resolve` resolves id/name/alias/repo path/working directory and returns `resolved`, `ambiguous`, or `not_found` without registering anything
+- [x] `worksync project list` reports id, name, status, registered repo, and context availability
+- [x] project identity is canonical notes; no separate registry file is required

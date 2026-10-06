@@ -5,8 +5,11 @@ The single read seam over the WorkSync vault. Decision:
 
 `context` owns this service; `work` owns the domain it reads. The CLI, the GUI, and
 the MCP adapter are thin consumers — they map 1:1 onto the functions here and
-recompute nothing. `context` opens the index read-only and imports no write helper;
-the MCP adapter imports only `context` and stays protocol-only.
+recompute nothing. The retrieval layer — the read modules `registry`, `projection`,
+and the future `search`/`evidence` — opens the index read-only and imports no write
+helper; the MCP adapter imports only `context` and stays protocol-only. `context` also
+holds one derived-index writer, `association`, which materializes the
+`note_project_links` membership table (see ADR-0013); it is not part of the read seam.
 
 ## Function surface
 
@@ -93,9 +96,9 @@ additive.
 No mutating tool ships in V1. Any future mutating tool must route through
 `safety.commit` with explicit confirmation, a named reviewer, and a human-readable
 reason, write a journal audit, be specified before implementation, and add no
-domain logic to the adapter. The read-only boundary is structural: `context` opens
-the index `mode=ro` and MCP imports only `context`; an import-boundary test enforces
-that no write helper is reachable.
+domain logic to the adapter. The read-only boundary is structural: the retrieval
+layer opens the index `mode=ro` and MCP imports only `context`; an import-boundary
+test enforces that no write helper is reachable from the read entry points.
 
 ## V1 and V2
 
