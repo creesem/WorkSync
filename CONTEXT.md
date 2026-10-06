@@ -205,6 +205,16 @@ The visible record of a mutation — its file operations, their write zones, and
 before/after state — returned to the caller that requested it.
 _Avoid_: diff, patch
 
+**Malformed block**:
+A leading YAML frontmatter block that the strict parser cannot parse; it is read
+tolerantly as empty and reported, and its fields are never trusted.
+_Avoid_: bad note, broken frontmatter
+
+**Frontmatter repair**:
+A canonical write that rewrites a malformed block into valid YAML without changing
+any field's meaning, so the strict reader recovers the note.
+_Avoid_: fixup, cleanup
+
 ### Interface
 
 **GUI workspace**:
