@@ -144,5 +144,11 @@ def render_team_review(workloads: Iterable[PersonWorkload]) -> str:
 
 
 def _titles(entities: Iterable[EntityBase]) -> str:
-    names = [entity.title for entity in entities]
+    names = [_label(entity) for entity in entities]
     return ", ".join(names) if names else "-"
+
+
+def _label(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip().strip("[]")
+    return str(getattr(value, "title", value))

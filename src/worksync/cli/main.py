@@ -6,7 +6,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from worksync.context import service
@@ -14,8 +14,10 @@ from worksync.context.association import index_associations
 from worksync.context.projection import get_staleness, read_context
 from worksync.context.registry import list_projects, resolve_project
 from worksync.core.config import ConfigError, load_config
+from worksync.core.paths import PathSafetyError
 from worksync.inventory.index import index_path, index_vault
 from worksync.safety.activity import list_events
+from worksync.safety.models import MutationError
 from worksync.work.relationships import related_to
 from worksync.work.render import (
     attention_to_dict,
@@ -35,6 +37,7 @@ from worksync.work.review import (
     build_person_workload,
     build_project_review,
 )
+from worksync.work.views import VIEW_NAMES, build_view, build_views, view_zones, write_views
 
 ENTITY_TYPES = ("project", "person", "ticket", "meeting", "action")
 REVIEW_VIEWS = ("today", "team", "projects")
@@ -139,6 +142,26 @@ def build_parser() -> argparse.ArgumentParser:
         node.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
         node.add_argument("--json", action="store_true", help="Emit JSON.")
         node.set_defaults(handler=_review, review_view=view)
+
+    views = sub.add_parser("views", help="Render or write reproducible generated views.")
+    views_sub = views.add_subparsers(dest="views_command")
+    views_render = views_sub.add_parser("render", help="Render views without writing.")
+    views_render.add_argument("--view", choices=VIEW_NAMES, default=None, help="Render only one view.")
+    views_render.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    views_render.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    views_render.add_argument("--generated-at", dest="generated_at", default=None, help="Generation time ISO-8601.")
+    views_render.add_argument("--json", action="store_true", help="Emit JSON.")
+    views_render.set_defaults(handler=_views_render)
+    views_write = views_sub.add_parser("write", help="Write views into the contained views root.")
+    views_write.add_argument("--view", choices=VIEW_NAMES, default=None, help="Write only one view.")
+    views_write.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    views_write.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    views_write.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    views_write.add_argument("--generated-at", dest="generated_at", default=None, help="Generation time ISO-8601.")
+    views_write.add_argument("--confirm", action="store_true", help="Confirm the generated-view write.")
+    views_write.add_argument("--force", action="store_true", help="Overwrite an existing view.")
+    views_write.add_argument("--json", action="store_true", help="Emit JSON.")
+    views_write.set_defaults(handler=_views_write)
 
     return parser
 
@@ -418,6 +441,83 @@ def _review(args: argparse.Namespace) -> int:
     else:
         print(render_projects_review(reviews))
     return 0
+
+
+def _views_render(args: argparse.Namespace) -> int:
+    try:
+        today = _resolve_today(args.today)
+        generated_at = _resolve_generated_at(args.generated_at)
+        index = WorkIndex.from_vault(_vault_path(args.vault))
+        views = _selected_views(index, args, today, generated_at)
+    except (ConfigError, FileNotFoundError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps([_view_to_dict(view) for view in views], indent=2, ensure_ascii=False))
+        return 0
+    print("\n".join(view.content for view in views), end="")
+    return 0
+
+
+def _views_write(args: argparse.Namespace) -> int:
+    try:
+        today = _resolve_today(args.today)
+        generated_at = _resolve_generated_at(args.generated_at)
+        vault, runtime = _views_paths(args)
+        index = WorkIndex.from_vault(vault)
+        views = _selected_views(index, args, today, generated_at)
+        zones = view_zones(runtime, vault_root=vault)
+        result = write_views(views, zones, confirmed=args.confirm, force=args.force)
+    except MutationError as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    payload = {
+        "committed": result.committed,
+        "journal": str(result.journal),
+        "views": [view.filename for view in views],
+        "changes": [dict(change) for change in result.changes],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str))
+    else:
+        print(f"wrote {len(views)} view(s) to {zones['views']}")
+    return 0
+
+
+def _selected_views(index: WorkIndex, args: argparse.Namespace, today: date, generated_at: datetime) -> tuple:
+    if args.view:
+        return (build_view(index, args.view, today=today, generated_at=generated_at),)
+    return build_views(index, today=today, generated_at=generated_at)
+
+
+def _views_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    if args.vault is not None and args.runtime is not None:
+        return Path(args.vault), Path(args.runtime)
+    config = load_config()
+    vault = args.vault if args.vault is not None else config.vault_path
+    runtime = args.runtime if args.runtime is not None else config.runtime_root
+    return Path(vault), Path(runtime)
+
+
+def _view_to_dict(view: object) -> dict:
+    return {
+        "name": view.name,
+        "filename": view.filename,
+        "sources": list(view.sources),
+        "content": view.content,
+    }
+
+
+def _resolve_generated_at(value: str | None) -> datetime:
+    if not value:
+        return datetime.now(UTC)
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError(f"invalid --generated-at timestamp: {value}") from exc
 
 
 def _resolve_today(value: str | None) -> date:
