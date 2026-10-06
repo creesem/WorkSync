@@ -71,22 +71,32 @@ class GuiService:
         return {"state": "ok", "equivalent_cli": cli, "workload": workload}
 
     def tickets(self, today: date) -> dict:
-        """Every ticket with the attention it raises."""
-        return {
-            "equivalent_cli": "worksync ticket list",
-            "tickets": service.list_entities(self.vault, "ticket"),
-            "attention": service.attention(self.vault, today),
-        }
+        """Every ticket, each carrying the attention it raises."""
+        by_path: dict[str, list] = {}
+        for item in service.attention(self.vault, today):
+            by_path.setdefault(item["path"], []).append(item)
+        tickets = [
+            {**ticket, "attention": by_path.get(ticket["path"], [])}
+            for ticket in service.list_entities(self.vault, "ticket")
+        ]
+        return {"equivalent_cli": "worksync ticket list", "tickets": tickets}
+
+    def health(self) -> dict:
+        """Vault-wide validation health: entity counts and error/warning issues."""
+        return {"equivalent_cli": "worksync health", **service.health(self.vault)}
 
     def search(self, query: str, *, project_id: str | None = None, limit: int = 20) -> dict:
         """Project-scoped evidence search with provenance."""
+        options = {"project": project_id} if project_id else {}
         return {
-            "equivalent_cli": _search_cli(query, project_id),
+            "equivalent_cli": _cli("search", f'"{query}"', **options),
             "result": service.search_evidence(self.vault, self.db_path, query, project_id=project_id, limit=limit),
         }
 
     def settings(self) -> dict:
-        """Machine configuration and index status, as a read."""
+        """Machine configuration, index state, and vault validation, as reads."""
+        projects = service.list_projects(self.vault, self.db_path)
+        health = service.health(self.vault)
         return {
             "equivalent_cli": "worksync config show",
             "vault_path": str(self.vault),
@@ -96,6 +106,10 @@ class GuiService:
             "index_present": Path(self.db_path).is_file(),
             "ui_port": self.ui_port,
             "reviewer": self.reviewer,
+            "project_count": len(projects),
+            "stale_context_projects": [item["name"] for item in projects if item.get("context_stale")],
+            "errors": health["errors"],
+            "warnings": health["warnings"],
         }
 
 
@@ -106,10 +120,3 @@ def _cli(*parts: object, today: date | None = None, **options: str) -> str:
     for key, value in options.items():
         args += [f"--{key.replace('_', '-')}", value]
     return " ".join(args)
-
-
-def _search_cli(query: str, project_id: str | None) -> str:
-    command = f'worksync search "{query}"'
-    if project_id:
-        command += f" --project {project_id}"
-    return command

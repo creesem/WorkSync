@@ -195,6 +195,9 @@ def _config_show(_args: argparse.Namespace) -> int:
         "runtime_root": str(config.runtime_root),
         "ui_port": config.ui_port,
         "config_path": str(config.source_path),
+        "reviewer": str(config.raw.get("reviewer") or "").strip() or None,
+        "index_path": str(index_path(config.runtime_root)),
+        "index_present": index_path(config.runtime_root).is_file(),
     }
     print(json.dumps(payload, indent=2))
     return 0

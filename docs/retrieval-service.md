@@ -22,7 +22,10 @@ holds one derived-index writer, `association`, which materializes the
 | entities | `related_to(entity)` | people/projects/tickets/actions/meetings |
 | review | `attention_items(today)` | severity-ordered attention items |
 | review | `project_review(project, today)` | project people/tickets/actions/meetings + attention/blockers |
+| review | `project_reviews(today)` | the same rollup for every active project |
 | review | `person_workload(person, today)` | person projects/tickets/actions/meetings + attention/overdue |
+| review | `person_workloads(today)` | the same workload for every active person |
+| health | `health()` | entity counts + error/warning-tier validation issues |
 | search | `search_evidence(project_id?, query, filters, limit)` | relevance-ranked results with provenance |
 | evidence | `read_evidence(project_id, source_id)` | one indexed, project-linked source |
 | projection | `read_context(project_id, repo?)` | generated context projection |

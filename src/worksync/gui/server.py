@@ -95,6 +95,8 @@ class GuiHandler(BaseHTTPRequestHandler):
             return service.search(_required(params, "q"), project_id=params.get("project"), limit=_limit(params))
         if path == "/api/settings":
             return service.settings()
+        if path == "/api/health":
+            return service.health()
         return None
 
     def _handle_static(self, path: str) -> None:

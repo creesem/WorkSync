@@ -90,15 +90,23 @@ def test_tickets_search_and_settings(vault: Path, write_note: Callable[..., Path
     tickets = gui.tickets(TODAY)
     assert tickets["equivalent_cli"] == "worksync ticket list"
     assert [ticket["title"] for ticket in tickets["tickets"]] == ["T1"]
+    assert all("attention" in ticket for ticket in tickets["tickets"])
 
     search = gui.search("Alpha", project_id="alpha")
     assert search["equivalent_cli"] == 'worksync search "Alpha" --project alpha'
     assert search["result"] == service.search_evidence(vault, gui.db_path, "Alpha", project_id="alpha")
 
+    health = gui.health()
+    assert health["equivalent_cli"] == "worksync health"
+    assert health["errors"] == 0
+    assert isinstance(health["issues"], list)
+
     settings = gui.settings()
     assert settings["equivalent_cli"] == "worksync config show"
     assert settings["index_present"] is True
     assert settings["reviewer"] == "Myles"
+    assert settings["project_count"] == 1
+    assert settings["errors"] == health["errors"]
 
 
 def test_every_controller_payload_has_an_equivalent_command(
@@ -114,6 +122,7 @@ def test_every_controller_payload_has_an_equivalent_command(
         gui.person("Myles", TODAY),
         gui.tickets(TODAY),
         gui.search("Alpha"),
+        gui.health(),
         gui.settings(),
     ]
     assert all(payload["equivalent_cli"].startswith("worksync ") for payload in payloads)

@@ -73,6 +73,11 @@ def list_projects(vault: str | Path, db_path: str | Path | None = None) -> list[
     return _list_projects(_index(vault), db_path=db_path)
 
 
+def health(vault: str | Path) -> dict:
+    """Return the vault-wide health report: counts and validation issues."""
+    return _index(vault).health()
+
+
 def get_entity(vault: str | Path, entity_type: str, name: str) -> dict | None:
     index = _index(vault)
     entity = _project_entity(index, name) if entity_type == "project" else index.get(entity_type, name)

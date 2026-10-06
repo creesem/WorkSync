@@ -105,12 +105,26 @@ def test_every_section_carries_an_equivalent_command(gui_server: tuple[str, GuiS
         f"/api/person?name=Myles&today={TODAY}",
         f"/api/tickets?today={TODAY}",
         "/api/search?q=Alpha",
+        "/api/health",
         "/api/settings",
     ]
     for endpoint in endpoints:
         status, _content_type, body = _get(base, endpoint, TOKEN)
         assert status == 200, endpoint
         assert _json(body)["equivalent_cli"].startswith("worksync "), endpoint
+
+
+def test_health_endpoint_surfaces_validation_issues(
+    gui_server: tuple[str, GuiService], vault: Path, write_note: Callable[..., Path]
+) -> None:
+    base, _gui = gui_server
+    write_note(vault, "Bad.md", "---\ntype: project\n---\n# Bad\n")
+    status, _content_type, body = _get(base, "/api/health", TOKEN)
+    assert status == 200
+    payload = _json(body)
+    assert payload["equivalent_cli"] == "worksync health"
+    assert payload["errors"] >= 1
+    assert any(issue["path"] == "Bad.md" for issue in payload["issues"])
 
 
 def test_missing_parameter_and_unknown_endpoint_fail_cleanly(gui_server: tuple[str, GuiService]) -> None:

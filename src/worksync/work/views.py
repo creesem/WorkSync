@@ -23,11 +23,9 @@ from worksync.work.render import render_attention, render_projects_review, rende
 from worksync.work.repository import WorkIndex
 from worksync.work.review import (
     AttentionKind,
-    active_people,
-    active_projects,
     attention_items,
-    build_person_workload,
-    build_project_review,
+    person_workloads,
+    project_reviews,
 )
 
 GENERATOR = "worksync"
@@ -133,11 +131,11 @@ def _render_today(index: WorkIndex, today: date) -> str:
 
 
 def _render_projects(index: WorkIndex, today: date) -> str:
-    return render_projects_review([build_project_review(index, project, today) for project in active_projects(index)])
+    return render_projects_review(project_reviews(index, today))
 
 
 def _render_team(index: WorkIndex, today: date) -> str:
-    return render_team_review([build_person_workload(index, person, today) for person in active_people(index)])
+    return render_team_review(person_workloads(index, today))
 
 
 def _render_tickets(index: WorkIndex, today: date) -> str:
@@ -161,8 +159,13 @@ def _render_waiting(index: WorkIndex, today: date) -> str:
 
 def _render_manager_review(index: WorkIndex, today: date) -> str:
     high = tuple(item for item in attention_items(index, today) if item.severity == "high")
-    reviews = [build_project_review(index, project, today) for project in active_projects(index)]
-    return "\n".join([render_attention("Manager review — high severity", high), "", render_projects_review(reviews)])
+    return "\n".join(
+        [
+            render_attention("Manager review — high severity", high),
+            "",
+            render_projects_review(project_reviews(index, today)),
+        ]
+    )
 
 
 _BODIES = {

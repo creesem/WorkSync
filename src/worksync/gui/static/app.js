@@ -48,6 +48,28 @@ function attentionRows(items) {
     .join("");
 }
 
+async function healthBanner() {
+  try {
+    const data = await api("/api/health");
+    if (!data.issues || !data.issues.length) return "";
+    const items = data.issues
+      .slice(0, 20)
+      .map((issue) =>
+        row(
+          issue.severity === "error" ? "blocked" : "review_due",
+          issue.severity,
+          issue.rule || "issue",
+          issue.message,
+          issue.path
+        )
+      )
+      .join("");
+    return `<div class="issues"><p class="subtitle">Data health: ${data.errors} error(s), ${data.warnings} warning(s)</p>${items}</div>`;
+  } catch (error) {
+    return "";
+  }
+}
+
 function projectCard(review) {
   const project = review.project || {};
   const lines = [heading(project.title || "(project)", project.status || "")];
@@ -61,7 +83,10 @@ const sections = {
   async today() {
     const data = await api("/api/today");
     equivalent.textContent = data.equivalent_cli;
-    view.innerHTML = heading("Today", `${data.attention.length} attention item(s)`) + attentionRows(data.attention);
+    view.innerHTML =
+      heading("Today", `${data.attention.length} attention item(s)`) +
+      (await healthBanner()) +
+      attentionRows(data.attention);
   },
 
   async review() {
@@ -110,15 +135,9 @@ const sections = {
   async tickets() {
     const data = await api("/api/tickets");
     equivalent.textContent = data.equivalent_cli;
-    const attention = new Map();
-    for (const item of data.attention) {
-      const list = attention.get(item.path) || [];
-      list.push(item);
-      attention.set(item.path, list);
-    }
     const body = data.tickets
       .map((ticket) => {
-        const reasons = (attention.get(ticket.path) || []).map((item) => item.reason).join("; ");
+        const reasons = (ticket.attention || []).map((item) => item.reason).join("; ");
         return row(ticket.status, ticket.status || "-", ticket.title, reasons || "no attention", ticket.path);
       })
       .join("");
@@ -164,6 +183,10 @@ const sections = {
       ["Vault", data.vault_path],
       ["Runtime root", data.runtime_root],
       ["Index", data.index_present ? data.index_path : `${data.index_path} (not built)`],
+      ["Projects", String(data.project_count)],
+      ["Stale context", data.stale_context_projects.length ? data.stale_context_projects.join(", ") : "none"],
+      ["Errors", String(data.errors)],
+      ["Warnings", String(data.warnings)],
       ["Port", String(data.ui_port)],
       ["Reviewer", data.reviewer || "(unset)"],
     ];
@@ -171,7 +194,8 @@ const sections = {
       heading("Settings", "Read-only configuration") +
       `<dl class="settings">${fields
         .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`)
-        .join("")}</dl>`;
+        .join("")}</dl>` +
+      (await healthBanner());
   },
 };
 
