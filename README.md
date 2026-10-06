@@ -13,10 +13,13 @@ this project.
 
 ## Status
 
-**Pre-implementation.** The architecture is being charted. The canonical plan —
-destination, open decisions, blockers, and fog — lives in the wayfinder map at
-[`.scratch/worksync-platform-rework/map.md`](.scratch/worksync-platform-rework/map.md).
-No domain code exists yet; the internal package layout is decided by ticket 06.
+**V1 read platform implemented.** The merged `worksync` package ships one typed vault
+scanner and FTS index, the five work entities with validation and relationships, the
+single retrieval seam, reproducible generated views, the gated mutation gateway with
+its journal and activity log, a read-only tokenized GUI workspace, and a read-only
+stdio MCP adapter. The vault is read as-is and never moved. All V2 write surfaces,
+ingestion, and local-model enrichment remain out of scope; the cutover and rollback
+plan is [`docs/migration-parity-plan.md`](docs/migration-parity-plan.md).
 
 ## Provenance
 
@@ -44,7 +47,7 @@ py -m pre_commit run --all-files
 ## Repository layout
 
 ```
-src/worksync/     # package root; domain packages added by ticket 06
+src/worksync/     # core, inventory, safety, work, context, cli, gui, mcp
 tests/            # pytest suite
 .scratch/         # local-markdown issue tracker and the wayfinder map
 ```
