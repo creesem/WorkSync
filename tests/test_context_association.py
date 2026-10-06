@@ -103,3 +103,33 @@ def test_removed_note_links_are_gone(vault: Path, write_note: Callable[..., Path
     index_vault(db, vault)
     index_associations(db, vault)
     assert not any(path == "Actions/Gone.md" for path, _, _, _ in _links(db))
+
+
+def test_excluded_and_superseded_notes_downgrade_to_candidate(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(vault, write_note)
+    write_note(
+        vault,
+        "1. Rough Notes/Krisp Proposals/proposal.md",
+        '---\ntype: meeting\nstatus: draft\nproject: "[[Project - Eleos Automation]]"\n---\n# Proposal\n',
+    )
+    write_note(
+        vault,
+        "7. Task Notes/Dropped/Task - dropped.md",
+        '---\ntype: action\nstatus: dropped\nproject: "[[Project - Eleos Automation]]"\n---\n# Dropped\n',
+    )
+    write_note(
+        vault,
+        "Notes/Superseded.md",
+        '---\ntype: action\nstatus: superseded\nproject: "[[Project - Eleos Automation]]"\n---\n# Superseded\n',
+    )
+    db = tmp_path / "index.sqlite3"
+    index_vault(db, vault)
+    index_associations(db, vault)
+
+    authority = {(path, project_id): value for path, project_id, _, value in _links(db)}
+    assert authority[("Tickets/T1.md", "eleos-automation")] == "authoritative"
+    assert authority[("1. Rough Notes/Krisp Proposals/proposal.md", "eleos-automation")] == "candidate"
+    assert authority[("7. Task Notes/Dropped/Task - dropped.md", "eleos-automation")] == "candidate"
+    assert authority[("Notes/Superseded.md", "eleos-automation")] == "candidate"

@@ -13,7 +13,8 @@ def _seed(vault: Path, write_note: Callable[..., Path]) -> None:
     write_note(
         vault,
         "9. Project/Alpha.md",
-        '---\ntype: project\nstatus: active\nowners:\n  - "[[Myles]]"\npriority: P1\n---\n# Project Alpha\n',
+        '---\ntype: project\nstatus: active\nproject_id: alpha\nowners:\n  - "[[Myles]]"\n'
+        "priority: P1\n---\n# Project Alpha\n",
     )
     write_note(vault, "People/Myles.md", "---\ntype: person\nstatus: active\n---\n# Myles\n")
 

@@ -17,6 +17,20 @@ from worksync.work.repository import WorkIndex
 EXPLICIT = "explicit"
 ALIAS = "alias"
 AUTHORITATIVE = "authoritative"
+CANDIDATE = "candidate"
+EXCLUDED_PREFIXES = ("1. Rough Notes/Krisp Proposals/", "7. Task Notes/Dropped/")
+SUPERSEDED_STATUSES = {"archived", "superseded", "dropped"}
+
+
+def _is_excluded(path: object) -> bool:
+    posix = str(path or "").replace("\\", "/").casefold()
+    return posix.startswith(tuple(prefix.casefold() for prefix in EXCLUDED_PREFIXES))
+
+
+def _is_superseded(frontmatter: dict) -> bool:
+    status = str(frontmatter.get("status") or "").strip().casefold()
+    note_type = str(frontmatter.get("type") or "").strip().casefold()
+    return status in SUPERSEDED_STATUSES or note_type == "redirect"
 
 
 @dataclass(frozen=True)
@@ -63,8 +77,13 @@ def _match_project(value: object, projects: list[ProjectRecord]) -> tuple[str, s
     return None
 
 
-def associate_note(frontmatter: dict, projects: list[ProjectRecord]) -> list[Association]:
-    """Return the authoritative project memberships for one note's frontmatter."""
+def associate_note(frontmatter: dict, projects: list[ProjectRecord], path: str = "") -> list[Association]:
+    """Return the authoritative project memberships for one note's frontmatter.
+
+    A note under an excluded prefix (unreviewed Krisp proposals, dropped tasks) or
+    in a superseded/redirect state keeps its memberships but downgrades them to
+    candidate, so unreviewed or retired content is never presented as project truth.
+    """
     if str(frontmatter.get("type") or "").strip().casefold() == "project":
         return []
     links: dict[str, Association] = {}
@@ -74,14 +93,17 @@ def associate_note(frontmatter: dict, projects: list[ProjectRecord]) -> list[Ass
             continue
         project_id, method = match
         links.setdefault(project_id, Association(project_id, method, AUTHORITATIVE, (value,)))
-    return list(links.values())
+    associations = list(links.values())
+    if _is_excluded(path) or _is_superseded(frontmatter):
+        associations = [Association(link.project_id, link.method, CANDIDATE, link.matched) for link in associations]
+    return associations
 
 
 def build_link_rows(notes: list[dict], projects: list[ProjectRecord]) -> list[tuple]:
     """Build ``note_project_links`` rows from indexed notes and project identities."""
     rows: list[tuple] = []
     for item in notes:
-        for link in associate_note(item["frontmatter"], projects):
+        for link in associate_note(item["frontmatter"], projects, item["path"]):
             rows.append(
                 (
                     item["id"],

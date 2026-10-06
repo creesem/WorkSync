@@ -140,3 +140,32 @@ def test_list_projects_wires_context_staleness(vault: Path, write_note: Callable
     meeting = vault / source
     meeting.write_text(meeting.read_text(encoding="utf-8") + "\nChanged.\n", encoding="utf-8")
     assert list_projects(index, db_path=db)[0]["context_stale"] is True
+
+
+def test_project_identity_ignores_copies_outside_project_folder_and_unidentified(
+    vault: Path, write_note: Callable[..., Path]
+) -> None:
+    _seed(vault, write_note)
+    write_note(
+        vault,
+        "Exports/import/Project - Eleos Automation.md",
+        "---\ntype: project\nstatus: active\nproject_id: eleos-automation\n"
+        "aliases:\n  - Eleos Automation Service\n---\n# Exported copy\n",
+    )
+    write_note(
+        vault,
+        "9. Project/Project - Unidentified.md",
+        '---\ntype: project\nstatus: active\nowners:\n  - "[[Myles]]"\n---\n# No id\n',
+    )
+    index = _index(vault)
+
+    records = [record for record in load_projects(index) if record.project_id == "eleos-automation"]
+    assert len(records) == 1
+    assert records[0].path == "9. Project/Project - Eleos Automation.md"
+    assert resolve_project(index, {"project_id": "eleos-automation"}) == {
+        "status": "resolved",
+        "project_id": "eleos-automation",
+    }
+    assert resolve_project(index, {"name": "Eleos Automation"})["status"] == "resolved"
+    assert resolve_project(index, {"name": "Unidentified"}) == {"status": "not_found"}
+    assert len(list_projects(index)) == 2

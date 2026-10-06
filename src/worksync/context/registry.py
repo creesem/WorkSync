@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from worksync.work.repository import WorkIndex
 
 CONTEXT_DIR = ".project"
 CONTEXT_FILENAME = "WORKSYNC_CONTEXT.md"
+VAULT_PROJECTS_DIR = "9. Project"
 
 
 def canonical_project_name(value: object) -> str:
@@ -46,10 +47,17 @@ def load_projects(index: WorkIndex, *, view: bool = False) -> list[ProjectRecord
     ``view=True`` uses the error-free entities a view shows; the default includes
     every project entity so identity resolution is never blocked by an unrelated
     validation error.
+
+    Only notes under the canonical projects folder that carry a ``project_id`` are
+    project identities. Imported or exported copies elsewhere in the vault and
+    ``type: project`` notes without an id are not identities, so resolution never
+    reports a copy as ambiguous and never resolves an unidentified note.
     """
     entities = index.view_entities("project") if view else index.list_type("project")
     records: list[ProjectRecord] = []
     for entity in entities:
+        if not entity.project_id or not _in_projects_folder(entity.path):
+            continue
         records.append(
             ProjectRecord(
                 project_id=entity.project_id or "",
@@ -62,6 +70,12 @@ def load_projects(index: WorkIndex, *, view: bool = False) -> list[ProjectRecord
             )
         )
     return records
+
+
+def _in_projects_folder(path: str) -> bool:
+    """True when a vault-relative path lives under the canonical projects folder."""
+    parts = PurePosixPath(str(path).replace("\\", "/")).parts
+    return bool(parts) and parts[0].casefold() == VAULT_PROJECTS_DIR.casefold()
 
 
 def resolve_project(index: WorkIndex, hint: dict | None) -> dict:
