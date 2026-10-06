@@ -150,6 +150,16 @@ def active_people(index: WorkIndex) -> tuple[EntityBase, ...]:
     return tuple(person for person in index.list_type(EntityType.PERSON.value) if person.status == "active")
 
 
+def project_reviews(index: WorkIndex, today: date, config: WorkConfig = DEFAULT_CONFIG) -> tuple[ProjectReview, ...]:
+    """Build the management rollup for every active project in one pass."""
+    return tuple(build_project_review(index, project, today, config) for project in active_projects(index))
+
+
+def person_workloads(index: WorkIndex, today: date, config: WorkConfig = DEFAULT_CONFIG) -> tuple[PersonWorkload, ...]:
+    """Build the workload rollup for every active person in one pass."""
+    return tuple(build_person_workload(index, person, today, config) for person in active_people(index))
+
+
 def _project_attention(project: EntityBase, today: date, config: WorkConfig) -> list[AttentionItem]:
     items: list[AttentionItem] = []
     if project.status == "blocked":

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WorkSync</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="frame">
+      <header class="masthead">
+        <div class="brand">
+          <span class="brand-mark">WorkSync</span>
+          <span class="brand-sub" id="vault-name">&nbsp;</span>
+        </div>
+        <nav class="nav" id="nav" aria-label="Sections">
+          <button type="button" data-section="today" class="active">Today</button>
+          <button type="button" data-section="projects">Projects</button>
+          <button type="button" data-section="team">Team</button>
+          <button type="button" data-section="tickets">Tickets</button>
+          <button type="button" data-section="review">Review</button>
+          <button type="button" data-section="search">Search</button>
+          <button type="button" data-section="settings">Settings</button>
+        </nav>
+      </header>
+
+      <main class="ledger" id="view" aria-live="polite">
+        <p class="muted">Loading…</p>
+      </main>
+
+      <footer class="colophon">
+        <span class="colophon-label">Equivalent command</span>
+        <code id="equivalent">—</code>
+      </footer>
+    </div>
+
+    <script>
+      window.__GUI_TOKEN__ = "__WORKSYNC_TOKEN__";
+    </script>
+    <script src="app.js"></script>
+  </body>
+</html>

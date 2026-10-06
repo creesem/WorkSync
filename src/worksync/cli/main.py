@@ -142,6 +142,8 @@ def build_parser() -> argparse.ArgumentParser:
         node.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
         node.add_argument("--json", action="store_true", help="Emit JSON.")
         node.set_defaults(handler=_review, review_view=view)
+    review_sub.choices["projects"].add_argument("--project", default=None, help="Limit the board to one project.")
+    review_sub.choices["team"].add_argument("--person", default=None, help="Limit the board to one person.")
 
     views = sub.add_parser("views", help="Render or write reproducible generated views.")
     views_sub = views.add_subparsers(dest="views_command")
@@ -429,13 +431,27 @@ def _review(args: argparse.Namespace) -> int:
             print(render_attention("Today", items))
         return 0
     if args.review_view == "team":
-        workloads = [build_person_workload(index, person, today) for person in active_people(index)]
+        if args.person:
+            person = index.get("person", args.person)
+            if person is None:
+                print(f"worksync: no person matches '{args.person}'.", file=sys.stderr)
+                return 1
+            workloads = [build_person_workload(index, person, today)]
+        else:
+            workloads = [build_person_workload(index, person, today) for person in active_people(index)]
         if args.json:
             print(json.dumps([workload_to_dict(workload) for workload in workloads], indent=2))
         else:
             print(render_team_review(workloads))
         return 0
-    reviews = [build_project_review(index, project, today) for project in active_projects(index)]
+    if args.project:
+        project = index.get("project", args.project)
+        if project is None:
+            print(f"worksync: no project matches '{args.project}'.", file=sys.stderr)
+            return 1
+        reviews = [build_project_review(index, project, today)]
+    else:
+        reviews = [build_project_review(index, project, today) for project in active_projects(index)]
     if args.json:
         print(json.dumps([project_review_to_dict(review) for review in reviews], indent=2))
     else:

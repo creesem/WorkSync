@@ -1,0 +1,223 @@
+"use strict";
+
+const TOKEN = window.__GUI_TOKEN__ || "";
+const TOKEN_HEADER = "X-Gui-Token";
+
+const view = document.getElementById("view");
+const equivalent = document.getElementById("equivalent");
+const vaultName = document.getElementById("vault-name");
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
+  });
+}
+
+async function api(path) {
+  const response = await fetch(path, { headers: { [TOKEN_HEADER]: TOKEN } });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(detail.message || `${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
+function empty(message) {
+  return `<div class="empty">${escapeHtml(message || "Nothing here.")}</div>`;
+}
+
+function row(state, tag, title, reason, meta, target) {
+  const attrs = target
+    ? ` data-target="${escapeHtml(target.kind)}" data-name="${escapeHtml(target.name)}" tabindex="0" role="button"`
+    : "";
+  return `<div class="row ${escapeHtml(state)}"${attrs}>
+    <div class="who">${escapeHtml(title)}</div>
+    <div class="what"><span class="tag">${escapeHtml(tag)}</span>${escapeHtml(reason)}</div>
+    <div class="meta">${escapeHtml(meta || "")}</div>
+  </div>`;
+}
+
+function heading(title, subtitle) {
+  return `<h1>${escapeHtml(title)}</h1><p class="subtitle">${escapeHtml(subtitle)}</p>`;
+}
+
+function attentionRows(items) {
+  if (!items || !items.length) return empty("No attention items.");
+  return items
+    .map((item) => row(item.kind, item.kind, item.title, item.reason, item.path))
+    .join("");
+}
+
+function projectCard(review) {
+  const project = review.project || {};
+  const lines = [heading(project.title || "(project)", project.status || "")];
+  const blockers = review.blockers || [];
+  lines.push(`<p class="subtitle">blockers: ${blockers.length}</p>`);
+  lines.push(attentionRows(review.attention));
+  return lines.join("");
+}
+
+const sections = {
+  async today() {
+    const data = await api("/api/today");
+    equivalent.textContent = data.equivalent_cli;
+    view.innerHTML = heading("Today", `${data.attention.length} attention item(s)`) + attentionRows(data.attention);
+  },
+
+  async review() {
+    const data = await api("/api/review");
+    equivalent.textContent = data.equivalent_cli;
+    const body = data.projects.map((review) => projectCard(review)).join("");
+    view.innerHTML = heading("Review", `${data.projects.length} active project(s)`) + (body || empty("No projects."));
+  },
+
+  async projects() {
+    const data = await api("/api/projects");
+    equivalent.textContent = data.equivalent_cli;
+    const body = data.projects
+      .map((item) =>
+        row(
+          item.status,
+          item.status || "-",
+          item.name,
+          item.registered_repo || "no registered repo",
+          item.project_id || "",
+          { kind: "project", name: item.name }
+        )
+      )
+      .join("");
+    view.innerHTML = heading("Projects", `${data.projects.length} registered`) + (body || empty("No projects."));
+  },
+
+  async team() {
+    const data = await api("/api/team");
+    equivalent.textContent = data.equivalent_cli;
+    const body = data.workloads
+      .map((workload) =>
+        row(
+          "",
+          (workload.attention || []).length + " attention",
+          workload.person.title,
+          `${(workload.actions || []).length} action(s), ${(workload.tickets || []).length} ticket(s)`,
+          ((workload.projects || []).length || 0) + " project(s)",
+          { kind: "person", name: workload.person.title }
+        )
+      )
+      .join("");
+    view.innerHTML = heading("Team", `${data.workloads.length} active person(s)`) + (body || empty("No people."));
+  },
+
+  async tickets() {
+    const data = await api("/api/tickets");
+    equivalent.textContent = data.equivalent_cli;
+    const attention = new Map();
+    for (const item of data.attention) {
+      const list = attention.get(item.path) || [];
+      list.push(item);
+      attention.set(item.path, list);
+    }
+    const body = data.tickets
+      .map((ticket) => {
+        const reasons = (attention.get(ticket.path) || []).map((item) => item.reason).join("; ");
+        return row(ticket.status, ticket.status || "-", ticket.title, reasons || "no attention", ticket.path);
+      })
+      .join("");
+    view.innerHTML = heading("Tickets", `${data.tickets.length} ticket(s)`) + (body || empty("No tickets."));
+  },
+
+  async search() {
+    view.innerHTML = `${heading("Search", "Evidence with provenance")}
+      <form class="searchbar" id="search-form">
+        <input type="search" id="search-q" placeholder="Search the project evidence" aria-label="Search query" />
+        <button type="submit">Search</button>
+      </form>
+      <div id="search-results">${empty("Enter a query.")}</div>`;
+    equivalent.textContent = 'worksync search "<query>"';
+    const form = document.getElementById("search-form");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const query = document.getElementById("search-q").value.trim();
+      if (!query) return;
+      const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
+      equivalent.textContent = data.equivalent_cli;
+      const results = data.result.results || [];
+      const body = results
+        .map((item) =>
+          row(
+            "",
+            item.association.tier || "?",
+            item.path,
+            item.snippet || "",
+            item.stale ? "stale" : (item.association.method || "")
+          )
+        )
+        .join("");
+      document.getElementById("search-results").innerHTML = body || empty("No matches.");
+    });
+  },
+
+  async settings() {
+    const data = await api("/api/settings");
+    equivalent.textContent = data.equivalent_cli;
+    vaultName.textContent = data.vault_name || "";
+    const fields = [
+      ["Vault", data.vault_path],
+      ["Runtime root", data.runtime_root],
+      ["Index", data.index_present ? data.index_path : `${data.index_path} (not built)`],
+      ["Port", String(data.ui_port)],
+      ["Reviewer", data.reviewer || "(unset)"],
+    ];
+    view.innerHTML =
+      heading("Settings", "Read-only configuration") +
+      `<dl class="settings">${fields
+        .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`)
+        .join("")}</dl>`;
+  },
+};
+
+let current = "today";
+
+async function show(name) {
+  current = name;
+  for (const button of document.querySelectorAll(".nav button")) {
+    button.classList.toggle("active", button.dataset.section === name);
+  }
+  try {
+    await sections[name]();
+  } catch (error) {
+    view.innerHTML = heading("Error", "") + empty(String(error.message || error));
+  }
+}
+
+document.getElementById("nav").addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-section]");
+  if (button) show(button.dataset.section);
+});
+
+view.addEventListener("click", (event) => {
+  const node = event.target.closest("[data-target]");
+  if (!node) return;
+  const { target: kind, name } = node.dataset;
+  if (kind === "project") showProject(name);
+  if (kind === "person") showPerson(name);
+});
+
+async function showProject(name) {
+  const data = await api(`/api/project?name=${encodeURIComponent(name)}`);
+  equivalent.textContent = data.equivalent_cli;
+  view.innerHTML = data.state === "ok" ? projectCard(data.review) : heading("Not found", name) + empty("No project.");
+}
+
+async function showPerson(name) {
+  const data = await api(`/api/person?name=${encodeURIComponent(name)}`);
+  equivalent.textContent = data.equivalent_cli;
+  if (data.state !== "ok") {
+    view.innerHTML = heading("Not found", name) + empty("No person.");
+    return;
+  }
+  const workload = data.workload;
+  view.innerHTML =
+    heading(workload.person.title, workload.person.role || "") + attentionRows(workload.attention);
+}
+
+show(current);

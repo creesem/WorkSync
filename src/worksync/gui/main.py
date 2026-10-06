@@ -1,16 +1,81 @@
-"""``worksync-gui`` entry point placeholder."""
+"""``worksync-gui`` entry point: the local, tokenized read-only workspace."""
 
 from __future__ import annotations
 
 import argparse
+import secrets
 import sys
+import webbrowser
+from pathlib import Path
+
+from worksync.core.config import ConfigError, load_config
+from worksync.gui.controller import GuiService
+from worksync.gui.server import GuiHttpServer, create_server
+from worksync.inventory.index import index_path
+
+DEFAULT_HOST = "127.0.0.1"
+
+
+def build_service(*, vault: Path, runtime: Path, vault_name: str, reviewer: str | None, ui_port: int) -> GuiService:
+    """Pin the vault, index, and reviewer the server reads through."""
+    return GuiService(
+        vault=Path(vault),
+        db_path=index_path(runtime),
+        runtime_root=Path(runtime),
+        vault_name=vault_name,
+        reviewer=reviewer,
+        ui_port=ui_port,
+    )
+
+
+def bind(service: GuiService, token: str, *, host: str, port: int) -> GuiHttpServer:
+    """Bind the requested port, falling back to a free one when it is busy."""
+    try:
+        return create_server(service, token, host=host, port=port)
+    except OSError:
+        return create_server(service, token, host=host, port=0)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="worksync-gui", description="Local read-only WorkSync workspace.")
+    parser.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    parser.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    parser.add_argument("--host", default=DEFAULT_HOST, help="Loopback host to bind.")
+    parser.add_argument("--port", type=int, default=None, help="Port to bind (default: config, with fallback).")
+    parser.add_argument("--token", default=None, help="Override the per-run token (automation only).")
+    parser.add_argument("--no-browser", action="store_true", help="Do not open a browser.")
+    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="worksync-gui", description="Local WorkSync workspace.")
-    parser.parse_args(argv)
-    print("worksync-gui is not implemented yet (ticket 11).", file=sys.stderr)
-    return 1
+    args = build_parser().parse_args(argv)
+    try:
+        config = load_config()
+    except ConfigError as exc:
+        print(f"worksync-gui: {exc}", file=sys.stderr)
+        return 2
+    vault = Path(args.vault) if args.vault is not None else config.vault_path
+    runtime = Path(args.runtime) if args.runtime is not None else config.runtime_root
+    reviewer = str(config.raw.get("reviewer") or "").strip() or None
+    port = args.port if args.port is not None else config.ui_port
+    token = args.token or secrets.token_urlsafe(24)
+    service = build_service(vault=vault, runtime=runtime, vault_name=config.vault_name, reviewer=reviewer, ui_port=port)
+    try:
+        server = bind(service, token, host=args.host, port=port)
+    except (OSError, ValueError) as exc:
+        print(f"worksync-gui: {exc}", file=sys.stderr)
+        return 2
+    url = f"http://{args.host}:{server.server_address[1]}/"
+    print(f"worksync workspace: {url}", file=sys.stderr)
+    if not args.no_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
 
 
 if __name__ == "__main__":

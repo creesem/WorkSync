@@ -65,3 +65,37 @@ def test_review_rejects_invalid_today(vault: Path, write_note: Callable[..., Pat
     _seed(vault, write_note)
     assert main(["review", "today", "--vault", str(vault), "--today", "not-a-date"]) == 2
     assert "invalid --today" in capsys.readouterr().err
+
+
+def test_review_projects_can_limit_to_one_project(vault: Path, write_note: Callable[..., Path], capsys) -> None:
+    _seed(vault, write_note)
+    args = [
+        "review",
+        "projects",
+        "--project",
+        "Project Alpha",
+        "--vault",
+        str(vault),
+        "--today",
+        "2026-01-15",
+        "--json",
+    ]
+    assert main(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert [item["project"]["title"] for item in payload] == ["Project Alpha"]
+
+
+def test_review_team_can_limit_to_one_person(vault: Path, write_note: Callable[..., Path], capsys) -> None:
+    _seed(vault, write_note)
+    args = ["review", "team", "--person", "Myles", "--vault", str(vault), "--today", "2026-01-15", "--json"]
+    assert main(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert [item["person"]["title"] for item in payload] == ["Myles"]
+
+
+def test_review_limit_reports_an_unknown_target(vault: Path, write_note: Callable[..., Path], capsys) -> None:
+    _seed(vault, write_note)
+    assert main(["review", "projects", "--project", "Nope", "--vault", str(vault)]) == 1
+    assert "no project matches" in capsys.readouterr().err
+    assert main(["review", "team", "--person", "Nobody", "--vault", str(vault)]) == 1
+    assert "no person matches" in capsys.readouterr().err

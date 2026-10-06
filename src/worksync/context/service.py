@@ -34,6 +34,12 @@ from worksync.work.review import (
     build_person_workload,
     build_project_review,
 )
+from worksync.work.review import (
+    person_workloads as _person_workloads,
+)
+from worksync.work.review import (
+    project_reviews as _project_reviews,
+)
 
 ENTITY_TYPES = ("project", "person", "ticket", "meeting", "action")
 
@@ -97,12 +103,20 @@ def project_review(vault: str | Path, name: str, today: date) -> dict | None:
     return project_review_to_dict(build_project_review(index, project, today))
 
 
+def project_reviews(vault: str | Path, today: date) -> list[dict]:
+    return [project_review_to_dict(review) for review in _project_reviews(_index(vault), today)]
+
+
 def person_workload(vault: str | Path, name: str, today: date) -> dict | None:
     index = _index(vault)
     person = index.get("person", name)
     if person is None:
         return None
     return workload_to_dict(build_person_workload(index, person, today))
+
+
+def person_workloads(vault: str | Path, today: date) -> list[dict]:
+    return [workload_to_dict(workload) for workload in _person_workloads(_index(vault), today)]
 
 
 def search_evidence(
