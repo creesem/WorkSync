@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 import worksync.safety
-from worksync.safety import activity
+from worksync.safety import activity, gateway
 from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit, recover
 from worksync.safety.models import ChangeSet, FileOp, MutationError
@@ -302,6 +302,35 @@ def test_safety_depends_only_on_core() -> None:
                 assert not any(module == prefix or module.startswith(prefix + ".") for prefix in forbidden), (
                     f"{path.name} imports a domain layer: {module}"
                 )
+
+
+def test_rollback_skips_an_update_that_never_landed(zones: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    first = _write(zones["trusted"] / "a.md", "a-old")
+    second = _write(zones["trusted"] / "b.md", "b-old")
+    real = gateway.atomic_write_text
+
+    def flaky(path, content, **kwargs):
+        if str(path).endswith("b.md"):
+            raise RuntimeError("disk full")
+        return real(path, content, **kwargs)
+
+    monkeypatch.setattr("worksync.safety.gateway.atomic_write_text", flaky)
+    with pytest.raises(MutationError) as excinfo:
+        commit(
+            ChangeSet(
+                "update_status",
+                (
+                    FileOp("update", Path("a.md"), "trusted", content="a-new", expected=sha256_file(first)),
+                    FileOp("update", Path("b.md"), "trusted", content="b-new", expected=sha256_file(second)),
+                ),
+                reviewer="Myles",
+                reason="second update fails before it lands",
+            ),
+            zones,
+        )
+    assert _code(excinfo) == "rolled_back"
+    assert first.read_text(encoding="utf-8") == "a-old"
+    assert second.read_text(encoding="utf-8") == "b-old"
 
 
 def test_precondition_failure_leaves_no_partial_write(zones: dict[str, Path]) -> None:

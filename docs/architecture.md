@@ -16,6 +16,7 @@ flowchart TD
     inv["inventory<br/>parse · index · scopes · structural validate"]
     safety["safety<br/>mutation gateway"]
     work["work<br/>entities · validation · relationships · attention · views"]
+    migrate["migrate (V2)<br/>vault migrations · frontmatter repair"]
     ctx["context<br/>registry · association · retrieval · build · integrate"]
     ingest["ingest (V2)<br/>inbox · triage · krisp · email"]
     cli["cli"]
@@ -26,9 +27,12 @@ flowchart TD
     safety --> core
     work --> inv
     work --> safety
+    migrate --> inv
+    migrate --> safety
     ctx --> work
     ingest --> work
     cli --> ctx
+    cli --> migrate
     gui --> ctx
     mcp --> ctx
 ```
@@ -43,6 +47,7 @@ Arrows point from a package to what it depends on.
 | `inventory` | The single vault reader: `parse` (`IndexRecord`, YAML-faithful frontmatter read/write, headings/tags/links/tasks) and `index` (SQLite/FTS, incremental update, `fts_repaired`, `index_outdated`), config-driven scopes, structural/health validation. Read-only. | yes |
 | `safety` | The single mutation gateway: `backed_up_write`, `rollback_backed_up_write`, `settled_snapshot`, atomic write preconditions. No internal dependencies beyond `core`. | yes |
 | `work` | Work-management semantics: typed entities (`project`/`person`/`ticket`/`meeting`/`action`), schema detection, entity validation, relationships, attention/rollups, generated views, deterministic rendering, contained view writer. | yes |
+| `migrate` | Vault migrations: detection and reviewable repair of malformed frontmatter. Reads through `inventory`, writes only through the `safety` gateway; never adds a parser and never imports `context`. | V2 |
 | `context` | Retrieval and evidence: managed-repo registry and availability, membership vs relevance vs authority, the retrieval service (resolve/search/read/staleness), generated project context, managed-block integration. | yes |
 | `ingest` | Raw-to-staged-to-canonical ingestion and review/promotion: inbox, triage, inbox triage, backfill, routing, Krisp, email; PDF/Patron deferred. | V2 |
 | `cli` | Unified console entry points over the layers. | yes |
@@ -54,6 +59,8 @@ Arrows point from a package to what it depends on.
 - `core` depends on nothing.
 - `inventory` and `safety` depend only on `core`.
 - `work` depends on `core`, `inventory`, `safety`.
+- `migrate` depends on `core`, `inventory`, `safety`; it never imports `context` or
+  a write helper, so the parser stays pure and the gateway stays the only write seam.
 - `context` and `ingest` depend on `work` (and therefore on the foundations).
 - `cli`, `gui`, `mcp` are consumers and depend on the layers.
 - Dependency direction is one-way; no cycles. `inventory` never imports `work`,

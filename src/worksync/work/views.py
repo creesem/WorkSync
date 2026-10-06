@@ -18,6 +18,7 @@ from worksync.core.paths import PathSafetyError
 from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit
 from worksync.safety.models import ChangeSet, CommitResult, FileOp, MutationError
+from worksync.safety.zones import write_zones
 from worksync.work.models import EntityType
 from worksync.work.render import render_attention, render_projects_review, render_team_review
 from worksync.work.repository import WorkIndex
@@ -77,11 +78,10 @@ def build_views(index: WorkIndex, *, today: date, generated_at: datetime) -> tup
 def view_zones(runtime_root: str | Path, *, vault_root: str | Path | None = None) -> dict[str, Path]:
     """Return the writable roots for generated views, refusing a root inside the vault."""
     runtime = Path(runtime_root).expanduser().resolve()
-    views = runtime / "views"
-    if vault_root is not None:
-        vault = Path(vault_root).expanduser().resolve()
-        if views == vault or views.is_relative_to(vault):
-            raise PathSafetyError(f"Generated views root must stay outside the vault: {views}")
+    vault = Path(vault_root).expanduser().resolve() if vault_root is not None else runtime
+    views = write_zones(vault, runtime)["views"]
+    if vault_root is not None and (views == vault or views.is_relative_to(vault)):
+        raise PathSafetyError(f"Generated views root must stay outside the vault: {views}")
     return {"views": views, "runtime": runtime}
 
 

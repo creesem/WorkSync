@@ -1,9 +1,9 @@
 # Real-vault parity: legacy vs. new platform
 
-- Generated: 2026-10-06T10:03:04.718367+00:00
+- Generated: 2026-10-06T16:20:24.865244+00:00
 - Vault: `C:\Users\macre\Documents\WorkSync`
-- Legacy index: `C:\Users\macre\AppData\Local\Temp\worksync-parity-bt9kgigf\legacy-index.sqlite3`
-- New index: `C:\Users\macre\AppData\Local\Temp\worksync-parity-bt9kgigf\new-index.sqlite3`
+- Legacy index: `C:\Users\macre\AppData\Local\Temp\worksync-parity-m7iet941\legacy-index.sqlite3`
+- New index: `C:\Users\macre\AppData\Local\Temp\worksync-parity-m7iet941\new-index.sqlite3`
 - Result: **PASS**
 
 ## 1. resolve_project
@@ -95,10 +95,7 @@
 | project_id | legacy | new | carve-out | unexpected | match |
 | --- | --- | --- | --- | --- | --- |
 | eleos-automation-service | 26 | 26 | 0 | 0 | yes |
-| eleos-compliance-odbc | 16 | 15 | 1 | 0 | yes |
-
-`eleos-compliance-odbc` differences:
-  - carve-out (legacy authoritative, new malformed): `7. Task Notes/Active/Task - Follow up with Antonio-Nate on the Eleos-iCentrix internal meeting outcome and decision timeline.md`
+| eleos-compliance-odbc | 16 | 16 | 0 | 0 | yes |
 
 ## 5. get_staleness
 
@@ -111,7 +108,4 @@
 ## 6. Interpretation
 
 Gate definition: resolve/list match exactly; global search paths match exactly; project-scoped search never labels a hit authoritative unless legacy did (candidates are never truth); authoritative membership sets match; staleness matches, with a legacy exception treated as equivalent to the new structured fail-closed reason. Tier/candidate label differences are the intended V1 model (Tier B default; FTS is relevance, not membership).
-
-Documented carve-out: notes whose YAML is malformed (invalid escape sequences in double-quoted Windows paths) lose frontmatter under the new PyYAML reader (ADR-0003 retired the lossy line parser). These are the V2 frontmatter-migration items, counted here as expected differences:
-- `7. Task Notes/Active/Task - Follow up with Antonio-Nate on the Eleos-iCentrix internal meeting outcome and decision timeline.md`
 

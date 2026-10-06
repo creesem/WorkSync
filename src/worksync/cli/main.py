@@ -16,6 +16,7 @@ from worksync.context.registry import list_projects, resolve_project
 from worksync.core.config import ConfigError, load_config
 from worksync.core.paths import PathSafetyError
 from worksync.inventory.index import index_path, index_vault
+from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
 from worksync.safety.activity import list_events
 from worksync.safety.models import MutationError
 from worksync.work.relationships import related_to
@@ -164,6 +165,17 @@ def build_parser() -> argparse.ArgumentParser:
     views_write.add_argument("--force", action="store_true", help="Overwrite an existing view.")
     views_write.add_argument("--json", action="store_true", help="Emit JSON.")
     views_write.set_defaults(handler=_views_write)
+
+    migrate = sub.add_parser("migrate", help="Detect or repair malformed vault frontmatter.")
+    migrate_sub = migrate.add_subparsers(dest="migrate_command")
+    frontmatter = migrate_sub.add_parser(
+        "frontmatter", help="Repair malformed YAML frontmatter as one canonical transaction."
+    )
+    frontmatter.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    frontmatter.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    frontmatter.add_argument("--dry-run", action="store_true", help="List the proposed repairs without writing.")
+    frontmatter.add_argument("--json", action="store_true", help="Emit JSON.")
+    frontmatter.set_defaults(handler=_migrate_frontmatter)
 
     return parser
 
@@ -519,6 +531,71 @@ def _views_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     vault = args.vault if args.vault is not None else config.vault_path
     runtime = args.runtime if args.runtime is not None else config.runtime_root
     return Path(vault), Path(runtime)
+
+
+def _migrate_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+    if args.vault is not None and args.runtime is not None:
+        return Path(args.vault), Path(args.runtime)
+    config = load_config()
+    vault = args.vault if args.vault is not None else config.vault_path
+    runtime = args.runtime if args.runtime is not None else config.runtime_root
+    return Path(vault), Path(runtime)
+
+
+def _migrate_payload(
+    vault: Path, detections: list[MalformedNote], *, dry_run: bool, result=None, malformed_after: int | None = None
+) -> dict:
+    return {
+        "vault": str(vault),
+        "dry_run": dry_run,
+        "malformed_before": len(detections),
+        "repairable": [{"path": note.path, "rule": note.rule} for note in detections if note.rule],
+        "unmatched": [note.path for note in detections if note.rule is None],
+        "repaired": [note.path for note in detections if note.rule] if result else [],
+        "committed": bool(result and result.committed),
+        "journal": str(result.journal) if result else None,
+        "malformed_after": malformed_after,
+    }
+
+
+def _print_migrate(payload: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    if payload["dry_run"]:
+        print(f"worksync migrate frontmatter: dry run — {payload['malformed_before']} malformed note(s)")
+    else:
+        print(f"worksync migrate frontmatter: repaired {len(payload['repaired'])} note(s)")
+    for item in payload["repairable"]:
+        print(f"  [{item['rule']}] {item['path']}")
+    for path in payload["unmatched"]:
+        print(f"  UNMATCHED {path}")
+
+
+def _migrate_frontmatter(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _migrate_paths(args)
+        detections = detect(vault)
+        if args.dry_run:
+            payload = _migrate_payload(vault, detections, dry_run=True)
+            _print_migrate(payload, args.json)
+            return 0
+        result = apply_repairs(vault, runtime, detections=detections)
+        malformed_after = len(detections)
+        if result is not None:
+            db = index_path(runtime)
+            index_vault(db, vault, rebuild=True)
+            index_associations(db, vault)
+            malformed_after = len(detect(vault))
+    except MutationError as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    payload = _migrate_payload(vault, detections, dry_run=False, result=result, malformed_after=malformed_after)
+    _print_migrate(payload, args.json)
+    return 0
 
 
 def _view_to_dict(view: object) -> dict:

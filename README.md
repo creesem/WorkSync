@@ -21,6 +21,15 @@ stdio MCP adapter. The vault is read as-is and never moved. All V2 write surface
 ingestion, and local-model enrichment remain out of scope; the cutover and rollback
 plan is [`docs/migration-parity-plan.md`](docs/migration-parity-plan.md).
 
+**V2 began with the malformed-frontmatter migration.** `worksync migrate frontmatter`
+detects every note whose leading YAML block is invalid and repairs the known mechanical
+patterns (Windows backslash paths, bare template placeholders) as one gated
+transaction. It has been run against the real vault: all 61 malformed notes are
+repaired, backed up, and journalled, and the real-vault parity carve-out is closed.
+See [ADR-0014](docs/adr/0014-repair-malformed-frontmatter.md). The canonical schema
+normalization (the retired `task` entity and related field changes) remains the next
+V2 migration.
+
 ## Provenance
 
 This is a merged third repository assembled from two sources (wayfinder ticket 01):

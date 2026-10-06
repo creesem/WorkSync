@@ -149,10 +149,11 @@ def test_layer_direction_and_acyclicity() -> None:
         "core": set(),
         "inventory": {"core"},
         "safety": {"core"},
+        "migrate": {"core", "inventory", "safety"},
         "work": {"core", "inventory", "safety"},
         "context": {"core", "inventory", "safety", "work"},
         "ingest": {"core", "inventory", "safety", "work"},
-        "cli": {"core", "inventory", "safety", "work", "context", "ingest"},
+        "cli": {"core", "inventory", "safety", "migrate", "work", "context", "ingest"},
         "gui": {"core", "inventory", "safety", "work", "context", "ingest"},
         "mcp": {"context"},
     }

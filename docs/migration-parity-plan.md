@@ -47,6 +47,12 @@ malformed) is a bulk canonical mutation and is **V2**, executed through
 not a prerequisite for the read-only platform; V1 reads the unchanged vault
 tolerantly.
 
+The **malformed-block subset is repaired** (V2 spec 1, `worksync migrate frontmatter`,
+[ADR-0014](adr/0014-repair-malformed-frontmatter.md)): 61 notes were rewritten in one
+gated transaction, backed up under the runtime root, and the real-vault parity
+carve-out is closed. The **canonical type/schema normalization** (the retired `task`
+entity, meeting/person/project fields) is the remaining frontmatter migration.
+
 ## Parity gates
 
 Cutover requires all of:
@@ -54,8 +60,9 @@ Cutover requires all of:
 - **End-to-end scenarios:** index → search → read evidence; resolve project →
   context read → staleness; entity → relationships → review; view render
   containment.
-- **Correction fixtures:** the 61 malformed blocks parse tolerantly; legacy `task`
-  notes read as `action`.
+- **Correction fixtures:** the malformed-block patterns are detected and repaired
+  (the real-vault malformed carve-out is closed — V2 spec 1); legacy `task` notes
+  read as `action`.
 - **No-write tests:** the read boundary opens the index read-only and cannot reach
   a write helper.
 - **Determinism:** repeated runs produce identical output for a fixed reference

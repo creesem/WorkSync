@@ -246,7 +246,9 @@ and extended rather than rewritten.
   prepared communications.
 - The local AI workbench and any model-driven enrichment (positioned only).
 - PDF ingestion (Patron).
-- The existing-vault frontmatter migration (V2, through the gateway).
+- The existing-vault frontmatter migration (V2, through the gateway): the
+  malformed-block repair subset is done (V2 spec 1); canonical type/schema
+  normalization remains.
 - External-system adapters and synchronization.
 - Autonomous trusted-vault mutation.
 - A database; embeddings/vector retrieval; an Agents-SDK runtime; LLM auto-writes.
