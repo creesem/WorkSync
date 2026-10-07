@@ -7,15 +7,15 @@ complete.
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-07; full suite 363 passed, ruff clean)
 
-- [ ] One `worksync interface build` writes the complete page set into
+- [x] One `worksync interface build` writes the complete page set into
       `0. System/Interface` deterministically.
-- [ ] `inventory` indexes zero generated `.html`; the generated folder contributes no
+- [x] `inventory` indexes zero generated `.html`; the generated folder contributes no
       work entities and no FTS rows.
-- [ ] The read-only boundary test proves the full read surface writes nothing and that
+- [x] The read-only boundary test proves the full read surface writes nothing and that
       `html` imports no `context`.
-- [ ] Re-running `interface build` without `--force` fails closed on existing pages.
-- [ ] `docs/architecture.md` and `docs/mutation-contract.md` are complete for the `html`
+- [x] Re-running `interface build` without `--force` fails closed on existing pages.
+- [x] `docs/architecture.md` and `docs/mutation-contract.md` are complete for the `html`
       layer and the `generated` zone.
-- [ ] The full test suite and Ruff pass.
+- [x] The full test suite and Ruff pass.
