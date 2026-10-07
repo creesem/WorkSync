@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from worksync.core.paths import GENERATED_INTERFACE_REL
+
 
 def write_zones(vault_root: str | Path, runtime_root: str | Path) -> dict[str, Path]:
     """Return the standard writable roots for a vault and runtime root."""
@@ -20,5 +22,6 @@ def write_zones(vault_root: str | Path, runtime_root: str | Path) -> dict[str, P
         "staging": runtime / "staging",
         "ingest": runtime / "ingest",
         "views": runtime / "views",
+        "generated": vault / GENERATED_INTERFACE_REL,
         "runtime": runtime,
     }

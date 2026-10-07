@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 CANONICAL_ZONES = frozenset({"trusted"})
-DERIVED_ZONES = frozenset({"staging", "ingest", "views", "runtime"})
+DERIVED_ZONES = frozenset({"staging", "ingest", "views", "generated", "runtime"})
 CONFIRM_VERBS = frozenset({"drop", "merge", "redirect", "archive", "supersede", "reassign"})
 
 

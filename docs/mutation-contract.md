@@ -36,10 +36,23 @@ root, refusing absolute paths and `..`.
 | `staging` | proposals, review-ready artifacts | derived; create-first |
 | `ingest` | raw landing (V2) | derived; create-first |
 | `views` | generated views | derived; overwrite only on explicit `force` |
+| `generated` | generated HTML interface (`0. System/Interface/`, inside the vault) | derived; overwrite only on explicit `force`; `.html` never scanned or indexed |
 | `runtime` | index, sessions, journals, backups (outside the vault) | derived; outside vault containment |
 
 `core` owns config loading and legacy-path rebase; `safety` owns `ensure_under`
 and resolved-containment validation.
+
+### The generated interface zone
+
+`generated` is the one derived zone that lives *inside* the vault, at the reserved
+`0. System/Interface/` folder. It holds the reproducible `.html` interface the Python
+generator produces for Obsidian's HTML Reader. It is presentation state, never canonical:
+a write needs no reviewer, reason, or canonical backup, and containment is checked
+against both the generated root and the vault root. Overwriting an existing generated
+artifact requires explicit `force`. Every generated page carries a visible
+"generated / do not edit" marker and a provenance block; output is deterministic for a
+fixed reference date. The single scanner walks only `*.md`, so generated `.html` is never
+parsed, indexed, or surfaced as a work entity.
 
 ## Create vs update
 

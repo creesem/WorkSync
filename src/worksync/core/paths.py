@@ -10,6 +10,8 @@ from pathlib import Path
 
 from worksync.core.names import safe_name
 
+GENERATED_INTERFACE_REL = Path("0. System") / "Interface"
+
 
 class PathSafetyError(ValueError):
     """Raised when a path escapes its allowed root."""
