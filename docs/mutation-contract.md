@@ -94,7 +94,11 @@ Primitives (`atomic_write_*`, `backed_up_write`, `rollback_backed_up_write`,
 `settled_snapshot`) become internal; no layer calls them directly.
 
 Derived writers (index, generated views) use a narrow `safety` path that still
-enforces containment and create/overwrite policy but skips backup/reviewer.
+enforces containment and create/overwrite policy but skips backup/reviewer. `safety`
+exposes that path once (its `derived` module); no domain layer calls the atomic
+primitives directly. Runtime state singletons the application owns and regenerates
+(the workday plan, the remembered reviewer) are derived writes whose normal operation
+is an idempotent overwrite; they never use the canonical backup/reviewer gate.
 
 ## Preconditions and rollback
 

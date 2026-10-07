@@ -39,9 +39,16 @@ from worksync.work.review import (
     build_person_workload,
     build_project_review,
 )
+from worksync.work.reviewer import ReviewerError, resolve_reviewer
 from worksync.work.views import VIEW_NAMES, build_view, build_views, view_zones, write_views
+from worksync.work.workday import (
+    SLOTS as WORKDAY_SLOTS,
+)
+from worksync.work.workday import build_workday, complete_from_plan, import_legacy, set_selection, set_steering
+from worksync.work.writer import ALLOWED_FIELDS, ActionWriteError, complete_action, update_action
 
 ENTITY_TYPES = ("project", "person", "ticket", "meeting", "action")
+ACTION_EDIT_FLAGS = tuple((f"--{name.replace('_', '-')}", name) for name in ALLOWED_FIELDS)
 REVIEW_VIEWS = ("today", "team", "projects")
 RELATED_TYPES = {"project", "person"}
 CONTEXT_ERROR_STATES = {
@@ -185,7 +192,69 @@ def build_parser() -> argparse.ArgumentParser:
     schema.add_argument("--json", action="store_true", help="Emit JSON.")
     schema.set_defaults(handler=_migrate_schema)
 
+    task = sub.add_parser("task", help="Edit or complete a canonical action.")
+    task_sub = task.add_subparsers(dest="task_command")
+    task_update = task_sub.add_parser("update", help="Edit allowlisted action fields.")
+    task_update.add_argument("path")
+    for flag, dest in ACTION_EDIT_FLAGS:
+        task_update.add_argument(flag, dest=dest, default=None)
+    task_update.add_argument("--reason", required=True, help="Human-readable reason for the change.")
+    task_update.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    task_update.add_argument("--sha", default=None, help="Expected note SHA (stale-safe precondition).")
+    task_update.add_argument("--dry-run", action="store_true", help="Show the change without writing.")
+    task_update.add_argument("--json", action="store_true", help="Emit JSON.")
+    task_update.set_defaults(handler=_task_update)
+    task_complete = task_sub.add_parser("complete", help="Mark an action done.")
+    task_complete.add_argument("path")
+    task_complete.add_argument("--reason", required=True, help="Human-readable reason for the completion.")
+    task_complete.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    task_complete.add_argument("--sha", default=None, help="Expected note SHA (stale-safe precondition).")
+    task_complete.add_argument("--dry-run", action="store_true", help="Show the change without writing.")
+    task_complete.add_argument("--json", action="store_true", help="Emit JSON.")
+    task_complete.set_defaults(handler=_task_complete)
+    _add_reviewer_paths(task_update)
+    _add_reviewer_paths(task_complete)
+
+    workday = sub.add_parser("workday", help="Show, steer, or complete the five-slot workday plan.")
+    workday_sub = workday.add_subparsers(dest="workday_command")
+    workday_show = _add_workday_common(workday_sub.add_parser("show", help="Show the current workday plan."))
+    workday_show.set_defaults(handler=_workday_show)
+    workday_set = _add_workday_common(workday_sub.add_parser("set", help="Select or clear one workday slot."))
+    workday_set.add_argument("slot", choices=WORKDAY_SLOTS)
+    workday_set.add_argument("path", nargs="?", default="", help="Task path; omit to clear the slot.")
+    workday_set.set_defaults(handler=_workday_set)
+    workday_steer = _add_workday_common(workday_sub.add_parser("steer", help="Steer focus, urgent work, and notes."))
+    workday_steer.add_argument("--focus-project", dest="focus_project", default=None)
+    workday_steer.add_argument("--urgent-path", dest="urgent_path", default=None)
+    workday_steer.add_argument("--remove-urgent", dest="remove_urgent", default=None)
+    workday_steer.add_argument("--note", default=None)
+    workday_steer.add_argument("--clear", action="store_true")
+    workday_steer.set_defaults(handler=_workday_steer)
+    workday_complete = _add_workday_common(workday_sub.add_parser("complete", help="Complete a plan task by SHA."))
+    workday_complete.add_argument("path")
+    workday_complete.add_argument("--sha", required=True, help="The task SHA from the plan (stale-safe).")
+    workday_complete.add_argument("--reason", required=True, help="Human-readable reason for the completion.")
+    workday_complete.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    workday_complete.set_defaults(handler=_workday_complete)
+    workday_import = _add_workday_common(workday_sub.add_parser("import", help="Import a legacy workday plan."))
+    workday_import.add_argument("path", help="Path to the legacy data/workday-plan.json.")
+    workday_import.set_defaults(handler=_workday_import)
+
     return parser
+
+
+def _add_reviewer_paths(node: argparse.ArgumentParser) -> None:
+    node.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    node.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+
+
+def _add_workday_common(node: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    node.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    node.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    node.add_argument("--today", default=None, help="Workday reference date YYYY-MM-DD (default: today).")
+    node.add_argument("--dry-run", action="store_true", help="Show the change without writing.")
+    node.add_argument("--json", action="store_true", help="Emit JSON.")
+    return node
 
 
 def _resolve_paths(vault_arg: Path | None, db_arg: Path | None) -> tuple[Path, Path]:
@@ -502,7 +571,7 @@ def _views_write(args: argparse.Namespace) -> int:
     try:
         today = _resolve_today(args.today)
         generated_at = _resolve_generated_at(args.generated_at)
-        vault, runtime = _views_paths(args)
+        vault, runtime = _vault_runtime_paths(args)
         index = WorkIndex.from_vault(vault)
         views = _selected_views(index, args, today, generated_at)
         zones = view_zones(runtime, vault_root=vault)
@@ -532,7 +601,7 @@ def _selected_views(index: WorkIndex, args: argparse.Namespace, today: date, gen
     return build_views(index, today=today, generated_at=generated_at)
 
 
-def _views_paths(args: argparse.Namespace) -> tuple[Path, Path]:
+def _vault_runtime_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     if args.vault is not None and args.runtime is not None:
         return Path(args.vault), Path(args.runtime)
     config = load_config()
@@ -545,15 +614,6 @@ def _rebuild_derived(vault: Path, runtime: Path) -> None:
     db = index_path(runtime)
     index_vault(db, vault, rebuild=True)
     index_associations(db, vault)
-
-
-def _migrate_paths(args: argparse.Namespace) -> tuple[Path, Path]:
-    if args.vault is not None and args.runtime is not None:
-        return Path(args.vault), Path(args.runtime)
-    config = load_config()
-    vault = args.vault if args.vault is not None else config.vault_path
-    runtime = args.runtime if args.runtime is not None else config.runtime_root
-    return Path(vault), Path(runtime)
 
 
 def _migrate_payload(
@@ -588,7 +648,7 @@ def _print_migrate(payload: dict, as_json: bool) -> None:
 
 def _migrate_frontmatter(args: argparse.Namespace) -> int:
     try:
-        vault, runtime = _migrate_paths(args)
+        vault, runtime = _vault_runtime_paths(args)
         detections = detect(vault)
         if args.dry_run:
             payload = _migrate_payload(vault, detections, dry_run=True)
@@ -658,7 +718,7 @@ def _print_schema(payload: dict, as_json: bool) -> None:
 
 def _migrate_schema(args: argparse.Namespace) -> int:
     try:
-        vault, runtime = _migrate_paths(args)
+        vault, runtime = _vault_runtime_paths(args)
         report = schema_migration.detect(vault)
         invalid_before = len(_schema_invalid_paths(vault))
         if args.dry_run:
@@ -681,6 +741,217 @@ def _migrate_schema(args: argparse.Namespace) -> int:
     except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
         print(f"worksync: {exc}", file=sys.stderr)
         return 2
+
+
+def _configured_reviewer() -> str | None:
+    try:
+        config = load_config()
+    except (ConfigError, OSError):
+        return None
+    value = config.raw.get("reviewer")
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _resolve_current_reviewer(runtime: Path, explicit: str | None, *, remember: bool = True) -> str:
+    if explicit and str(explicit).strip():
+        return resolve_reviewer(runtime, explicit=explicit, remember=remember)
+    return resolve_reviewer(runtime, configured=_configured_reviewer())
+
+
+def _action_edits(args: argparse.Namespace) -> dict[str, str]:
+    return {dest: getattr(args, dest) for _, dest in ACTION_EDIT_FLAGS if getattr(args, dest) is not None}
+
+
+def _write_payload(result, *, dry_run: bool, reviewer: str, reason: str) -> dict:
+    payload = {
+        "path": result.path,
+        "committed": result.committed,
+        "dry_run": dry_run,
+        "reviewer": reviewer,
+        "reason": reason,
+        "journal": str(result.journal) if result.journal is not None else None,
+        "sha": result.sha,
+        "fields": result.fields,
+        "changes": [dict(change) for change in result.changes],
+    }
+    if dry_run:
+        payload["planned"] = result.planned
+    return payload
+
+
+def _print_write(payload: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+        return
+    verb = "would update" if payload["dry_run"] else "updated"
+    print(f"{verb} {payload['path']}")
+    for key, value in payload["fields"].items():
+        print(f"  {key}: {value}")
+
+
+def _task_update(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=not args.dry_run)
+        fields = _action_edits(args)
+        if not fields:
+            raise ActionWriteError("invalid_op", "Provide at least one field to update.")
+        result = update_action(
+            vault,
+            runtime,
+            args.path,
+            fields=fields,
+            reason=args.reason,
+            reviewer=reviewer,
+            expected=args.sha,
+            dry_run=args.dry_run,
+        )
+        if result.committed:
+            _rebuild_derived(vault, runtime)
+    except (ReviewerError, ActionWriteError, MutationError) as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    _print_write(_write_payload(result, dry_run=args.dry_run, reviewer=reviewer, reason=args.reason), args.json)
+    return 0
+
+
+def _task_complete(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=not args.dry_run)
+        result = complete_action(
+            vault,
+            runtime,
+            args.path,
+            reason=args.reason,
+            reviewer=reviewer,
+            expected=args.sha,
+            dry_run=args.dry_run,
+        )
+        if result.committed:
+            _rebuild_derived(vault, runtime)
+    except (ReviewerError, ActionWriteError, MutationError) as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    _print_write(_write_payload(result, dry_run=args.dry_run, reviewer=reviewer, reason=args.reason), args.json)
+    return 0
+
+
+def _print_plan(plan: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(plan, indent=2, default=str, ensure_ascii=False))
+        return
+    print(f"Workday {plan['date']}")
+    for slot in plan["slots"]:
+        selected = plan["selections"].get(slot)
+        print(f"  {slot}: {selected['title']}" if selected else f"  {slot}: (open)")
+        for item in plan["suggestions"].get(slot, []):
+            reasons = ", ".join(item["reasons"]) or "ranked"
+            print(f"      {item['score']:>4}  {item['task']['title']}  [{reasons}]")
+
+
+def _workday_show(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        today = _resolve_today(args.today)
+        plan = build_workday(WorkIndex.from_vault(vault), today=today, runtime_root=runtime)
+    except (ConfigError, FileNotFoundError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    _print_plan(plan, args.json)
+    return 0
+
+
+def _workday_set(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        today = _resolve_today(args.today)
+        plan = set_selection(
+            WorkIndex.from_vault(vault), runtime, args.slot, args.path, today=today, dry_run=args.dry_run
+        )
+    except (ConfigError, FileNotFoundError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    _print_plan(plan, args.json)
+    return 0
+
+
+def _workday_steer(args: argparse.Namespace) -> int:
+    changes: dict[str, object] = {}
+    if args.focus_project is not None:
+        changes["focus_project"] = args.focus_project
+    if args.urgent_path:
+        changes["urgent_path"] = args.urgent_path
+    if args.remove_urgent:
+        changes["remove_urgent"] = args.remove_urgent
+    if args.note is not None:
+        changes["note"] = args.note
+    if args.clear:
+        changes["clear"] = True
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        today = _resolve_today(args.today)
+        plan = set_steering(WorkIndex.from_vault(vault), runtime, changes, today=today, dry_run=args.dry_run)
+    except (ConfigError, FileNotFoundError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    _print_plan(plan, args.json)
+    return 0
+
+
+def _workday_complete(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=not args.dry_run)
+        today = _resolve_today(args.today)
+        result = complete_from_plan(
+            vault,
+            runtime,
+            args.path,
+            sha=args.sha,
+            reason=args.reason,
+            reviewer=reviewer,
+            today=today,
+            dry_run=args.dry_run,
+        )
+        if not args.dry_run:
+            _rebuild_derived(vault, runtime)
+    except (ReviewerError, ActionWriteError, MutationError) as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
+    else:
+        print(f"completed {result['completion']['path']}")
+        _print_plan(result["plan"], False)
+    return 0
+
+
+def _workday_import(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        today = _resolve_today(args.today)
+        report = import_legacy(WorkIndex.from_vault(vault), runtime, args.path, today=today, dry_run=args.dry_run)
+    except (ConfigError, FileNotFoundError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(report, indent=2, default=str, ensure_ascii=False))
+    else:
+        print(f"imported workday plan: kept {len(report['kept'])}, dropped {len(report['dropped'])}")
+        for item in report["dropped"]:
+            print(f"  DROPPED {item}")
+    return 0
 
 
 def _view_to_dict(view: object) -> dict:

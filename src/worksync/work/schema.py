@@ -98,6 +98,17 @@ def canonical_priority(value: object) -> tuple[bool, str | None]:
     return _priority_mapping(value)
 
 
+_PRIORITY_RANK: dict[str, int] = {"P1": 1, "P2": 2, "P3": 3, "P4": 4}
+
+
+def priority_rank(value: object) -> int | None:
+    """Return the canonical rank ``P1``->1 … ``P4``->4, or ``None`` when unset/unknown.
+
+    The single owner of priority ordering, so ranking callers never re-encode it.
+    """
+    return _PRIORITY_RANK.get(normalize_priority(value) or "")
+
+
 def _canonical_status(value: object, aliases: dict[str, str], allowed: frozenset[str]) -> str | None:
     if value is None:
         return None
