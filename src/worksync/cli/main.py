@@ -15,7 +15,17 @@ from worksync.context.projection import get_staleness, read_context
 from worksync.context.registry import list_projects, resolve_project
 from worksync.core.config import ConfigError, load_config
 from worksync.core.paths import PathSafetyError
-from worksync.html.generator import EntityLink, build_pages
+from worksync.html.generator import (
+    AttentionRef,
+    DetailSection,
+    EntityDetail,
+    EntityLink,
+    PersonRow,
+    ProjectRow,
+    WorkdayPlan,
+    WorkdaySlot,
+    build_pages,
+)
 from worksync.html.writer import generated_zones, write_pages
 from worksync.inventory.index import index_path, index_vault
 from worksync.migrate import schema as schema_migration
@@ -633,12 +643,20 @@ def _interface_build(args: argparse.Namespace) -> int:
         vault, runtime = _vault_runtime_paths(args)
         vault_name = _interface_vault_name(args, vault)
         index = WorkIndex.from_vault(vault)
-        projects = tuple(_entity_link(entity) for entity in active_projects(index))
-        people = tuple(_entity_link(entity) for entity in active_people(index))
+        projects = active_projects(index)
+        people = active_people(index)
+        project_reviews = tuple(build_project_review(index, project, today) for project in projects)
+        person_workloads = tuple(build_person_workload(index, person, today) for person in people)
         pages = build_pages(
             vault_name=vault_name,
-            projects=projects,
-            people=people,
+            projects=tuple(_entity_link(entity) for entity in projects),
+            people=tuple(_entity_link(entity) for entity in people),
+            project_rows=tuple(_project_row(review) for review in project_reviews),
+            person_rows=tuple(_person_row(workload) for workload in person_workloads),
+            workday=_workday_plan(build_workday(index, today=today, runtime_root=runtime)),
+            attention=tuple(_attention_ref(item) for item in attention_items(index, today)),
+            project_details=tuple(_project_detail(review) for review in project_reviews),
+            person_details=tuple(_person_detail(workload) for workload in person_workloads),
             external_links=(("Obsidian help", "https://help.obsidian.md"),),
             today=today,
             generated_at=generated_at,
@@ -677,12 +695,140 @@ def _interface_build(args: argparse.Namespace) -> int:
     return 0
 
 
-def _entity_link(entity: object) -> EntityLink:
+def _entity_link(entity: object, kind: str = "") -> EntityLink:
     return EntityLink(
         title=str(getattr(entity, "title", "")),
         note_path=str(getattr(entity, "path", "")),
         status=str(getattr(entity, "status", "") or ""),
+        kind=kind,
     )
+
+
+def _attention_ref(item: object) -> AttentionRef:
+    return AttentionRef(
+        kind=str(getattr(item, "kind", "")),
+        severity=str(getattr(item, "severity", "")),
+        title=str(getattr(item, "title", "")),
+        note_path=str(getattr(item, "path", "")),
+        reason=str(getattr(item, "reason", "")),
+    )
+
+
+def _owner_text(owners: object) -> str:
+    names: list[str] = []
+    for owner in owners if isinstance(owners, tuple | list) else ():
+        text = str(owner).strip().strip("[]").strip()
+        if text:
+            names.append(text)
+    return ", ".join(names)
+
+
+def _project_row(review: object) -> ProjectRow:
+    project = review.project
+    return ProjectRow(
+        title=str(getattr(project, "title", "")),
+        note_path=str(getattr(project, "path", "")),
+        status=str(getattr(project, "status", "") or ""),
+        priority=str(getattr(project, "priority", None) or ""),
+        owner=_owner_text(getattr(project, "owners", ())),
+        health=str(getattr(project, "health", None) or ""),
+    )
+
+
+def _person_row(workload: object) -> PersonRow:
+    person = workload.person
+    return PersonRow(
+        title=str(getattr(person, "title", "")),
+        note_path=str(getattr(person, "path", "")),
+        role=str(getattr(person, "role", None) or ""),
+        projects=len(workload.projects),
+        tickets=len(workload.tickets),
+        actions=len(workload.actions),
+        attention=len(workload.attention),
+    )
+
+
+def _project_detail(review: object) -> EntityDetail:
+    project = review.project
+    fields = (
+        ("Status", str(getattr(project, "status", "") or "-")),
+        ("Priority", str(getattr(project, "priority", None) or "-")),
+        ("Health", str(getattr(project, "health", None) or "-")),
+        ("Owners", _owner_text(getattr(project, "owners", ())) or "-"),
+        ("Next action", str(getattr(project, "next_action", None) or "-")),
+        ("Next review", str(getattr(project, "next_review", None) or "-")),
+        ("Last reviewed", str(getattr(project, "last_reviewed", None) or "-")),
+    )
+    sections = (
+        DetailSection("People", tuple(_entity_link(entity, kind="person") for entity in review.people)),
+        DetailSection("Tickets", tuple(_entity_link(entity) for entity in review.tickets)),
+        DetailSection("Actions", tuple(_entity_link(entity) for entity in review.actions)),
+        DetailSection("Meetings", tuple(_entity_link(entity) for entity in review.meetings)),
+        DetailSection(
+            "Blockers",
+            lines=tuple(f"[{item.severity}] {item.title} — {item.reason}" for item in review.blockers),
+        ),
+    )
+    return EntityDetail(
+        title=str(getattr(project, "title", "")),
+        kind="project",
+        note_path=str(getattr(project, "path", "")),
+        fields=fields,
+        sections=sections,
+    )
+
+
+def _person_detail(workload: object) -> EntityDetail:
+    person = workload.person
+    fields = (
+        ("Role", str(getattr(person, "role", None) or "-")),
+        ("Team", str(getattr(person, "team", None) or "-")),
+        ("Email", str(getattr(person, "email", None) or "-")),
+    )
+    sections = (
+        DetailSection("Projects", tuple(_entity_link(entity, kind="project") for entity in workload.projects)),
+        DetailSection("Tickets", tuple(_entity_link(entity) for entity in workload.tickets)),
+        DetailSection("Actions", tuple(_entity_link(entity) for entity in workload.actions)),
+        DetailSection("Meetings", tuple(_entity_link(entity) for entity in workload.meetings)),
+        DetailSection(
+            "Overdue",
+            lines=tuple(f"[{item.severity}] {item.title} — {item.reason}" for item in workload.overdue),
+        ),
+        DetailSection(
+            "Attention",
+            lines=tuple(f"[{item.severity}] {item.kind}: {item.title} — {item.reason}" for item in workload.attention),
+        ),
+    )
+    return EntityDetail(
+        title=str(getattr(person, "title", "")),
+        kind="person",
+        note_path=str(getattr(person, "path", "")),
+        fields=fields,
+        sections=sections,
+    )
+
+
+def _workday_plan(plan: dict) -> WorkdayPlan:
+    selections = plan.get("selections") or {}
+    slots = tuple(
+        WorkdaySlot(slot=str(name), task=_workday_task(selections.get(name))) for name in plan.get("slots", ())
+    )
+    return WorkdayPlan(date=str(plan.get("date") or ""), slots=slots)
+
+
+def _workday_task(task: object) -> EntityLink | None:
+    if not isinstance(task, dict):
+        return None
+    title = str(task.get("title") or "")
+    note_path = str(task.get("path") or "")
+    if not title and not note_path:
+        return None
+    detail = " · ".join(
+        part
+        for part in (str(task.get("priority") or ""), str(task.get("due") or ""), str(task.get("project") or ""))
+        if part
+    )
+    return EntityLink(title=title, note_path=note_path, status=str(task.get("status") or ""), detail=detail)
 
 
 def _interface_vault_name(args: argparse.Namespace, vault: Path) -> str:

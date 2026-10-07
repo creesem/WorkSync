@@ -37,16 +37,44 @@ def _base(vault: Path, runtime: Path) -> list[str]:
     ]
 
 
-def test_interface_build_writes_home_page(vault: Path, write_note: Callable[..., Path], tmp_path: Path, capsys) -> None:
+def test_interface_build_writes_the_full_surface_set(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path, capsys
+) -> None:
     _seed(vault, write_note)
     runtime = tmp_path / "var"
     assert main([*_base(vault, runtime), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["committed"] is True
-    assert payload["pages"] == ["index.html"]
-    written = vault / "0. System" / "Interface" / "index.html"
+    for name in ("index.html", "today.html", "projects.html", "team.html"):
+        assert name in payload["pages"]
+    root = vault / "0. System" / "Interface"
+    written = root / "index.html"
     assert written.is_file()
     assert "obsidian://open?vault=WorkSync&amp;file=People/Myles" in written.read_text(encoding="utf-8")
+    assert (root / "today.html").is_file()
+    assert (root / "projects.html").is_file()
+    assert (root / "team.html").is_file()
+    assert list((root / "project").glob("*.html"))
+    assert list((root / "person").glob("*.html"))
+    assert (root / "projects.html").read_text(encoding="utf-8").count("file=project/") >= 1
+
+
+def test_interface_build_uses_the_declared_project_owner(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    write_note(vault, "People/Myles.md", "---\ntype: person\nstatus: active\n---\n# Myles\n")
+    write_note(vault, "People/Carlos.md", "---\ntype: person\nstatus: active\n---\n# Carlos\n")
+    write_note(
+        vault,
+        "9. Project/Project - Eleos.md",
+        "---\ntype: project\nstatus: active\n"
+        'owners:\n  - "[[Myles]]"\npeople:\n  - "[[Carlos]]"\n---\n# Project Eleos\n',
+    )
+    runtime = tmp_path / "var"
+    assert main(_base(vault, runtime)) == 0
+    projects_html = (vault / "0. System" / "Interface" / "projects.html").read_text(encoding="utf-8")
+    assert "Myles" in projects_html
+    assert "Carlos" not in projects_html
 
 
 def test_interface_build_dry_run_writes_nothing(

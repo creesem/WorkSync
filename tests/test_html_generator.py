@@ -82,6 +82,6 @@ def test_home_renders_with_empty_inputs() -> None:
     assert page.content.rstrip().endswith("</html>")
 
 
-def test_build_pages_returns_the_home_page() -> None:
+def test_build_pages_returns_the_base_surfaces() -> None:
     pages = build_pages(vault_name="WorkSync", today=TODAY, generated_at=GENERATED_AT)
-    assert [page.filename for page in pages] == ["index.html"]
+    assert [page.filename for page in pages] == ["index.html", "today.html", "projects.html", "team.html"]
