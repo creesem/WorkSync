@@ -7,14 +7,14 @@ Canonical notes are linked, not copied.
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-07; full suite 360 passed, ruff clean)
 
-- [ ] `today.html` shows the five-slot workday plan plus attention and waiting items.
-- [ ] `projects.html` lists active projects with status, priority, owner, and health, and
+- [x] `today.html` shows the five-slot workday plan plus attention and waiting items.
+- [x] `projects.html` lists active projects with status, priority, owner, and health, and
       each project links to its detail page.
-- [ ] `team.html` lists per-person workload, and each person links to their detail page.
-- [ ] Project and person detail pages show structured fields plus links to the source
+- [x] `team.html` lists per-person workload, and each person links to their detail page.
+- [x] Project and person detail pages show structured fields plus links to the source
       note; no note body is copied.
-- [ ] The home page links only to pages that exist in the built set.
-- [ ] Stale or unresolved references are omitted rather than rendered as broken links.
-- [ ] Builder tests cover each surface with populated and with empty inputs.
+- [x] The home page links only to pages that exist in the built set.
+- [x] Stale or unresolved references are omitted rather than rendered as broken links.
+- [x] Builder tests cover each surface with populated and with empty inputs.
