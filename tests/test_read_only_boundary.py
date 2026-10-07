@@ -119,6 +119,16 @@ def test_mcp_adapter_import_closure_reaches_no_write_helper() -> None:
     assert "worksync.context.association" not in closure
 
 
+def test_html_layer_import_closure_excludes_context() -> None:
+    modules = _module_index()
+    closure = _closure(
+        ("worksync.html.links", "worksync.html.generator", "worksync.html.writer"),
+        modules,
+    )
+    assert not any(name.startswith("worksync.context") for name in closure)
+    assert "worksync.safety.gateway" in _closure_targets(closure, modules)
+
+
 def test_mcp_adapter_imports_only_context() -> None:
     modules = _module_index()
     direct = {target for target in _imports_of("worksync.mcp.main", modules["worksync.mcp.main"])}
@@ -153,7 +163,8 @@ def test_layer_direction_and_acyclicity() -> None:
         "work": {"core", "inventory", "safety"},
         "context": {"core", "inventory", "safety", "work"},
         "ingest": {"core", "inventory", "safety", "work"},
-        "cli": {"core", "inventory", "safety", "migrate", "work", "context", "ingest"},
+        "html": {"core", "safety", "work"},
+        "cli": {"core", "inventory", "safety", "migrate", "work", "context", "ingest", "html"},
         "gui": {"core", "inventory", "safety", "work", "context", "ingest"},
         "mcp": {"context"},
     }

@@ -15,6 +15,8 @@ from worksync.context.projection import get_staleness, read_context
 from worksync.context.registry import list_projects, resolve_project
 from worksync.core.config import ConfigError, load_config
 from worksync.core.paths import PathSafetyError
+from worksync.html.generator import EntityLink, build_pages
+from worksync.html.writer import generated_zones, write_pages
 from worksync.inventory.index import index_path, index_vault
 from worksync.migrate import schema as schema_migration
 from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
@@ -173,6 +175,20 @@ def build_parser() -> argparse.ArgumentParser:
     views_write.add_argument("--force", action="store_true", help="Overwrite an existing view.")
     views_write.add_argument("--json", action="store_true", help="Emit JSON.")
     views_write.set_defaults(handler=_views_write)
+
+    interface = sub.add_parser("interface", help="Build the generated HTML interface.")
+    interface_sub = interface.add_subparsers(dest="interface_command")
+    interface_build = interface_sub.add_parser("build", help="Render and write the generated interface.")
+    interface_build.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    interface_build.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    interface_build.add_argument("--vault-name", dest="vault_name", default=None, help="Vault name used in links.")
+    interface_build.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    interface_build.add_argument("--generated-at", dest="generated_at", default=None, help="Generation time ISO-8601.")
+    interface_build.add_argument("--confirm", action="store_true", help="Confirm overwriting existing pages.")
+    interface_build.add_argument("--force", action="store_true", help="Force overwriting existing pages.")
+    interface_build.add_argument("--dry-run", dest="dry_run", action="store_true", help="Render without writing.")
+    interface_build.add_argument("--json", action="store_true", help="Emit JSON.")
+    interface_build.set_defaults(handler=_interface_build)
 
     migrate = sub.add_parser("migrate", help="Detect or repair malformed vault frontmatter.")
     migrate_sub = migrate.add_subparsers(dest="migrate_command")
@@ -608,6 +624,77 @@ def _vault_runtime_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     vault = args.vault if args.vault is not None else config.vault_path
     runtime = args.runtime if args.runtime is not None else config.runtime_root
     return Path(vault), Path(runtime)
+
+
+def _interface_build(args: argparse.Namespace) -> int:
+    try:
+        today = _resolve_today(args.today)
+        generated_at = _resolve_generated_at(args.generated_at)
+        vault, runtime = _vault_runtime_paths(args)
+        vault_name = _interface_vault_name(args, vault)
+        index = WorkIndex.from_vault(vault)
+        projects = tuple(_entity_link(entity) for entity in active_projects(index))
+        people = tuple(_entity_link(entity) for entity in active_people(index))
+        pages = build_pages(
+            vault_name=vault_name,
+            projects=projects,
+            people=people,
+            external_links=(("Obsidian help", "https://help.obsidian.md"),),
+            today=today,
+            generated_at=generated_at,
+        )
+        zones = generated_zones(vault, runtime)
+        if args.dry_run:
+            payload = {
+                "committed": False,
+                "dry_run": True,
+                "generated_root": str(zones["generated"]),
+                "pages": [page.filename for page in pages],
+                "changes": [],
+            }
+            if args.json:
+                print(json.dumps(payload, indent=2))
+            else:
+                print(f"worksync: would write {len(pages)} page(s) to {zones['generated']}")
+            return 0
+        result = write_pages(pages, zones, confirmed=args.confirm, force=args.force)
+    except MutationError as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    payload = {
+        "committed": result.committed,
+        "generated_root": str(zones["generated"]),
+        "pages": [page.filename for page in pages],
+        "changes": [dict(change) for change in result.changes],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str))
+    else:
+        print(f"wrote {len(pages)} page(s) to {zones['generated']}")
+    return 0
+
+
+def _entity_link(entity: object) -> EntityLink:
+    return EntityLink(
+        title=str(getattr(entity, "title", "")),
+        note_path=str(getattr(entity, "path", "")),
+        status=str(getattr(entity, "status", "") or ""),
+    )
+
+
+def _interface_vault_name(args: argparse.Namespace, vault: Path) -> str:
+    if args.vault_name:
+        return args.vault_name
+    try:
+        config = load_config()
+    except ConfigError:
+        return Path(vault).name
+    if config.vault_path == Path(vault).expanduser().resolve():
+        return config.vault_name
+    return Path(vault).name
 
 
 def _rebuild_derived(vault: Path, runtime: Path) -> None:

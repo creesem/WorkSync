@@ -22,6 +22,7 @@ flowchart TD
     cli["cli"]
     gui["gui (read-only)"]
     mcp["mcp (read-only)"]
+    html["html (generated interface)"]
 
     inv --> core
     safety --> core
@@ -32,8 +33,12 @@ flowchart TD
     migrate --> work
     ctx --> work
     ingest --> work
+    html --> work
+    html --> safety
+    html --> core
     cli --> ctx
     cli --> migrate
+    cli --> html
     gui --> ctx
     mcp --> ctx
 ```
@@ -51,6 +56,7 @@ Arrows point from a package to what it depends on.
 | `migrate` | Vault migrations: detection and reviewable repair of malformed frontmatter, and normalization of work-entity frontmatter to the reconciled schema. Reads through `inventory` and the `work` mapping, writes only through the `safety` gateway; never adds a parser and never imports `context`. | V2 |
 | `context` | Retrieval and evidence: managed-repo registry and availability, membership vs relevance vs authority, the retrieval service (resolve/search/read/staleness), generated project context, managed-block integration. | yes |
 | `ingest` | Raw-to-staged-to-canonical ingestion and review/promotion: inbox, triage, inbox triage, backfill, routing, Krisp, email; PDF/Patron deferred. | V2 |
+| `html` | The generated HTML interface: the one link contract, a pure deterministic generator of self-contained pages from already-resolved entities, and a contained derived writer into the `generated` zone (`0. System/Interface/`). Imports no `context`; no JavaScript, no forms, no second parser. | V2 |
 | `cli` | Unified console entry points over the layers. | yes |
 | `gui` | Read-only local workspace (dashboards, entity detail); write interactions in V2. | yes (read-only) |
 | `mcp` | Read-only stdio MCP adapter over `context`. No write helpers. | yes |
@@ -64,6 +70,9 @@ Arrows point from a package to what it depends on.
   mapping); it never imports `context` or a write helper, so the parser stays pure and
   the gateway stays the only write seam.
 - `context` and `ingest` depend on `work` (and therefore on the foundations).
+- `html` depends on `core`, `safety`, and `work` only; it never imports `context`, so
+  the interface consumes resolved entities and can be split into its own repository
+  later. The `cli` orchestrates the reads and passes entities into `html`.
 - `cli`, `gui`, `mcp` are consumers and depend on the layers.
 - Dependency direction is one-way; no cycles. `inventory` never imports `work`,
   `context`, or `ingest`. `safety` never imports a domain layer.
