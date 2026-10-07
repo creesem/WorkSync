@@ -41,5 +41,7 @@ Do not claim a check passed unless it was actually run.
 2. Claim the ticket (`Status: claimed`) before working.
 3. Implement one small slice; add or update tests.
 4. Run the checks above.
-5. Review `git diff` before any commit. Never commit unless asked.
+5. Review `git diff` before committing. Commit each completed ticket to `main` once the
+   checks pass; keep unrelated changes out of the commit, and never force-push or
+   rewrite history.
 6. Report changed files, commands run, and real test status.
