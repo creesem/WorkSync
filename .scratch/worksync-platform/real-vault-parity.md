@@ -1,9 +1,9 @@
 # Real-vault parity: legacy vs. new platform
 
-- Generated: 2026-10-06T16:20:24.865244+00:00
+- Generated: 2026-10-07T02:22:53.357497+00:00
 - Vault: `C:\Users\macre\Documents\WorkSync`
-- Legacy index: `C:\Users\macre\AppData\Local\Temp\worksync-parity-m7iet941\legacy-index.sqlite3`
-- New index: `C:\Users\macre\AppData\Local\Temp\worksync-parity-m7iet941\new-index.sqlite3`
+- Legacy index: `C:\Users\macre\AppData\Local\Temp\worksync-parity-ghxdve2g\legacy-index.sqlite3`
+- New index: `C:\Users\macre\AppData\Local\Temp\worksync-parity-ghxdve2g\new-index.sqlite3`
 - Result: **PASS**
 
 ## 1. resolve_project
@@ -74,8 +74,8 @@
 ### `Evolv` scoped to `None`
 
 - match: **yes** (legacy 10 / new 10)
-  - `10. Meetings/Meeting - Evolve Upgrade Regression.md`
   - `Applications/myEvolv/New Hire Evolv Ticket Processing Guide (Internal).md`
+  - `10. Meetings/Meeting - Evolve Upgrade Regression.md`
   - `10. Meetings/Meeting - Internal Evolv Upgrade Regression.md`
   - `9. Project/TFC Migration Rollout Checklist.md`
   - `7. Task Notes/Active/Task - Define TFC data migration scope and decide fresh start vs. import.md`

@@ -49,7 +49,8 @@ Priority mapping from the legacy vault: `1→P1`, `2→P2`, `3→P3`, `4–7→P
 - **error** — missing required field, enum violation, conditional-rule violation,
   `next_review < last_reviewed`.
 - **warning** — missing recommended field, unresolved wikilink, `source_system`
-  without `sync_mode`, `malformed_frontmatter`.
+  without `sync_mode`, `malformed_frontmatter`, an undated meeting (`date_status:
+  undated`).
 - A note with errors is excluded from views but still listed in the health report; a
   malformed note is reported and skipped, never aborts the scan.
 
@@ -181,7 +182,9 @@ decisions, actions, and risks/blockers.
 **Required:** `type: meeting`; `status ∈ {scheduled, held, cancelled}`; `date` (ISO).
 
 **Optional:** `attendees`, `projects`, `project` (when exactly one), `meeting_type`,
-`source_proposal`, `source_system`, `external_id`, `sync_mode`, `tags`.
+`source_proposal`, `source_system`, `external_id`, `sync_mode`, `date_status`, `tags`.
+`date_status: undated` marks a `date` that is a placeholder (the migration sets
+`1970-01-01`); clear the marker when a real date is set.
 
 **Relationships:** → people (`attendees`), projects (`projects`), source
 transcript/proposal, derived decisions/actions.
@@ -274,5 +277,12 @@ No type is removed or renamed in V1.
 | Malformed YAML | tolerant read now; repair during migration | 61 |
 | Non-entity types | unchanged | 227 |
 
-Migration is owned by ticket 11. Until then reads are tolerant and errors are
-reported, not silently dropped.
+The schema normalization migration (`worksync migrate schema`, ADR-0015) has run over the
+vault as `safety.commit` transactions: 264 work notes were rewritten to this schema
+(197 actions, 55 meetings, 10 persons, 2 projects). 25 meetings had no `date` and no
+`YYYY-MM-DD` filename; each was given the placeholder `date: 1970-01-01` and
+`date_status: undated` and remains a validation warning until a real date is set. 2 notes
+had no deterministic mapping and were left unchanged and reported — one meeting with
+`status: draft` and one meeting template with `date: {{date}}`. The reader keeps the
+legacy aliases as a defensive fallback, but no canonical note relies on them. The
+malformed-frontmatter repair is a separate migration (ADR-0014).

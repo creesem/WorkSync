@@ -245,12 +245,12 @@ def _rollback(planned: list[dict], backup_dir: Path) -> None:
                         raise RuntimeError("created file changed after the write")
                     item["path"].unlink()
             elif item["kind"] == "update":
-                backup = backup_dir / str(item["backup"])
-                if not backup.is_file() or sha256_file(backup) != item["before"]:
-                    raise RuntimeError("backup is missing or corrupt")
                 current = sha256_file(item["path"]) if item["path"].is_file() else None
                 if current == item["before"]:
                     continue
+                backup = backup_dir / str(item["backup"])
+                if not backup.is_file() or sha256_file(backup) != item["before"]:
+                    raise RuntimeError("backup is missing or corrupt")
                 if current != item["after"]:
                     raise RuntimeError("target changed after the write")
                 atomic_write_bytes(item["path"], backup.read_bytes(), expected_sha256=item["after"])

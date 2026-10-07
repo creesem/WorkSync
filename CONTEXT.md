@@ -26,8 +26,10 @@ _Avoid_: case, mirror
 
 **Meeting**:
 A structured meeting note carrying deterministic sections for decisions, actions,
-and risks/blockers.
-_Avoid_: minutes, transcript
+and risks/blockers. Attendees are its people; the legacy `people` key was renamed to
+`attendees`. An undated meeting carries the placeholder date `1970-01-01` and
+`date_status: undated` until a real date is set.
+_Avoid_: minutes, transcript, participants key
 
 **Action**:
 An owned follow-up or delegated work item, created by hand, from a claim, or by

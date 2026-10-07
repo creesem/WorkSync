@@ -57,6 +57,15 @@ def test_project_review_date_order_is_error() -> None:
     assert any(issue.rule == "date_order" and issue.severity == "error" for issue in issues)
 
 
+def test_undated_meeting_is_a_warning_not_an_error() -> None:
+    issues = validate_entity(
+        Meeting(path="m.md", title="M", status="held", date="1970-01-01", raw={"date_status": "undated"})
+    )
+    undated = [issue for issue in issues if issue.rule == "undated"]
+    assert undated and undated[0].severity == "warning"
+    assert not has_errors(undated)
+
+
 def test_source_system_without_sync_mode_is_warning() -> None:
     issues = validate_entity(Meeting(path="m.md", title="M", status="held", date="2026-01-01", source_system="krisp"))
     assert any(issue.severity == "warning" and issue.rule == "conditional" for issue in issues)

@@ -1,9 +1,10 @@
 """YAML-faithful vault reader: the single parse layer.
 
 Produces :class:`IndexRecord` from vault notes. Frontmatter is read with
-:func:`read_frontmatter` (PyYAML) and written with :func:`set_frontmatter_fields`,
-so the reader and any writer stay byte-compatible. Encoding is ``utf-8-sig``.
-Lossy line parsers are retired.
+:func:`read_frontmatter` (PyYAML) and written in place with
+:func:`edit_frontmatter_fields` (which :func:`set_frontmatter_fields` delegates to), so
+the reader and the one writer stay byte-compatible. Encoding is ``utf-8-sig``. Lossy
+line parsers are retired.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -96,22 +98,91 @@ def read_frontmatter(content: str) -> Frontmatter:
     return Frontmatter(parsed, present=True, closed=True, malformed=False)
 
 
+_KEY_LINE = re.compile(r"^(?P<indent>[ \t]*)(?P<key>[A-Za-z_][A-Za-z0-9_-]*):(?P<rest>.*?)(?P<eol>\r?\n?)$")
+
+
+def _replace_scalar(match: re.Match[str], value: str) -> str:
+    rest = match.group("rest")
+    leading = rest[: len(rest) - len(rest.lstrip(" \t"))] or " "
+    core = rest.strip(" \t")
+    quoted = len(core) >= 2 and core[0] == core[-1] and core[0] in "\"'"
+    core = f"{core[0]}{value}{core[0]}" if quoted else value
+    return f"{match.group('indent')}{match.group('key')}:{leading}{core}{match.group('eol')}"
+
+
+def edit_frontmatter_fields(
+    content: str,
+    *,
+    set_fields: Mapping[str, str | None] | None = None,
+    rename_keys: Mapping[str, str] | None = None,
+) -> str:
+    """Return ``content`` with only the named frontmatter fields edited in place.
+
+    A ``set_fields`` value of ``None`` removes the key (and any indented block it owns).
+    A scalar replacement stays on its existing line and keeps the value's quoting; a
+    rename keeps the value lines; a missing key is appended at the end of the block.
+    Every unmapped line, its order, the note body, and the line endings (including CRLF)
+    are preserved byte-for-byte.
+    """
+    set_fields = dict(set_fields or {})
+    renames = dict(rename_keys or {})
+    if not set_fields and not renames:
+        return content
+
+    lines = content.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        additions = "".join(f"{key}: {value}\n" for key, value in set_fields.items() if value is not None)
+        if not additions:
+            return content
+        return f"---\n{additions}---\n{content}"
+
+    close = next((index for index in range(1, len(lines)) if lines[index].rstrip("\r\n") == "---"), None)
+    if close is None:
+        return content
+    block = lines[1:close]
+    tail = lines[close:]
+    eol = "\r\n" if lines[0].endswith("\r\n") else "\n"
+    edited: list[str] = []
+    handled: set[str] = set()
+    index = 0
+    while index < len(block):
+        line = block[index]
+        match = _KEY_LINE.match(line)
+        if match is None or match.group("indent"):
+            edited.append(line)
+            index += 1
+            continue
+        key = match.group("key")
+        drop = key in set_fields and set_fields[key] is None
+        if drop:
+            index += 1
+            while index < len(block) and block[index][:1] in (" ", "\t"):
+                index += 1
+            continue
+        if key in renames:
+            edited.append(f"{match.group('indent')}{renames[key]}:{match.group('rest')}{match.group('eol')}")
+            handled.add(key)
+        elif key in set_fields:
+            edited.append(_replace_scalar(match, str(set_fields[key])))
+            handled.add(key)
+        else:
+            edited.append(line)
+        index += 1
+    for key, value in set_fields.items():
+        if value is None or key in handled or key in renames:
+            continue
+        edited.append(f"{key}: {value}{eol}")
+    return "".join([lines[0], *edited, *tail])
+
+
 def set_frontmatter_fields(content: str, fields: dict[str, str | None]) -> str:
     """Return ``content`` with the given frontmatter fields set, removed, or replaced.
 
-    A ``None`` value removes the key; any other value replaces (or appends) it while
-    leaving untouched fields and their formatting intact.
+    A ``None`` value removes the key; any other value replaces (or appends) it. This is
+    a thin convenience wrapper over :func:`edit_frontmatter_fields`, so the parse layer
+    owns exactly one frontmatter writer.
     """
-    frontmatter, body = split_frontmatter(content)
-    lines = frontmatter.splitlines() if frontmatter else []
-    for key, value in fields.items():
-        lines = [line for line in lines if not re.match(rf"^{re.escape(key)}:\s*", line)]
-        if value is not None:
-            lines.append(f"{key}: {value}")
-    rendered = "\n".join(lines).strip()
-    if rendered:
-        return f"---\n{rendered}\n---\n{body.lstrip(chr(10))}"
-    return body.lstrip("\n")
+    return edit_frontmatter_fields(content, set_fields=fields)
 
 
 def _as_text(value: Any) -> str | None:

@@ -8,9 +8,13 @@ without error. The retired legacy ``task`` type reads as ``action``.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
 from typing import Any
 
 from worksync.inventory.parse import IndexRecord
+from worksync.work.dates import parse_iso_date
 from worksync.work.models import (
     Action,
     EntityBase,
@@ -30,6 +34,14 @@ LEGACY_TASK_STATUS: dict[str, str] = {
     "complete": "done",
     "dropped": "cancelled",
 }
+ACTION_STATUS_VALUES = frozenset({"open", "in_progress", "waiting", "watch", "parked", "done", "cancelled"})
+PROJECT_STATUS_VALUES = frozenset({"active", "paused", "blocked", "done", "archived"})
+PROJECT_STATUS_ALIASES: dict[str, str] = {"complete": "done"}
+PERSON_STATUS_VALUES = frozenset({"active", "inactive"})
+MEETING_STATUS_VALUES = frozenset({"scheduled", "held", "cancelled"})
+UNDATED_DATE = "1970-01-01"
+DATE_STATUS_UNDATED = "undated"
+_FILENAME_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def detect_type(value: object) -> str | None:
@@ -44,23 +56,230 @@ def detect_type(value: object) -> str | None:
     return text if text in OPERATOR_TYPE_VALUES else None
 
 
-def normalize_priority(value: object) -> str | None:
-    """Map a legacy or canonical priority to ``P1``-``P4`` (or ``None``)."""
+def _priority_mapping(value: object) -> tuple[bool, str | None]:
+    """Return ``(mappable, canonical)`` for a priority value.
+
+    ``canonical`` of ``None`` means the value normalizes to unset. ``mappable`` of
+    ``False`` means the value is outside the mapping.
+    """
     if value is None:
-        return None
+        return True, None
     text = str(value).strip()
     if not text or text.casefold() in {"medium", "none", "null"}:
-        return None
+        return True, None
     upper = text.upper()
     if upper in {"P1", "P2", "P3", "P4"}:
-        return upper
+        return True, upper
     if text.isdigit():
         number = int(text)
         if 1 <= number <= 3:
-            return f"P{number}"
+            return True, f"P{number}"
         if 4 <= number <= 7:
-            return "P4"
-    return text
+            return True, "P4"
+    return False, None
+
+
+def normalize_priority(value: object) -> str | None:
+    """Map a legacy or canonical priority to ``P1``-``P4`` (or ``None``).
+
+    Unknown values pass through unchanged so the tolerant reader can still surface them.
+    """
+    mappable, canonical = _priority_mapping(value)
+    return canonical if mappable else str(value).strip()
+
+
+def canonical_priority(value: object) -> tuple[bool, str | None]:
+    """Map a present ``priority`` value to ``(mappable, canonical)`` for the migration.
+
+    ``canonical`` of ``None`` means the value normalizes to unset and the key is
+    removed. ``mappable`` of ``False`` means the value is outside the mapping and must
+    not be guessed.
+    """
+    return _priority_mapping(value)
+
+
+def _canonical_status(value: object, aliases: dict[str, str], allowed: frozenset[str]) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    key = aliases.get(text.casefold(), text.casefold())
+    return key if key in allowed else None
+
+
+def canonical_action_status(value: object) -> str | None:
+    """Map a legacy or canonical action status to its canonical value, or ``None``."""
+    return _canonical_status(value, LEGACY_TASK_STATUS, ACTION_STATUS_VALUES)
+
+
+def canonical_project_status(value: object) -> str | None:
+    """Map a legacy or canonical project status to its canonical value, or ``None``."""
+    return _canonical_status(value, PROJECT_STATUS_ALIASES, PROJECT_STATUS_VALUES)
+
+
+def canonical_person_status(value: object) -> str | None:
+    """Map a legacy or canonical person status to its canonical value, or ``None``."""
+    return _canonical_status(value, {}, PERSON_STATUS_VALUES)
+
+
+def canonical_meeting_status(value: object, *, when: date) -> str | None:
+    """Return ``held`` for a date on or before *when*, else ``scheduled``.
+
+    Returns ``None`` when the value is not a parseable ISO date.
+    """
+    parsed = parse_iso_date(value)
+    if parsed is None:
+        return None
+    return "held" if parsed.date() <= when else "scheduled"
+
+
+def date_from_filename(path: str | Path) -> str | None:
+    """Return the first ``YYYY-MM-DD`` found in a note's filename, or ``None``."""
+    match = _FILENAME_DATE.search(Path(path).stem)
+    if match is None:
+        return None
+    candidate = match.group(0)
+    return candidate if parse_iso_date(candidate) is not None else None
+
+
+@dataclass(frozen=True)
+class NormalizationIntent:
+    """The field edits one note needs to reach the reconciled schema.
+
+    An empty intent (no edits and no ``skipped``) means the note already matches. A
+    non-empty ``skipped`` means the note cannot be mapped deterministically and must be
+    left untouched and reported.
+    """
+
+    set_fields: dict[str, str | None] = field(default_factory=dict)
+    rename_keys: dict[str, str] = field(default_factory=dict)
+    changes: tuple[str, ...] = ()
+    skipped: str | None = None
+
+    @property
+    def has_changes(self) -> bool:
+        """Return True when the note needs at least one field edit."""
+        return bool(self.set_fields or self.rename_keys)
+
+
+def _declared_type(frontmatter: dict[str, Any]) -> str:
+    return str(frontmatter.get("type") or "").strip().strip("\"'").casefold()
+
+
+def _action_intent(frontmatter: dict[str, Any]) -> NormalizationIntent:
+    set_fields: dict[str, str | None] = {}
+    changes: list[str] = []
+
+    if _declared_type(frontmatter) == "task":
+        set_fields["type"] = "action"
+        changes.append("type: task -> action")
+
+    status_value = frontmatter.get("status")
+    canonical_status = canonical_action_status(status_value)
+    if canonical_status is None:
+        return NormalizationIntent(skipped=f"unmappable action status: {status_value!r}")
+    current_status = str(status_value).strip().casefold() if status_value is not None else ""
+    if canonical_status != current_status:
+        set_fields["status"] = canonical_status
+        changes.append(f"status: {status_value} -> {canonical_status}")
+
+    if "priority" in frontmatter:
+        mappable, canonical = canonical_priority(frontmatter.get("priority"))
+        if not mappable:
+            return NormalizationIntent(skipped=f"unmappable action priority: {frontmatter.get('priority')!r}")
+        if canonical is None:
+            set_fields["priority"] = None
+            changes.append("priority: removed")
+        elif canonical != str(frontmatter.get("priority")).strip().upper():
+            set_fields["priority"] = canonical
+            changes.append(f"priority: {frontmatter.get('priority')} -> {canonical}")
+
+    return NormalizationIntent(set_fields, {}, tuple(changes))
+
+
+def _meeting_intent(path: str, frontmatter: dict[str, Any], *, when: date) -> NormalizationIntent:
+    set_fields: dict[str, str | None] = {}
+    rename_keys: dict[str, str] = {}
+    changes: list[str] = []
+
+    if frontmatter.get("people") is not None and frontmatter.get("attendees") is not None:
+        return NormalizationIntent(skipped="meeting carries both people and attendees")
+    if frontmatter.get("people") is not None:
+        rename_keys["people"] = "attendees"
+        changes.append("people -> attendees")
+
+    date_value = frontmatter.get("date")
+    if date_value is None or not str(date_value).strip():
+        derived = date_from_filename(path)
+        if derived is not None:
+            date_value = derived
+            set_fields["date"] = derived
+            changes.append(f"date: derived {derived}")
+        else:
+            date_value = UNDATED_DATE
+            set_fields["date"] = UNDATED_DATE
+            changes.append(f"date: undated -> {UNDATED_DATE}")
+            if str(frontmatter.get("date_status") or "").strip().casefold() != DATE_STATUS_UNDATED:
+                set_fields["date_status"] = DATE_STATUS_UNDATED
+                changes.append("date_status: -> undated")
+
+    status_value = frontmatter.get("status")
+    current_status = str(status_value).strip().casefold() if status_value is not None else ""
+    if current_status and current_status not in MEETING_STATUS_VALUES:
+        return NormalizationIntent(skipped=f"unmappable meeting status: {status_value!r}")
+    if not current_status:
+        canonical_status = canonical_meeting_status(date_value, when=when)
+        if canonical_status is None:
+            return NormalizationIntent(skipped=f"meeting date is not a parseable ISO date: {date_value!r}")
+        set_fields["status"] = canonical_status
+        changes.append(f"status: -> {canonical_status}")
+
+    return NormalizationIntent(set_fields, rename_keys, tuple(changes))
+
+
+def _project_intent(frontmatter: dict[str, Any]) -> NormalizationIntent:
+    if "status" not in frontmatter or frontmatter.get("status") is None:
+        return NormalizationIntent()
+    canonical = canonical_project_status(frontmatter.get("status"))
+    if canonical is None:
+        return NormalizationIntent(skipped=f"unmappable project status: {frontmatter.get('status')!r}")
+    current = str(frontmatter.get("status")).strip().casefold()
+    if canonical != current:
+        return NormalizationIntent({"status": canonical}, {}, (f"status: {current} -> {canonical}",))
+    return NormalizationIntent()
+
+
+def _person_intent(frontmatter: dict[str, Any]) -> NormalizationIntent:
+    status_value = frontmatter.get("status")
+    current = str(status_value).strip().casefold() if status_value is not None else ""
+    if not current:
+        return NormalizationIntent({"status": "active"}, {}, ("status: -> active",))
+    canonical = canonical_person_status(status_value)
+    if canonical is None:
+        return NormalizationIntent(skipped=f"unmappable person status: {status_value!r}")
+    if canonical != current:
+        return NormalizationIntent({"status": canonical}, {}, (f"status: {current} -> {canonical}",))
+    return NormalizationIntent()
+
+
+def normalization_intent(
+    entity_type: str, path: str, frontmatter: dict[str, Any], *, when: date
+) -> NormalizationIntent:
+    """Return the field edits one work note needs to reach the reconciled schema.
+
+    Pure function of the parsed frontmatter, the note path, and the migration date; it
+    never reads or writes the filesystem.
+    """
+    if entity_type == EntityType.ACTION.value:
+        return _action_intent(frontmatter)
+    if entity_type == EntityType.MEETING.value:
+        return _meeting_intent(path, frontmatter, when=when)
+    if entity_type == EntityType.PROJECT.value:
+        return _project_intent(frontmatter)
+    if entity_type == EntityType.PERSON.value:
+        return _person_intent(frontmatter)
+    return NormalizationIntent(skipped=f"no mapping for entity type: {entity_type!r}")
 
 
 def normalize_target(value: object) -> str:

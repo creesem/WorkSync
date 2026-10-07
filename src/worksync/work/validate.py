@@ -19,7 +19,7 @@ from worksync.work.models import (
     EntityBase,
     EntityType,
 )
-from worksync.work.schema import link_targets
+from worksync.work.schema import DATE_STATUS_UNDATED, link_targets
 
 REQUIRED_BY_TYPE: dict[str, tuple[str, ...]] = {
     EntityType.PROJECT.value: ("owners",),
@@ -134,6 +134,13 @@ def _validate_conditionals(entity: EntityBase) -> list[ValidationIssue]:
             issues.append(_issue(entity, "status 'waiting' requires field: waiting_on", rule="conditional"))
         if entity.status == "done" and not getattr(entity, "completed", None):
             issues.append(_issue(entity, "status 'done' requires field: completed", rule="conditional"))
+
+    if entity_type == EntityType.MEETING.value:
+        date_status = str(entity.raw.get("date_status") or "").strip().casefold()
+        if date_status == DATE_STATUS_UNDATED:
+            issues.append(
+                _issue(entity, "date is a placeholder (undated); set a real date", severity="warning", rule="undated")
+            )
 
     source_system = getattr(entity, "source_system", None)
     if source_system and not getattr(entity, "sync_mode", None):

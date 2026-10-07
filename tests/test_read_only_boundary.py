@@ -149,7 +149,7 @@ def test_layer_direction_and_acyclicity() -> None:
         "core": set(),
         "inventory": {"core"},
         "safety": {"core"},
-        "migrate": {"core", "inventory", "safety"},
+        "migrate": {"core", "inventory", "safety", "work"},
         "work": {"core", "inventory", "safety"},
         "context": {"core", "inventory", "safety", "work"},
         "ingest": {"core", "inventory", "safety", "work"},

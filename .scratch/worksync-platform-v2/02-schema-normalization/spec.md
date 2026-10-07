@@ -42,14 +42,16 @@ them without error and later specs own their disposition.
 | Entity | Count | Change |
 |---|---|---|
 | `task` → `action` | 197 | set `type: action`; `priority` `1→P1`, `2→P2`, `3→P3`, `4–7→P4`, and `medium`/`None`/`null`/empty → remove the key; `status` `todo`/`inbox`→`open`, `active`→`in_progress`, `complete`→`done`, `dropped`→`cancelled`, keep `done`/`waiting`/`watch`/`parked`; keep `owners`, `project`, `due`, `completed` and every unmapped field |
-| `meeting` | 57 | add `status` (`held` when `date` ≤ migration date, else `scheduled`; require `date`); rename `people` → `attendees`; keep `projects`; derive a missing `date` from a `YYYY-MM-DD` in the filename |
+| `meeting` | 57 | add `status` (`held` when `date` ≤ migration date, else `scheduled`; require `date`); rename `people` → `attendees`; keep `projects`; derive a missing `date` from a `YYYY-MM-DD` in the filename; a meeting with no date and no derivable filename date gets the placeholder `date: 1970-01-01` and `date_status: undated` (status `held`) |
 | `project` | 21 | `status: complete` → `done`; keep `owners`; do not add `priority`/`health` |
 | `person` | 10 | add `status: active` when absent |
 | `ticket` | 0 | none exist |
 
-A `task`/`meeting`/`project`/`person` note that cannot be mapped deterministically
-(a meeting with no date anywhere, a value outside the mapping) reports no mapping and
-fails the run closed.
+A `task`/`meeting`/`project`/`person` note whose present value is outside the mapping
+(for example a non-canonical meeting `status`) reports no mapping, is left untouched,
+and is listed as skipped rather than aborting the run. An undated meeting is not a
+failure: it is marked with the placeholder date and `date_status: undated`. Safety still
+fails closed — a missing target or a changed source hash aborts with no writes.
 
 ## User Stories
 
@@ -96,6 +98,8 @@ fails the run closed.
     migration stays correct.
 21. As a maintainer, I want the decision recorded as an ADR and any new terms in the
     glossary, so that a future reader understands why the vault was mutated.
+22. As a manager, I want an undated meeting marked as undated with a placeholder date, so
+    that it satisfies the schema and stays visible in the health report until I date it.
 
 ## Implementation Decisions
 

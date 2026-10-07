@@ -16,6 +16,7 @@ from worksync.context.registry import list_projects, resolve_project
 from worksync.core.config import ConfigError, load_config
 from worksync.core.paths import PathSafetyError
 from worksync.inventory.index import index_path, index_vault
+from worksync.migrate import schema as schema_migration
 from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
 from worksync.safety.activity import list_events
 from worksync.safety.models import MutationError
@@ -176,6 +177,13 @@ def build_parser() -> argparse.ArgumentParser:
     frontmatter.add_argument("--dry-run", action="store_true", help="List the proposed repairs without writing.")
     frontmatter.add_argument("--json", action="store_true", help="Emit JSON.")
     frontmatter.set_defaults(handler=_migrate_frontmatter)
+
+    schema = migrate_sub.add_parser("schema", help="Normalize work-entity frontmatter to the reconciled schema.")
+    schema.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    schema.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    schema.add_argument("--dry-run", action="store_true", help="List the proposed changes without writing.")
+    schema.add_argument("--json", action="store_true", help="Emit JSON.")
+    schema.set_defaults(handler=_migrate_schema)
 
     return parser
 
@@ -533,6 +541,12 @@ def _views_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     return Path(vault), Path(runtime)
 
 
+def _rebuild_derived(vault: Path, runtime: Path) -> None:
+    db = index_path(runtime)
+    index_vault(db, vault, rebuild=True)
+    index_associations(db, vault)
+
+
 def _migrate_paths(args: argparse.Namespace) -> tuple[Path, Path]:
     if args.vault is not None and args.runtime is not None:
         return Path(args.vault), Path(args.runtime)
@@ -583,9 +597,7 @@ def _migrate_frontmatter(args: argparse.Namespace) -> int:
         result = apply_repairs(vault, runtime, detections=detections)
         malformed_after = len(detections)
         if result is not None:
-            db = index_path(runtime)
-            index_vault(db, vault, rebuild=True)
-            index_associations(db, vault)
+            _rebuild_derived(vault, runtime)
             malformed_after = len(detect(vault))
     except MutationError as exc:
         print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
@@ -596,6 +608,79 @@ def _migrate_frontmatter(args: argparse.Namespace) -> int:
     payload = _migrate_payload(vault, detections, dry_run=False, result=result, malformed_after=malformed_after)
     _print_migrate(payload, args.json)
     return 0
+
+
+def _schema_invalid_paths(vault: Path) -> list[str]:
+    index = WorkIndex.from_vault(vault)
+    return sorted({issue.path for issue in index.errors})
+
+
+def _migrate_schema_payload(
+    vault: Path,
+    report: schema_migration.NormalizationReport,
+    *,
+    dry_run: bool,
+    invalid_before: int,
+    result=None,
+    invalid_after: int | None = None,
+) -> dict:
+    return {
+        "vault": str(vault),
+        "dry_run": dry_run,
+        "planned": [
+            {"path": change.path, "type": change.entity_type, "changes": list(change.changes)}
+            for change in report.changes
+        ],
+        "skipped": [{"path": note.path, "type": note.entity_type, "reason": note.reason} for note in report.skipped],
+        "normalized": [change.path for change in report.changes] if result else [],
+        "committed": bool(result and result.committed),
+        "journal": str(result.journal) if result else None,
+        "schema_invalid_before": invalid_before,
+        "schema_invalid_after": invalid_after,
+    }
+
+
+def _print_schema(payload: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    if payload["dry_run"]:
+        print(f"worksync migrate schema: dry run — {len(payload['planned'])} note(s) to normalize")
+    else:
+        print(f"worksync migrate schema: normalized {len(payload['normalized'])} note(s)")
+    for item in payload["planned"]:
+        print(f"  [{item['type']}] {item['path']}: {', '.join(item['changes'])}")
+    for item in payload["skipped"]:
+        print(f"  SKIPPED {item['path']}: {item['reason']}")
+    if payload["schema_invalid_after"] is not None:
+        print(f"  schema-invalid work notes: {payload['schema_invalid_before']} -> {payload['schema_invalid_after']}")
+
+
+def _migrate_schema(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _migrate_paths(args)
+        report = schema_migration.detect(vault)
+        invalid_before = len(_schema_invalid_paths(vault))
+        if args.dry_run:
+            payload = _migrate_schema_payload(vault, report, dry_run=True, invalid_before=invalid_before)
+            _print_schema(payload, args.json)
+            return 0
+        result = schema_migration.apply_normalization(vault, runtime, report=report)
+        invalid_after = invalid_before
+        if result is not None:
+            _rebuild_derived(vault, runtime)
+            invalid_after = len(_schema_invalid_paths(vault))
+        payload = _migrate_schema_payload(
+            vault, report, dry_run=False, invalid_before=invalid_before, result=result, invalid_after=invalid_after
+        )
+        _print_schema(payload, args.json)
+        return 0
+    except MutationError as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
 
 
 def _view_to_dict(view: object) -> dict:

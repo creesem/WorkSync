@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from worksync.inventory.parse import (
+    edit_frontmatter_fields,
     parse_note,
     read_frontmatter,
     scan_vault,
@@ -71,6 +72,36 @@ def test_set_frontmatter_fields_round_trips(vault: Path, write_note: Callable[..
     assert frontmatter.data["owners"] == ["[[Myles Creese]]"]
     assert frontmatter.data["meta"]["phase"] == 1
     assert "# Project - Example" in updated
+
+
+def test_edit_frontmatter_replaces_scalar_in_place_and_keeps_quotes() -> None:
+    text = '---\ntype: "task"\nstatus: todo\npriority: 2\nowner: x\n---\n# T\n'
+    edited = edit_frontmatter_fields(text, set_fields={"status": "open", "priority": "P2"})
+    assert edited == '---\ntype: "task"\nstatus: open\npriority: P2\nowner: x\n---\n# T\n'
+
+
+def test_edit_frontmatter_renames_key_removes_and_appends() -> None:
+    text = "---\ntype: meeting\npeople:\n  - a\npriority: 2\n---\n# M\n"
+    edited = edit_frontmatter_fields(
+        text, set_fields={"status": "held", "priority": None}, rename_keys={"people": "attendees"}
+    )
+    assert edited == "---\ntype: meeting\nattendees:\n  - a\nstatus: held\n---\n# M\n"
+
+
+def test_edit_frontmatter_removes_key_and_its_block() -> None:
+    text = "---\ntype: action\npriority: 2\ntags:\n  - a\n  - b\n---\n# A\n"
+    edited = edit_frontmatter_fields(text, set_fields={"priority": None})
+    assert edited == "---\ntype: action\ntags:\n  - a\n  - b\n---\n# A\n"
+
+
+def test_edit_frontmatter_preserves_crlf_and_body() -> None:
+    text = "---\r\ntype: task\r\nstatus: todo\r\n---\r\n# Body\r\nline\r\n"
+    edited = edit_frontmatter_fields(text, set_fields={"type": "action", "status": "open"})
+    assert edited == "---\r\ntype: action\r\nstatus: open\r\n---\r\n# Body\r\nline\r\n"
+
+
+def test_set_frontmatter_fields_synthesizes_a_block_when_absent() -> None:
+    assert set_frontmatter_fields("# Body\n", {"status": "active"}) == "---\nstatus: active\n---\n# Body\n"
 
 
 def test_parse_note_extracts_structure(vault: Path, write_note: Callable[..., Path]) -> None:

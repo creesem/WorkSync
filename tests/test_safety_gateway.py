@@ -333,6 +333,40 @@ def test_rollback_skips_an_update_that_never_landed(zones: dict[str, Path], monk
     assert second.read_text(encoding="utf-8") == "b-old"
 
 
+def test_rollback_skips_an_unlanded_update_with_no_backup(
+    zones: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _write(zones["trusted"] / "a.md", "a-old")
+    middle = _write(zones["trusted"] / "b.md", "b-old")
+    last = _write(zones["trusted"] / "c.md", "c-old")
+    real = gateway.atomic_write_text
+
+    def flaky(path, content, **kwargs):
+        if str(path).endswith("b.md"):
+            raise RuntimeError("disk full")
+        return real(path, content, **kwargs)
+
+    monkeypatch.setattr("worksync.safety.gateway.atomic_write_text", flaky)
+    with pytest.raises(MutationError) as excinfo:
+        commit(
+            ChangeSet(
+                "update_status",
+                (
+                    FileOp("update", Path("a.md"), "trusted", content="a-new", expected=sha256_file(first)),
+                    FileOp("update", Path("b.md"), "trusted", content="b-new", expected=sha256_file(middle)),
+                    FileOp("update", Path("c.md"), "trusted", content="c-new", expected=sha256_file(last)),
+                ),
+                reviewer="Myles",
+                reason="middle update fails before the last one lands",
+            ),
+            zones,
+        )
+    assert _code(excinfo) == "rolled_back"
+    assert first.read_text(encoding="utf-8") == "a-old"
+    assert middle.read_text(encoding="utf-8") == "b-old"
+    assert last.read_text(encoding="utf-8") == "c-old"
+
+
 def test_precondition_failure_leaves_no_partial_write(zones: dict[str, Path]) -> None:
     stale = _write(zones["views"] / "existing.md", "old")
     with pytest.raises(MutationError) as excinfo:
