@@ -30,13 +30,37 @@ def _contained(root: str | Path, target: str | Path) -> Path:
     return ensure_under(root_path, candidate)
 
 
-def write_text(root: str | Path, target: str | Path, content: str) -> Path:
-    """Atomically write derived text under *root*, refusing a containment escape."""
+def write_text(
+    root: str | Path,
+    target: str | Path,
+    content: str,
+    *,
+    expected: str | None = None,
+    expected_absent: bool = False,
+) -> Path:
+    """Atomically write derived text under *root*, refusing a containment escape.
+
+    ``expected`` and ``expected_absent`` add a stale-state precondition so a concurrent
+    writer (for example another app tab) cannot clobber this one; a mismatch fails closed.
+    """
     resolved = _contained(root, target)
-    atomic_write_text(resolved, content)
+    atomic_write_text(resolved, content, expected_sha256=expected, expected_absent=expected_absent)
     return resolved
 
 
-def write_json(root: str | Path, target: str | Path, payload: Any) -> Path:
+def write_json(
+    root: str | Path,
+    target: str | Path,
+    payload: Any,
+    *,
+    expected: str | None = None,
+    expected_absent: bool = False,
+) -> Path:
     """Atomically write derived JSON under *root*, refusing a containment escape."""
-    return write_text(root, target, json.dumps(payload, indent=2, ensure_ascii=False, default=str) + "\n")
+    return write_text(
+        root,
+        target,
+        json.dumps(payload, indent=2, ensure_ascii=False, default=str) + "\n",
+        expected=expected,
+        expected_absent=expected_absent,
+    )

@@ -12,6 +12,13 @@ from pathlib import Path
 
 from worksync.core.paths import GENERATED_INTERFACE_REL
 
+STAGING_DIRNAME = "staging"
+
+
+def staging_root(runtime_root: str | Path) -> Path:
+    """Return the derived staging root under the runtime root."""
+    return Path(runtime_root).expanduser().resolve() / STAGING_DIRNAME
+
 
 def write_zones(vault_root: str | Path, runtime_root: str | Path) -> dict[str, Path]:
     """Return the standard writable roots for a vault and runtime root."""
@@ -19,7 +26,7 @@ def write_zones(vault_root: str | Path, runtime_root: str | Path) -> dict[str, P
     runtime = Path(runtime_root).expanduser().resolve()
     return {
         "trusted": vault,
-        "staging": runtime / "staging",
+        "staging": staging_root(runtime),
         "ingest": runtime / "ingest",
         "views": runtime / "views",
         "generated": vault / GENERATED_INTERFACE_REL,
