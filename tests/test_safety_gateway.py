@@ -367,6 +367,39 @@ def test_rollback_skips_an_unlanded_update_with_no_backup(
     assert last.read_text(encoding="utf-8") == "c-old"
 
 
+def test_rollback_skips_an_unlanded_move(zones: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    first = _write(zones["trusted"] / "a.md", "a-old")
+    failing = _write(zones["trusted"] / "d.md", "d-old")
+    source = _write(zones["trusted"] / "b.md", "b-body")
+    real = gateway.atomic_write_text
+
+    def flaky(path, content, **kwargs):
+        if str(path).endswith("d.md"):
+            raise RuntimeError("disk full")
+        return real(path, content, **kwargs)
+
+    monkeypatch.setattr("worksync.safety.gateway.atomic_write_text", flaky)
+    with pytest.raises(MutationError) as excinfo:
+        commit(
+            ChangeSet(
+                "update_status",
+                (
+                    FileOp("update", Path("a.md"), "trusted", content="a-new", expected=sha256_file(first)),
+                    FileOp("update", Path("d.md"), "trusted", content="d-new", expected=sha256_file(failing)),
+                    FileOp("move", Path("b.md"), "trusted", destination=Path("c.md"), expected=sha256_file(source)),
+                ),
+                reviewer="Myles",
+                reason="failure before the move lands",
+            ),
+            zones,
+        )
+    assert _code(excinfo) == "rolled_back"
+    assert first.read_text(encoding="utf-8") == "a-old"
+    assert failing.read_text(encoding="utf-8") == "d-old"
+    assert source.read_text(encoding="utf-8") == "b-body"
+    assert not (zones["trusted"] / "c.md").exists()
+
+
 def test_precondition_failure_leaves_no_partial_write(zones: dict[str, Path]) -> None:
     stale = _write(zones["views"] / "existing.md", "old")
     with pytest.raises(MutationError) as excinfo:

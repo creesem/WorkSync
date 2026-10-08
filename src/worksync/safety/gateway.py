@@ -255,9 +255,14 @@ def _rollback(planned: list[dict], backup_dir: Path) -> None:
                     raise RuntimeError("target changed after the write")
                 atomic_write_bytes(item["path"], backup.read_bytes(), expected_sha256=item["after"])
             else:
-                if not item["destination"].is_file() or sha256_file(item["destination"]) != item["after"]:
+                destination = item["destination"]
+                if not destination.is_file():
+                    if item["path"].is_file() and sha256_file(item["path"]) == item["after"]:
+                        continue
+                    raise RuntimeError("move source changed without a destination")
+                if sha256_file(destination) != item["after"]:
                     raise RuntimeError("move destination changed after the write")
-                os.replace(item["destination"], item["path"])
+                os.replace(destination, item["path"])
         except Exception as exc:
             failures.append(f"{item['path']}: {exc}")
     if failures:
