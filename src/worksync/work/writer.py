@@ -8,6 +8,7 @@ through the single inventory scanner; this module never imports ``context``.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -15,7 +16,6 @@ from typing import Any
 
 from worksync.core.paths import resolve_stored_path
 from worksync.inventory.parse import edit_frontmatter_fields, parse_note
-from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit
 from worksync.safety.models import ChangeSet, CommitResult, FileOp
 from worksync.safety.zones import write_zones
@@ -57,6 +57,65 @@ class ActionWriteResult:
     changes: tuple[dict, ...]
     planned: str | None = None
     fields: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ActionPlan:
+    """A validated action edit ready to commit, with no I/O performed yet."""
+
+    path: str
+    content: str
+    expected: str
+    fields: dict[str, Any]
+    reason: str
+
+
+def plan_update_action(
+    vault: str | Path,
+    path: str,
+    *,
+    fields: dict[str, Any],
+    reason: str,
+    reviewer: str,
+    expected: str | None = None,
+    today: date | None = None,
+) -> ActionPlan:
+    """Validate an allowlisted action edit and return its plan without writing."""
+    return _plan_action(vault, path, fields=fields, reason=reason, reviewer=reviewer, expected=expected, today=today)
+
+
+def plan_complete_action(
+    vault: str | Path,
+    path: str,
+    *,
+    reason: str,
+    reviewer: str,
+    expected: str | None = None,
+    today: date | None = None,
+) -> ActionPlan:
+    """Validate a completion and return its plan without writing."""
+    return _plan_action(
+        vault, path, fields={"status": "done"}, reason=reason, reviewer=reviewer, expected=expected, today=today
+    )
+
+
+def commit_action_plans(
+    vault: str | Path,
+    runtime: str | Path,
+    plans: tuple[ActionPlan, ...],
+    *,
+    verb: str,
+    reviewer: str,
+    reason: str,
+    confirmed: bool = False,
+) -> CommitResult:
+    """Commit one or more action plans as a single canonical transaction."""
+    vault_root = Path(vault).expanduser().resolve()
+    ops = tuple(
+        FileOp("update", Path(plan.path), "trusted", content=plan.content, expected=plan.expected) for plan in plans
+    )
+    changeset = ChangeSet(verb, ops, reviewer=reviewer, reason=reason)
+    return commit(changeset, write_zones(vault_root, runtime), confirmed=confirmed)
 
 
 def update_action(
@@ -112,19 +171,16 @@ def complete_action(
     )
 
 
-def _apply_action(
+def _plan_action(
     vault: str | Path,
-    runtime: str | Path,
     path: str,
     *,
     fields: dict[str, Any],
-    verb: str,
     reason: str,
     reviewer: str,
     expected: str | None,
     today: date | None,
-    dry_run: bool,
-) -> ActionWriteResult:
+) -> ActionPlan:
     when = today or date.today()
     if not str(reviewer).strip():
         raise ActionWriteError("missing_reviewer", "A canonical write requires a named reviewer.")
@@ -142,29 +198,48 @@ def _apply_action(
     edits = _build_edits(record.frontmatter, fields, today=when, reviewer=reviewer, reason=reason)
     content = edit_frontmatter_fields(record.content, set_fields=edits)
     result_fields = {key: value for key, value in edits.items() if key in fields and value is not None}
+    return ActionPlan(
+        path=relative,
+        content=content,
+        expected=record.content_hash,
+        fields=result_fields,
+        reason=str(reason).strip(),
+    )
 
+
+def _apply_action(
+    vault: str | Path,
+    runtime: str | Path,
+    path: str,
+    *,
+    fields: dict[str, Any],
+    verb: str,
+    reason: str,
+    reviewer: str,
+    expected: str | None,
+    today: date | None,
+    dry_run: bool,
+) -> ActionWriteResult:
+    plan = _plan_action(vault, path, fields=fields, reason=reason, reviewer=reviewer, expected=expected, today=today)
     if dry_run:
         return ActionWriteResult(
-            path=relative,
+            path=plan.path,
             committed=False,
-            sha=record.content_hash,
+            sha=plan.expected,
             journal=None,
             changes=(),
-            planned=content,
-            fields=result_fields,
+            planned=plan.content,
+            fields=plan.fields,
         )
-
-    op = FileOp("update", Path(relative), "trusted", content=content, expected=record.content_hash)
-    changeset = ChangeSet(verb, (op,), reviewer=reviewer, reason=reason)
-    committed: CommitResult = commit(changeset, write_zones(vault_root, runtime))
+    committed = commit_action_plans(vault, runtime, (plan,), verb=verb, reviewer=reviewer, reason=str(reason).strip())
     return ActionWriteResult(
-        path=relative,
+        path=plan.path,
         committed=committed.committed,
-        sha=sha256_file(target),
+        sha=hashlib.sha256(plan.content.encode("utf-8")).hexdigest(),
         journal=committed.journal,
         changes=committed.changes,
-        planned=content,
-        fields=result_fields,
+        planned=plan.content,
+        fields=plan.fields,
     )
 
 
@@ -271,8 +346,12 @@ __all__ = [
     "ALLOWED_FIELDS",
     "COMPLETE_VERB",
     "EDIT_VERB",
+    "ActionPlan",
     "ActionWriteError",
     "ActionWriteResult",
+    "commit_action_plans",
     "complete_action",
+    "plan_complete_action",
+    "plan_update_action",
     "update_action",
 ]

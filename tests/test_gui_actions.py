@@ -10,9 +10,11 @@ import pytest
 
 from worksync.gui.actions import ActionError, dispatch_action
 from worksync.gui.controller import GuiService
+from worksync.safety import gateway
 
 TODAY = date(2026, 10, 6)
 A_PATH = "7. Task Notes/Active/Task One.md"
+A2_PATH = "7. Task Notes/Active/Task Two.md"
 ACTION = (
     "---\n"
     "type: action\n"
@@ -27,11 +29,13 @@ ACTION = (
     "# Task One\n"
     "Body line\n"
 )
+ACTION_TWO = ACTION.replace("# Task One", "# Task Two")
 PROJECT_PATH = "9. Project/Project - Alpha.md"
 
 
 def _seed(vault: Path, write_note: Callable[..., Path]) -> None:
     write_note(vault, A_PATH, ACTION)
+    write_note(vault, A2_PATH, ACTION_TWO)
     write_note(
         vault,
         PROJECT_PATH,
@@ -162,3 +166,90 @@ def test_set_reviewer_persists_and_is_used(vault: Path, write_note: Callable[...
     result = dispatch_action(service, "complete-action", {"path": A_PATH, "reason": "Done"}, today=TODAY)
     assert result["reviewer"] == "Dana"
     assert result["changes"][0]["reviewer"] == "Dana"
+
+
+def test_batch_commits_every_valid_intent(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed(vault, write_note)
+    service = _service(vault, tmp_path / "var")
+    payload = {
+        "reason": "Batch tidy",
+        "items": [
+            {"action": "complete-action", "path": A_PATH},
+            {"action": "update-action", "path": A2_PATH, "fields": {"priority": "P1"}},
+        ],
+    }
+    result = dispatch_action(service, "apply-batch", payload, today=TODAY)
+
+    assert result["action"] == "apply-batch"
+    assert result["committed"] is True
+    assert len(result["changes"]) == 2
+    assert {item["path"] for item in result["items"]} == {A_PATH, A2_PATH}
+    assert all(item["equivalent_cli"].startswith("worksync task") for item in result["items"])
+    assert "status: done" in (vault / A_PATH).read_text(encoding="utf-8")
+    assert "priority: P1" in (vault / A2_PATH).read_text(encoding="utf-8")
+
+
+def test_batch_with_one_stale_intent_rolls_back_everything(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(vault, write_note)
+    service = _service(vault, tmp_path / "var")
+    payload = {
+        "reason": "Batch tidy",
+        "items": [
+            {"action": "complete-action", "path": A_PATH},
+            {"action": "update-action", "path": A2_PATH, "fields": {"priority": "P1"}, "expected": "deadbeef"},
+        ],
+    }
+    with pytest.raises(ActionError) as excinfo:
+        dispatch_action(service, "apply-batch", payload, today=TODAY)
+    assert excinfo.value.code == "stale_hash"
+    assert (vault / A_PATH).read_text(encoding="utf-8") == ACTION
+    assert (vault / A2_PATH).read_text(encoding="utf-8") == ACTION_TWO
+
+
+def test_batch_requires_items(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed(vault, write_note)
+    service = _service(vault, tmp_path / "var")
+    with pytest.raises(ActionError) as excinfo:
+        dispatch_action(service, "apply-batch", {"reason": "Nothing"}, today=TODAY)
+    assert excinfo.value.code == "bad_request"
+    assert excinfo.value.status == 400
+
+
+def test_batch_rejects_an_unknown_item_action(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed(vault, write_note)
+    service = _service(vault, tmp_path / "var")
+    payload = {"reason": "Batch", "items": [{"action": "nope", "path": A_PATH}]}
+    with pytest.raises(ActionError) as excinfo:
+        dispatch_action(service, "apply-batch", payload, today=TODAY)
+    assert excinfo.value.code == "unknown_action"
+    assert excinfo.value.status == 404
+
+
+def test_batch_rolls_back_on_a_mid_apply_failure(
+    monkeypatch: pytest.MonkeyPatch, vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(vault, write_note)
+    service = _service(vault, tmp_path / "var")
+    real_write = gateway.atomic_write_text
+
+    def flaky(path: Path, text: str, **kwargs: object) -> None:
+        if path.name == "Task Two.md":
+            raise OSError("disk full")
+        real_write(path, text, **kwargs)
+
+    monkeypatch.setattr(gateway, "atomic_write_text", flaky)
+    payload = {
+        "reason": "Batch tidy",
+        "items": [
+            {"action": "complete-action", "path": A_PATH},
+            {"action": "complete-action", "path": A2_PATH},
+        ],
+    }
+    with pytest.raises(ActionError) as excinfo:
+        dispatch_action(service, "apply-batch", payload, today=TODAY)
+    assert excinfo.value.code == "rolled_back"
+    assert excinfo.value.status == 500
+    assert (vault / A_PATH).read_text(encoding="utf-8") == ACTION
+    assert (vault / A2_PATH).read_text(encoding="utf-8") == ACTION_TWO

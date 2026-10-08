@@ -17,7 +17,15 @@ from typing import Any, Protocol
 from worksync.safety.models import MutationError
 from worksync.work import reviewer as reviewer_store
 from worksync.work.reviewer import ReviewerError
-from worksync.work.writer import ActionWriteError, ActionWriteResult, complete_action, update_action
+from worksync.work.writer import (
+    ActionWriteError,
+    ActionWriteResult,
+    commit_action_plans,
+    complete_action,
+    plan_complete_action,
+    plan_update_action,
+    update_action,
+)
 
 ActionHandler = Callable[..., dict]
 CONFIRM_STATUS = 409
@@ -161,10 +169,76 @@ def _set_reviewer(service: WriteContext, payload: dict, *, confirmed: bool, toda
     }
 
 
+def _apply_batch(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        raise ActionError("bad_request", "A batch requires a non-empty items list.", 400)
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+
+    plans = []
+    equivalents: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise ActionError("bad_request", "Each batch item must be a JSON object.", 400)
+        action = str(item.get("action") or "").strip()
+        item_reason = str(item.get("reason") or reason).strip()
+        path = _required(item, "path", "invalid_target")
+        if action == "update-action":
+            fields = item.get("fields") or {}
+            if not isinstance(fields, dict) or not fields:
+                raise ActionWriteError("invalid_op", "Provide at least one field to update.")
+            plan = plan_update_action(
+                service.vault,
+                path,
+                fields=fields,
+                reason=item_reason,
+                reviewer=reviewer,
+                expected=_expected(item),
+                today=today,
+            )
+            equivalent = _update_cli(plan.path, fields, item_reason, reviewer)
+        elif action == "complete-action":
+            plan = plan_complete_action(
+                service.vault,
+                path,
+                reason=item_reason,
+                reviewer=reviewer,
+                expected=_expected(item),
+                today=today,
+            )
+            equivalent = _complete_cli(plan.path, item_reason, reviewer)
+        else:
+            raise ActionError("unknown_action", f"Unknown batch action: {action}", 404)
+        plans.append(plan)
+        equivalents.append({"path": plan.path, "equivalent_cli": equivalent})
+
+    committed = commit_action_plans(
+        service.vault,
+        service.runtime_root,
+        tuple(plans),
+        verb="apply_batch",
+        reviewer=reviewer,
+        reason=reason,
+        confirmed=confirmed,
+    )
+    return {
+        "state": "ok",
+        "action": "apply-batch",
+        "committed": committed.committed,
+        "reviewer": reviewer,
+        "reason": reason,
+        "changes": [dict(change) for change in committed.changes],
+        "items": equivalents,
+        "equivalent_cli": None,
+    }
+
+
 ACTIONS: dict[str, ActionHandler] = {
     "update-action": _update_action,
     "complete-action": _complete_action,
     "set-reviewer": _set_reviewer,
+    "apply-batch": _apply_batch,
 }
 
 

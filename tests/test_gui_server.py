@@ -213,6 +213,44 @@ def test_set_reviewer_action_persists(gui_server: tuple[str, GuiService]) -> Non
     assert (gui.runtime_root / "reviewer.json").is_file()
 
 
+def test_action_endpoint_applies_a_batch(gui_server: tuple[str, GuiService]) -> None:
+    base, gui = gui_server
+    second = gui.vault / "Actions/A2.md"
+    second.write_text("---\ntype: action\nstatus: open\n---\n# Action Two\n", encoding="utf-8")
+    payload = {
+        "reason": "Batch tidy",
+        "items": [
+            {"action": "complete-action", "path": A_PATH},
+            {"action": "complete-action", "path": "Actions/A2.md"},
+        ],
+    }
+    status, _content_type, body = _post(base, "/api/action/apply-batch", payload, TOKEN)
+    assert status == 200
+    result = _json(body)
+    assert result["committed"] is True
+    assert len(result["changes"]) == 2
+    assert "status: done" in (gui.vault / A_PATH).read_text(encoding="utf-8")
+    assert "status: done" in second.read_text(encoding="utf-8")
+
+
+def test_action_endpoint_batch_rolls_back_on_a_stale_intent(gui_server: tuple[str, GuiService]) -> None:
+    base, gui = gui_server
+    second = gui.vault / "Actions/A2.md"
+    second.write_text("---\ntype: action\nstatus: open\n---\n# Action Two\n", encoding="utf-8")
+    payload = {
+        "reason": "Batch tidy",
+        "items": [
+            {"action": "complete-action", "path": A_PATH},
+            {"action": "complete-action", "path": "Actions/A2.md", "expected": "deadbeef"},
+        ],
+    }
+    status, _content_type, body = _post(base, "/api/action/apply-batch", payload, TOKEN)
+    assert status == 409
+    assert _json(body)["error"] == "stale_hash"
+    assert "status: open" in (gui.vault / A_PATH).read_text(encoding="utf-8")
+    assert "status: open" in second.read_text(encoding="utf-8")
+
+
 def test_health_endpoint_surfaces_validation_issues(
     gui_server: tuple[str, GuiService], vault: Path, write_note: Callable[..., Path]
 ) -> None:
