@@ -55,6 +55,12 @@ class GuiHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         parsed = urlparse(self.path)
+        try:
+            body = self._read_body()
+        except ValueError as exc:
+            self.close_connection = True
+            self._send_json(400, {"error": "bad_request", "message": str(exc)})
+            return
         if not parsed.path.startswith(ACTION_PREFIX):
             self._send_json(404, {"error": "not_found", "message": f"No endpoint: {parsed.path}"})
             return
@@ -66,7 +72,7 @@ class GuiHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not_found", "message": "No action name was provided."})
             return
         try:
-            payload = self._read_json()
+            payload = self._parse_json(body)
         except ValueError as exc:
             self._send_json(400, {"error": "bad_request", "message": str(exc)})
             return
@@ -77,18 +83,21 @@ class GuiHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, result)
 
-    def _read_json(self) -> dict:
+    def _read_body(self) -> bytes:
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError as exc:
             raise ValueError("Invalid Content-Length header.") from exc
         if length > MAX_BODY:
             raise ValueError("Request body is too large.")
-        raw = self.rfile.read(length) if length else b""
-        if not raw:
+        return self.rfile.read(length) if length else b""
+
+    @staticmethod
+    def _parse_json(body: bytes) -> dict:
+        if not body:
             return {}
         try:
-            data = json.loads(raw.decode("utf-8"))
+            data = json.loads(body.decode("utf-8"))
         except (ValueError, UnicodeDecodeError) as exc:
             raise ValueError("Request body must be valid JSON.") from exc
         if not isinstance(data, dict):
