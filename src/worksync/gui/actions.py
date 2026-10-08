@@ -120,6 +120,7 @@ def _update_action(service: WriteContext, payload: dict, *, confirmed: bool, tod
         expected=_expected(payload),
         today=today,
         dry_run=dry_run,
+        confirmed=confirmed,
     )
     return _write_result(
         "update-action",
@@ -145,6 +146,7 @@ def _complete_action(service: WriteContext, payload: dict, *, confirmed: bool, t
         expected=_expected(payload),
         today=today,
         dry_run=dry_run,
+        confirmed=confirmed,
     )
     return _write_result(
         "complete-action",
@@ -301,4 +303,4 @@ def _complete_cli(path: str, reason: str, reviewer: str) -> str:
 
 
 def _quote(value: str) -> str:
-    return f'"{value}"'
+    return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'

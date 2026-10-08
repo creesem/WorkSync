@@ -11,6 +11,8 @@ import pytest
 from worksync.gui.actions import ActionError, dispatch_action
 from worksync.gui.controller import GuiService
 from worksync.safety import gateway
+from worksync.safety.models import MutationError
+from worksync.work.writer import commit_action_plans, plan_complete_action
 
 TODAY = date(2026, 10, 6)
 A_PATH = "7. Task Notes/Active/Task One.md"
@@ -253,3 +255,18 @@ def test_batch_rolls_back_on_a_mid_apply_failure(
     assert excinfo.value.status == 500
     assert (vault / A_PATH).read_text(encoding="utf-8") == ACTION
     assert (vault / A2_PATH).read_text(encoding="utf-8") == ACTION_TWO
+
+
+def test_confirm_required_verb_needs_confirmation(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed(vault, write_note)
+    runtime = tmp_path / "var"
+    plan = plan_complete_action(vault, A_PATH, reason="Retire", reviewer="Myles", today=TODAY)
+    with pytest.raises(MutationError) as excinfo:
+        commit_action_plans(vault, runtime, (plan,), verb="drop", reviewer="Myles", reason="Retire")
+    assert excinfo.value.code == "needs_confirmation"
+    assert (vault / A_PATH).read_text(encoding="utf-8") == ACTION
+
+    committed = commit_action_plans(
+        vault, runtime, (plan,), verb="drop", reviewer="Myles", reason="Retire", confirmed=True
+    )
+    assert committed.committed is True

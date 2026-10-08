@@ -67,7 +67,6 @@ class ActionPlan:
     content: str
     expected: str
     fields: dict[str, Any]
-    reason: str
 
 
 def plan_update_action(
@@ -129,6 +128,7 @@ def update_action(
     expected: str | None = None,
     today: date | None = None,
     dry_run: bool = False,
+    confirmed: bool = False,
 ) -> ActionWriteResult:
     """Apply an allowlisted action edit as one canonical transaction."""
     return _apply_action(
@@ -142,6 +142,7 @@ def update_action(
         expected=expected,
         today=today,
         dry_run=dry_run,
+        confirmed=confirmed,
     )
 
 
@@ -155,6 +156,7 @@ def complete_action(
     expected: str | None = None,
     today: date | None = None,
     dry_run: bool = False,
+    confirmed: bool = False,
 ) -> ActionWriteResult:
     """Mark an action done and record its completion date in one canonical transaction."""
     return _apply_action(
@@ -168,6 +170,7 @@ def complete_action(
         expected=expected,
         today=today,
         dry_run=dry_run,
+        confirmed=confirmed,
     )
 
 
@@ -203,7 +206,6 @@ def _plan_action(
         content=content,
         expected=record.content_hash,
         fields=result_fields,
-        reason=str(reason).strip(),
     )
 
 
@@ -219,6 +221,7 @@ def _apply_action(
     expected: str | None,
     today: date | None,
     dry_run: bool,
+    confirmed: bool,
 ) -> ActionWriteResult:
     plan = _plan_action(vault, path, fields=fields, reason=reason, reviewer=reviewer, expected=expected, today=today)
     if dry_run:
@@ -231,7 +234,9 @@ def _apply_action(
             planned=plan.content,
             fields=plan.fields,
         )
-    committed = commit_action_plans(vault, runtime, (plan,), verb=verb, reviewer=reviewer, reason=str(reason).strip())
+    committed = commit_action_plans(
+        vault, runtime, (plan,), verb=verb, reviewer=reviewer, reason=str(reason).strip(), confirmed=confirmed
+    )
     return ActionWriteResult(
         path=plan.path,
         committed=committed.committed,

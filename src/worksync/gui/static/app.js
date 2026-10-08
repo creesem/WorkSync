@@ -59,7 +59,7 @@ function showWriteResult(result, isError) {
 }
 
 async function completeAction(path, title) {
-  const reason = window.prompt(`Reason for completing "${title}"?`, "Completed from the GUI");
+  const reason = window.prompt(`Reason for completing "${title}"?`, "");
   if (reason === null) return;
   if (!reason.trim()) {
     showWriteResult({ error: "A human-readable reason is required." }, true);
