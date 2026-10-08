@@ -362,4 +362,5 @@ def test_gui_write_seam_reaches_the_gateway() -> None:
     targets = _closure_targets(closure, modules)
     assert "worksync.safety.gateway" in targets
     assert not any(name.startswith("worksync.context") for name in closure)
+    assert not any(name.startswith("worksync.inventory.index") for name in closure)
     assert "sqlite3" not in targets

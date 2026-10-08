@@ -20,7 +20,7 @@ flowchart TD
     ctx["context<br/>registry · association · retrieval · build · integrate"]
     ingest["ingest (V2)<br/>inbox · triage · krisp · email"]
     cli["cli"]
-    gui["gui (read-only)"]
+    gui["gui<br/>read workspace · write seam"]
     mcp["mcp (read-only)"]
     html["html (generated interface)"]
 
@@ -40,6 +40,8 @@ flowchart TD
     cli --> migrate
     cli --> html
     gui --> ctx
+    gui --> work
+    gui --> safety
     mcp --> ctx
 ```
 
@@ -58,7 +60,7 @@ Arrows point from a package to what it depends on.
 | `ingest` | Raw-to-staged-to-canonical ingestion and review/promotion: inbox, triage, inbox triage, backfill, routing, Krisp, email; PDF/Patron deferred. | V2 |
 | `html` | The generated HTML interface: the one link contract, a pure deterministic generator of self-contained pages from already-resolved entities, and a contained derived writer into the `generated` zone (`0. System/Interface/`). Imports no `context`; no JavaScript, no forms, no second parser. | V2 |
 | `cli` | Unified console entry points over the layers. | yes |
-| `gui` | Read-only local workspace (dashboards, entity detail); write interactions in V2. | yes (read-only) |
+| `gui` | The interactive workspace: read-only dashboards and entity detail over the retrieval service, plus the write seam `POST /api/action/<name>` that dispatches named actions to `work`/`ingest` services and commits through `safety`. No business rules in the GUI or its JavaScript; it never sets `force`. | yes |
 | `mcp` | Read-only stdio MCP adapter over `context`. No write helpers. | yes |
 
 ## Dependency rules
@@ -74,6 +76,11 @@ Arrows point from a package to what it depends on.
   the interface consumes resolved entities and can be split into its own repository
   later. The `cli` orchestrates the reads and passes entities into `html`.
 - `cli`, `gui`, `mcp` are consumers and depend on the layers.
+- `gui` is the interactive write client: its read controller calls the retrieval service
+  and reaches no write helper, while its write seam (`gui.actions`) dispatches named
+  actions to `work`/`ingest` services that build one `safety.commit` transaction. The
+  GUI holds no domain logic, and the generated HTML layer stays a zero-JavaScript read
+  surface. See [ADR-0017](adr/0017-gui-interactive-write-client.md).
 - Dependency direction is one-way; no cycles. `inventory` never imports `work`,
   `context`, or `ingest`. `safety` never imports a domain layer.
 - Within `context`, the retrieval layer (`registry`, `projection`, and the future

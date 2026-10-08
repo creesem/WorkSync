@@ -159,9 +159,21 @@ resolved, the write fails rather than warning.
 `commit` returns the full change set (paths, kind, zone, before/after hashes,
 reason, reviewer). For a verb needing confirmation it refuses with
 `needs_confirmation` unless `confirmed=True`. CLI prints the change set and the
-equivalent command, the GUI shows a modal, and MCP mutation tools (V2) require
-explicit confirmation with audit — all passing `confirmed` into the **same** seam.
-No consumer implements its own gate.
+equivalent command, the GUI renders the returned change set, and MCP mutation tools
+(V2) require explicit confirmation with audit — all passing `confirmed` into the
+**same** seam. No consumer implements its own gate.
+
+### The GUI write seam
+
+The browser GUI is the interactive write client
+([ADR-0017](adr/0017-gui-interactive-write-client.md)). It reaches canonical data only
+through `POST /api/action/<name>` on its tokenized loopback server. The server pins the
+vault, runtime, and current reviewer; the named action dispatches to a `work`/`ingest`
+service that builds one `ChangeSet` and calls `commit`. The GUI never accepts a vault or
+reviewer from the request, never sets `force`, and holds no domain logic; a destructive
+or ownership-changing verb requires confirmation and a reason exactly as the CLI does. A
+batch confirmation is one `ChangeSet`, so a batch either commits coherently or restores
+the prior state. The generated HTML layer stays read-only and never writes.
 
 ## Concurrency
 
@@ -179,6 +191,6 @@ always yields valid output.
 
 ## V1 and V2
 
-The whole contract is specified now so V2 does not redesign it. V1 actively
-exercises only derived writes — the index and generated views. Canonical writes
-are gated to V2.
+The whole contract is specified now so V2 does not redesign it. V1 exercised only
+derived writes — the index and generated views. V2 adds canonical writes through the
+CLI work-write service and the GUI write seam, all through the same gateway.
