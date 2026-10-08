@@ -18,8 +18,7 @@ from worksync.ingest.discover import IngestError
 from worksync.ingest.manifest import (
     MANIFEST_REL,
     Manifest,
-    load_manifest,
-    manifest_sha256,
+    load_manifest_with_hash,
     render_manifest,
     save_manifest,
 )
@@ -29,10 +28,10 @@ from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit
 from worksync.safety.models import ChangeSet, CommitResult, FileOp
 from worksync.safety.zones import write_zones
+from worksync.work.schema import canonical_action_status, canonical_priority
 
 DEFAULT_ACTIVE = "7. Task Notes/Active"
 DEFAULT_DROPPED = "7. Task Notes/Dropped"
-CONFIRM_KINDS = ("drop", "merge")
 
 
 @dataclass(frozen=True)
@@ -62,9 +61,10 @@ def apply(
         raise IngestError("missing_reviewer", "An apply requires a named reviewer.")
     if not str(reason).strip():
         raise IngestError("missing_reason", "An apply requires a human-readable reason.")
-    manifest = load_manifest(runtime)
-    if manifest is None:
+    loaded = load_manifest_with_hash(runtime)
+    if loaded is None:
         raise IngestError("no_manifest", "No ingest manifest; run 'ingest scan' first.")
+    manifest, manifest_hash = loaded
     selected = _select(manifest, ids)
     if not selected:
         raise IngestError("no_proposals", "No pending proposals were selected.")
@@ -94,7 +94,7 @@ def apply(
             MANIFEST_REL,
             "staging",
             content=render_manifest(new_manifest),
-            expected=manifest_sha256(runtime),
+            expected=manifest_hash,
         )
     )
 
@@ -114,9 +114,10 @@ def dismiss(runtime: str | Path, proposal_id: str, *, reviewer: str, reason: str
         raise IngestError("missing_reviewer", "A dismissal requires a named reviewer.")
     if not str(reason).strip():
         raise IngestError("missing_reason", "A dismissal requires a human-readable reason.")
-    manifest = load_manifest(runtime)
-    if manifest is None:
+    loaded = load_manifest_with_hash(runtime)
+    if loaded is None:
         raise IngestError("no_manifest", "No ingest manifest; run 'ingest scan' first.")
+    manifest, expected = loaded
 
     found = False
     updated: list[Proposal] = []
@@ -130,8 +131,7 @@ def dismiss(runtime: str | Path, proposal_id: str, *, reviewer: str, reason: str
         raise IngestError("unknown_proposal", f"No proposal with id: {proposal_id}", affected=(proposal_id,))
 
     new_manifest = manifest.with_proposals(tuple(updated))
-    expected = manifest_sha256(runtime)
-    save_manifest(runtime, new_manifest, expected=expected, expected_absent=expected is None)
+    save_manifest(runtime, new_manifest, expected=expected, expected_absent=False)
     return new_manifest
 
 
@@ -166,9 +166,15 @@ def _proposal_ops(
 
     if proposal.action == "action":
         ops.append(_create_op(vault_root, active_root, proposal, source, today=today, reviewer=reviewer, reason=reason))
+    elif proposal.action == "link-existing":
+        if not proposal.target_path:
+            raise IngestError(
+                "missing_target", f"A link-existing requires a target: {proposal.id}", affected=(proposal.id,)
+            )
+        _resolve_source(vault_root, proposal.target_path, proposal.id)
     elif proposal.action == "merge":
         ops.extend(_merge_ops(vault_root, proposal))
-    elif proposal.action not in ("link-existing", "drop"):
+    elif proposal.action != "drop":
         raise IngestError(
             "unsupported_action", f"Unsupported proposal action: {proposal.action}", affected=(proposal.id,)
         )
@@ -212,15 +218,25 @@ def _merge_ops(vault_root: Path, proposal: Proposal) -> list[FileOp]:
         if proposal.fields.get(key) and not record.frontmatter.get(key):
             edits[key] = str(proposal.fields[key])
     if not edits:
-        return []
+        raise IngestError(
+            "merge_noop",
+            f"The merge target already has every proposed field: {proposal.id}",
+            affected=(proposal.id,),
+        )
     content = edit_frontmatter_fields(record.content, set_fields=edits)
     return [FileOp("update", _relative(vault_root, target), "trusted", content=content, expected=record.content_hash)]
 
 
 def _action_content(fields: dict, body: str, *, today: date, reviewer: str, reason: str) -> str:
-    lines = ["---", "type: action", f"status: {fields.get('status') or 'open'}"]
+    status = canonical_action_status(fields.get("status") or "open")
+    if status is None:
+        raise IngestError("unmappable_status", f"Unknown action status: {fields.get('status')!r}")
+    lines = ["---", "type: action", f"status: {status}"]
     if fields.get("priority"):
-        lines.append(f"priority: {fields['priority']}")
+        mappable, canonical = canonical_priority(fields["priority"])
+        if not mappable or canonical is None:
+            raise IngestError("unmappable_priority", f"Unknown action priority: {fields['priority']!r}")
+        lines.append(f"priority: {canonical}")
     owners = fields.get("owners") or []
     if owners:
         lines.append("owners:")

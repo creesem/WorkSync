@@ -82,6 +82,20 @@ def test_scan_proposes_link_existing_for_a_duplicate(
     assert proposal.target_path == f"{ACTIVE}/Existing.md"
 
 
+def test_scan_ignores_done_actions_when_matching_duplicates(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(vault, write_note)
+    write_note(
+        vault,
+        f"{ACTIVE}/Done.md",
+        "---\ntype: action\nstatus: done\ncompleted: 2026-09-01\n---\n# Call the vendor about the invoice\n",
+    )
+    _inbox_note(vault, write_note, "Call vendor", "# Call the vendor about the invoice\n")
+    manifest = scan(vault, tmp_path / "var", today=TODAY, inbox_path=INBOX)
+    assert manifest.proposals[0].action == "action"
+
+
 def test_scan_proposes_drop_for_a_reference_and_skips_work_entities(
     vault: Path, write_note: Callable[..., Path], tmp_path: Path
 ) -> None:

@@ -35,6 +35,8 @@ LEGACY_TASK_STATUS: dict[str, str] = {
     "dropped": "cancelled",
 }
 ACTION_STATUS_VALUES = frozenset({"open", "in_progress", "waiting", "watch", "parked", "done", "cancelled"})
+ACTIVE_ACTION_STATUSES = frozenset({"open", "in_progress", "waiting", "watch", "parked"})
+MONITORING_ACTION_STATUSES = frozenset({"waiting", "watch", "parked"})
 PROJECT_STATUS_VALUES = frozenset({"active", "paused", "blocked", "done", "archived"})
 PROJECT_STATUS_ALIASES: dict[str, str] = {"complete": "done"}
 PERSON_STATUS_VALUES = frozenset({"active", "inactive"})

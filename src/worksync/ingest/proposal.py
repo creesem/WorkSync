@@ -64,14 +64,3 @@ class Proposal:
             reviewer=str(data["reviewer"]) if data.get("reviewer") else None,
             reason=str(data["reason"]) if data.get("reason") else None,
         )
-
-    def with_updates(self, **changes: Any) -> Proposal:
-        """Return a copy with the given fields replaced."""
-        return replace_proposal(self, **changes)
-
-
-def replace_proposal(proposal: Proposal, **changes: Any) -> Proposal:
-    """Return a copy of *proposal* with the given attributes replaced."""
-    from dataclasses import replace
-
-    return replace(proposal, **changes)

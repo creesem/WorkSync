@@ -14,7 +14,7 @@ from pathlib import Path
 from worksync.ingest.discover import Source
 from worksync.ingest.proposal import Proposal
 from worksync.work.repository import WorkIndex
-from worksync.work.schema import canonical_priority
+from worksync.work.schema import ACTIVE_ACTION_STATUSES, canonical_priority
 from worksync.work.similarity import score
 
 LINK_THRESHOLD = 0.7
@@ -127,6 +127,8 @@ def _best_match(title: str, index: WorkIndex):
     best = None
     best_score = 0.0
     for entity in index.view_entities("action"):
+        if entity.status not in ACTIVE_ACTION_STATUSES:
+            continue
         current = score(title, entity.title)
         if current > best_score:
             best, best_score = entity, current

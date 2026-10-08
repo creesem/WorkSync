@@ -6,6 +6,7 @@ precondition, so a first-create race and a concurrent update both fail closed.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -74,14 +75,31 @@ def manifest_sha256(runtime_root: str | Path) -> str | None:
 
 def load_manifest(runtime_root: str | Path) -> Manifest | None:
     """Load the manifest, or ``None`` when it is absent or unreadable."""
+    loaded = load_manifest_with_hash(runtime_root)
+    return loaded[0] if loaded is not None else None
+
+
+def load_manifest_with_hash(runtime_root: str | Path) -> tuple[Manifest, str] | None:
+    """Load the manifest and the hash of the exact bytes read.
+
+    Returning the hash of the loaded bytes (rather than re-reading the file) closes the
+    lost-update window: a write that lands after this read makes the precondition fail.
+    """
     path = manifest_path(runtime_root)
     if not path.is_file():
         return None
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = path.read_bytes()
+    except OSError:
         return None
-    return Manifest.from_dict(data) if isinstance(data, dict) else None
+    digest = hashlib.sha256(raw).hexdigest()
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return Manifest.from_dict(data), digest
 
 
 def save_manifest(

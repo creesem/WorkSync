@@ -20,12 +20,11 @@ from worksync.safety.derived import write_json
 from worksync.safety.files import sha256_file
 from worksync.work.models import EntityBase
 from worksync.work.repository import WorkIndex
-from worksync.work.schema import priority_rank
+from worksync.work.schema import ACTIVE_ACTION_STATUSES, priority_rank
+from worksync.work.schema import MONITORING_ACTION_STATUSES as MONITORING_STATUSES
 from worksync.work.writer import complete_action
 
 SLOTS = ("must_win", "support_one", "support_two", "unblock", "quick_win")
-ACTIVE_ACTION_STATUSES = frozenset({"open", "in_progress", "waiting", "watch", "parked"})
-MONITORING_STATUSES = frozenset({"waiting", "watch", "parked"})
 PLAN_VERSION = 1
 PLAN_FILENAME = "workday-plan.json"
 NOTE_LIMIT = 240

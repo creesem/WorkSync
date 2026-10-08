@@ -167,6 +167,53 @@ def test_apply_missing_target_fails_closed(vault: Path, write_note: Callable[...
     assert excinfo.value.code == "missing_source"
 
 
+def test_apply_link_existing_missing_target_fails_closed(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(vault, write_note)
+    runtime = tmp_path / "var"
+    source = write_note(vault, f"{INBOX}/Dup.md", "# Dup\n")
+    proposal = Proposal(
+        id=f"{INBOX}/Dup.md#0",
+        action="link-existing",
+        source_path=f"{INBOX}/Dup.md",
+        source_sha256=sha256_file(source),
+        target_path=f"{ACTIVE}/Gone.md",
+        fields={"title": "Dup"},
+    )
+    _save(runtime, proposal)
+    with pytest.raises(IngestError) as excinfo:
+        apply(vault, runtime, reviewer="Myles", reason="Duplicate", today=TODAY)
+    assert excinfo.value.code == "missing_source"
+    assert (vault / INBOX / "Dup.md").is_file()
+
+
+def test_apply_merge_with_nothing_to_fill_fails_closed(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(vault, write_note)
+    write_note(
+        vault,
+        f"{ACTIVE}/Existing.md",
+        "---\ntype: action\nstatus: open\npriority: P2\ndue: 2026-10-12\n---\n# Existing\n",
+    )
+    runtime = tmp_path / "var"
+    source = write_note(vault, f"{INBOX}/More.md", "# Existing\n")
+    proposal = Proposal(
+        id=f"{INBOX}/More.md#0",
+        action="merge",
+        source_path=f"{INBOX}/More.md",
+        source_sha256=sha256_file(source),
+        target_path=f"{ACTIVE}/Existing.md",
+        fields={"title": "Existing", "priority": "P2", "due": "2026-10-12"},
+    )
+    _save(runtime, proposal)
+    with pytest.raises(IngestError) as excinfo:
+        apply(vault, runtime, reviewer="Myles", reason="Merge", confirmed=True, today=TODAY)
+    assert excinfo.value.code == "merge_noop"
+    assert (vault / INBOX / "More.md").is_file()
+
+
 def test_apply_mid_batch_failure_rolls_back(
     monkeypatch: pytest.MonkeyPatch, vault: Path, write_note: Callable[..., Path], tmp_path: Path
 ) -> None:

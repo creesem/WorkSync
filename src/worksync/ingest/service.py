@@ -14,7 +14,11 @@ from pathlib import Path
 
 from worksync.ingest.discover import Source, discover_sources, resolve_roots
 from worksync.ingest.enrich import enrich
-from worksync.ingest.manifest import Manifest, load_manifest, manifest_sha256, save_manifest
+from worksync.ingest.manifest import (
+    Manifest,
+    load_manifest_with_hash,
+    save_manifest,
+)
 from worksync.ingest.proposal import Proposal
 from worksync.work.repository import WorkIndex
 
@@ -34,9 +38,15 @@ def scan(
     index = WorkIndex.from_vault(vault)
     fresh = tuple(proposal for source in sources if (proposal := enrich(source, index, today=when)) is not None)
     token = scan_token(sources)
-    manifest = merge_manifest(load_manifest(runtime), fresh, token=token)
-    expected = manifest_sha256(runtime)
-    save_manifest(runtime, manifest, expected=expected, expected_absent=expected is None)
+    loaded = load_manifest_with_hash(runtime)
+    previous = loaded[0] if loaded is not None else None
+    manifest = merge_manifest(previous, fresh, token=token)
+    save_manifest(
+        runtime,
+        manifest,
+        expected=loaded[1] if loaded is not None else None,
+        expected_absent=loaded is None,
+    )
     return manifest
 
 
