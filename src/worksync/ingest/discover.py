@@ -68,14 +68,22 @@ def _resolve_root(vault_root: Path, relative: str, *, required: bool) -> Path | 
 
 
 def discover_sources(vault: str | Path, roots: IngestRoots) -> tuple[Source, ...]:
-    """Return every markdown source under the configured roots, in deterministic order."""
+    """Return every markdown source under the configured roots, in deterministic order.
+
+    Files inside an ``Archive`` subfolder are imported originals, not live sources, so
+    they are skipped.
+    """
     vault_root = Path(vault).expanduser().resolve()
     sources: list[Source] = []
     for origin, root in (("inbox", roots.inbox), ("rough-notes", roots.rough_notes)):
         if root is None:
             continue
         for path in sorted(root.rglob("*.md")):
-            if not path.is_file():
+            if not path.is_file() or _is_archived(path, root):
                 continue
             sources.append(Source(record=parse_note(path, vault_root), origin=origin))
     return tuple(sources)
+
+
+def _is_archived(path: Path, root: Path) -> bool:
+    return any(part.casefold() == "archive" for part in path.relative_to(root).parts[:-1])

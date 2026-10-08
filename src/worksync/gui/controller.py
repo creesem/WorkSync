@@ -25,6 +25,9 @@ class GuiService:
     vault_name: str
     reviewer: str | None = None
     ui_port: int = 0
+    model: object | None = None
+    inbox_path: str | None = None
+    rough_notes_path: str | None = None
 
     def today(self, today: date) -> dict:
         """The Today ledger: the vault-wide attention queue."""

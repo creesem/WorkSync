@@ -13,7 +13,7 @@ from datetime import date
 from pathlib import Path
 
 from worksync.ingest.discover import Source, discover_sources, resolve_roots
-from worksync.ingest.enrich import enrich
+from worksync.ingest.enrich import Suggester, enrich
 from worksync.ingest.manifest import (
     Manifest,
     load_manifest_with_hash,
@@ -30,13 +30,16 @@ def scan(
     today: date | None = None,
     inbox_path: str | None = None,
     rough_notes_path: str | None = None,
+    model: Suggester | None = None,
 ) -> Manifest:
     """Discover and enrich sources, then persist the merged manifest with a precondition."""
     when = today or date.today()
     roots = resolve_roots(vault, inbox_path=inbox_path, rough_notes_path=rough_notes_path)
     sources = discover_sources(vault, roots)
     index = WorkIndex.from_vault(vault)
-    fresh = tuple(proposal for source in sources if (proposal := enrich(source, index, today=when)) is not None)
+    fresh = tuple(
+        proposal for source in sources if (proposal := enrich(source, index, today=when, model=model)) is not None
+    )
     token = scan_token(sources)
     loaded = load_manifest_with_hash(runtime)
     previous = loaded[0] if loaded is not None else None

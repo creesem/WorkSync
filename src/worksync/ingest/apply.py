@@ -32,6 +32,7 @@ from worksync.work.schema import canonical_action_status, canonical_priority
 
 DEFAULT_ACTIVE = "7. Task Notes/Active"
 DEFAULT_DROPPED = "7. Task Notes/Dropped"
+OVERLAY_FIELDS = frozenset({"title", "status", "priority", "owners", "project", "due"})
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ def apply(
     today: date | None = None,
     active_path: str | None = None,
     dropped_path: str | None = None,
+    overrides: dict[str, dict] | None = None,
 ) -> ApplyResult:
     """Apply the selected pending proposals as one transaction."""
     if not str(reviewer).strip():
@@ -65,7 +67,7 @@ def apply(
     if loaded is None:
         raise IngestError("no_manifest", "No ingest manifest; run 'ingest scan' first.")
     manifest, manifest_hash = loaded
-    selected = _select(manifest, ids)
+    selected = _apply_overrides(_select(manifest, ids), overrides)
     if not selected:
         raise IngestError("no_proposals", "No pending proposals were selected.")
 
@@ -80,10 +82,10 @@ def apply(
             _proposal_ops(vault_root, active_root, dropped_root, proposal, today=when, reviewer=reviewer, reason=reason)
         )
 
-    selected_ids = {proposal.id for proposal in selected}
+    selected_by_id = {proposal.id: proposal for proposal in selected}
     updated = tuple(
-        replace(proposal, status="applied", reviewer=reviewer, reason=reason)
-        if proposal.id in selected_ids
+        replace(selected_by_id[proposal.id], status="applied", reviewer=reviewer, reason=reason)
+        if proposal.id in selected_by_id
         else proposal
         for proposal in manifest.proposals
     )
@@ -142,6 +144,60 @@ def _select(manifest: Manifest, ids: tuple[str, ...] | None) -> tuple[Proposal, 
         for proposal in manifest.proposals
         if proposal.status == "pending" and (wanted is None or proposal.id in wanted)
     )
+
+
+def _apply_overrides(selected: tuple[Proposal, ...], overrides: dict[str, dict] | None) -> tuple[Proposal, ...]:
+    if not overrides:
+        return selected
+    updated: list[Proposal] = []
+    for proposal in selected:
+        override = overrides.get(proposal.id)
+        if override is None:
+            updated.append(proposal)
+            continue
+        if not isinstance(override, dict):
+            raise IngestError(
+                "invalid_override", f"Override for {proposal.id} must be an object.", affected=(proposal.id,)
+            )
+        clean: dict = {}
+        for key, value in override.items():
+            if key not in OVERLAY_FIELDS:
+                raise IngestError("invalid_override", f"Unknown override field: {key}", affected=(proposal.id,))
+            clean[key] = _normalize_override(key, value, proposal.id)
+        updated.append(replace(proposal, fields={**proposal.fields, **clean}) if clean else proposal)
+    return tuple(updated)
+
+
+def _normalize_override(key: str, value: object, proposal_id: str) -> object:
+    if key == "owners":
+        return _override_owners(value, proposal_id)
+    if key == "project":
+        text = _override_text(value, proposal_id)
+        return text if text.startswith("[[") else f"[[{text}]]"
+    if key == "priority":
+        mappable, canonical = canonical_priority(_override_text(value, proposal_id))
+        if not mappable or canonical is None:
+            raise IngestError("invalid_override", f"Unknown priority: {value!r}", affected=(proposal_id,))
+        return canonical
+    return _override_text(value, proposal_id)
+
+
+def _override_text(value: object, proposal_id: str) -> str:
+    if not isinstance(value, str):
+        raise IngestError("invalid_override", "Override values must be strings.", affected=(proposal_id,))
+    return value.strip()
+
+
+def _override_owners(value: object, proposal_id: str) -> list[str]:
+    if isinstance(value, str):
+        items = [part.strip() for part in value.split(",") if part.strip()]
+    elif isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
+        items = [item.strip() for item in value if item.strip()]
+    else:
+        raise IngestError(
+            "invalid_override", "owners override must be a name or list of names.", affected=(proposal_id,)
+        )
+    return [item if item.startswith("[[") else f"[[{item}]]" for item in items]
 
 
 def _proposal_ops(

@@ -9,11 +9,16 @@ backups, and reverse-order rollback are never bypassed. A transport maps an
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from typing import Any, Protocol
 
+from worksync.ingest import IngestError
+from worksync.ingest import apply as ingest_apply
+from worksync.ingest import dismiss as ingest_dismiss
+from worksync.ingest import scan as ingest_scan
 from worksync.safety.models import MutationError
 from worksync.work import reviewer as reviewer_store
 from worksync.work.reviewer import ReviewerError
@@ -32,11 +37,14 @@ CONFIRM_STATUS = 409
 
 
 class WriteContext(Protocol):
-    """The pinned write context an action adapter reads: vault, runtime, reviewer."""
+    """The pinned write context an action adapter reads: vault, runtime, reviewer, model."""
 
     vault: Path
     runtime_root: Path
     reviewer: str | None
+    model: object | None
+    inbox_path: str | None
+    rough_notes_path: str | None
 
 
 _STATUS_BY_CODE = {
@@ -44,12 +52,23 @@ _STATUS_BY_CODE = {
     "missing_reason": 400,
     "missing_reviewer": 400,
     "invalid_target": 400,
+    "invalid_source": 400,
+    "invalid_root": 400,
+    "invalid_override": 400,
+    "missing_root": 400,
     "missing_target": 404,
+    "missing_source": 404,
+    "unknown_proposal": 404,
     "stale_hash": 409,
+    "stale_source": 409,
     "needs_confirmation": 409,
+    "no_manifest": 409,
     "target_appeared": 409,
     "conflict_present": 409,
     "provisional_present": 409,
+    "no_proposals": 400,
+    "merge_noop": 422,
+    "unsupported_action": 422,
     "unmapped_field": 422,
     "unmappable_status": 422,
     "unmappable_priority": 422,
@@ -90,7 +109,7 @@ def dispatch_action(
         raise ActionError("unknown_action", f"Unknown action: {name}", 404)
     try:
         return handler(service, payload, confirmed=bool(payload.get("confirmed")), today=today)
-    except (ActionWriteError, ReviewerError, MutationError) as exc:
+    except (ActionWriteError, ReviewerError, MutationError, IngestError) as exc:
         raise _as_action_error(exc) from exc
 
 
@@ -236,11 +255,82 @@ def _apply_batch(service: WriteContext, payload: dict, *, confirmed: bool, today
     }
 
 
+def _ingest_scan(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    inbox = getattr(service, "inbox_path", None)
+    rough = getattr(service, "rough_notes_path", None)
+    manifest = ingest_scan(
+        service.vault,
+        service.runtime_root,
+        inbox_path=inbox,
+        rough_notes_path=rough,
+        today=today,
+        model=getattr(service, "model", None),
+    )
+    return {
+        "state": "ok",
+        "action": "ingest-scan",
+        "committed": False,
+        "scan_token": manifest.scan_token,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": _scan_cli(inbox, rough, today),
+    }
+
+
+def _ingest_apply(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    ids = payload.get("ids")
+    if ids is not None and (not isinstance(ids, list) or not ids):
+        raise ActionError("bad_request", "ids must be a non-empty list.", 400)
+    overrides = payload.get("overrides")
+    if overrides is not None and not isinstance(overrides, dict):
+        raise ActionError("bad_request", "overrides must be a JSON object.", 400)
+    result = ingest_apply(
+        service.vault,
+        service.runtime_root,
+        reviewer=reviewer,
+        reason=reason,
+        ids=tuple(str(item) for item in ids) if ids else None,
+        confirmed=confirmed,
+        today=today,
+        overrides=overrides,
+    )
+    return {
+        "state": "ok",
+        "action": "ingest-apply",
+        "committed": result.committed,
+        "reviewer": reviewer,
+        "reason": reason,
+        "applied": list(result.applied),
+        "changes": [dict(change) for change in result.changes],
+        "equivalent_cli": _ingest_apply_cli(reason, reviewer, ids, confirmed, overrides),
+    }
+
+
+def _ingest_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    proposal_id = _required(payload, "id", "invalid_target")
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    manifest = ingest_dismiss(service.runtime_root, proposal_id, reviewer=reviewer, reason=reason)
+    return {
+        "state": "ok",
+        "action": "ingest-dismiss",
+        "committed": False,
+        "reviewer": reviewer,
+        "reason": reason,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": _ingest_dismiss_cli(proposal_id, reason, reviewer),
+    }
+
+
 ACTIONS: dict[str, ActionHandler] = {
     "update-action": _update_action,
     "complete-action": _complete_action,
     "set-reviewer": _set_reviewer,
     "apply-batch": _apply_batch,
+    "ingest-scan": _ingest_scan,
+    "ingest-apply": _ingest_apply,
+    "ingest-dismiss": _ingest_dismiss,
 }
 
 
@@ -299,6 +389,44 @@ def _update_cli(path: str, fields: dict, reason: str, reviewer: str) -> str:
 def _complete_cli(path: str, reason: str, reviewer: str) -> str:
     return " ".join(
         ["worksync", "task", "complete", _quote(path), "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
+    )
+
+
+def _scan_cli(inbox: str | None, rough: str | None, today: date | None) -> str:
+    parts = ["worksync", "ingest", "scan"]
+    if inbox:
+        parts += ["--inbox", _quote(inbox)]
+    if rough:
+        parts += ["--rough-notes", _quote(rough)]
+    if today is not None:
+        parts += ["--today", today.isoformat()]
+    return " ".join(parts)
+
+
+def _ingest_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
+    parts = ["worksync", "ingest", "apply", "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
+    for item in ids if isinstance(ids, list) else ():
+        parts += ["--id", _quote(str(item))]
+    for proposal_id, fields in overrides.items() if isinstance(overrides, dict) else ():
+        if fields:
+            parts += ["--set", _quote(f"{proposal_id}={json.dumps(fields, ensure_ascii=False)}")]
+    if confirmed:
+        parts += ["--confirm"]
+    return " ".join(parts)
+
+
+def _ingest_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str:
+    return " ".join(
+        [
+            "worksync",
+            "ingest",
+            "dismiss",
+            _quote(proposal_id),
+            "--reason",
+            _quote(reason),
+            "--reviewer",
+            _quote(reviewer),
+        ]
     )
 
 

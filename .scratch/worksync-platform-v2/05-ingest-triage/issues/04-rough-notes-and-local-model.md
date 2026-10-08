@@ -8,13 +8,13 @@ capped confidence and provenance and never auto-resolve.
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-08; full suite 441 passed, ruff clean, pre-commit clean)
 
-- [ ] A configured rough-notes root is a discovery source, and a rough note can be imported
+- [x] A configured rough-notes root is a discovery source, and a rough note can be imported
       into the inbox with a recoverable backup and no silent overwrite.
-- [ ] Enrichment consults the local model only for weak fields; an unavailable model falls
+- [x] Enrichment consults the local model only for weak fields; an unavailable model falls
       back to the deterministic result without error.
-- [ ] AI-sourced fields carry provenance and a capped confidence and never mark a proposal
+- [x] AI-sourced fields carry provenance and a capped confidence and never mark a proposal
       auto-resolved.
-- [ ] Tests cover rough-note discovery/import, the AI-assisted path with a stub model, and
+- [x] Tests cover rough-note discovery/import, the AI-assisted path with a stub model, and
       the Ollama-down fallback.

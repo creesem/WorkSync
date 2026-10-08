@@ -8,13 +8,13 @@ apply. The GUI holds no domain logic.
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-08; full suite 441 passed, ruff clean, pre-commit clean)
 
-- [ ] `ingest-scan`, `ingest-apply`, and `ingest-dismiss` dispatch through the action seam
+- [x] `ingest-scan`, `ingest-apply`, and `ingest-dismiss` dispatch through the action seam
       to the same `ingest` services as the CLI.
-- [ ] The triage screen lists proposals with confidence and provenance, allows inline
+- [x] The triage screen lists proposals with confidence and provenance, allows inline
       overrides, pre-selects rows, and applies the batch in one action.
-- [ ] `merge`/`drop` without confirmation is a `409`; the change-set echo and equivalent
+- [x] `merge`/`drop` without confirmation is a `409`; the change-set echo and equivalent
       CLI are rendered; the screen refreshes after apply.
-- [ ] The GUI holds no domain logic and never sets `force`.
-- [ ] Tests cover the three actions over the HTTP seam and the confirmation path.
+- [x] The GUI holds no domain logic and never sets `force`.
+- [x] Tests cover the three actions over the HTTP seam and the confirmation path.

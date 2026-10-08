@@ -3,6 +3,8 @@
 const TOKEN = window.__GUI_TOKEN__ || "";
 const TOKEN_HEADER = "X-Gui-Token";
 
+const state = { triage: [] };
+
 const view = document.getElementById("view");
 const equivalent = document.getElementById("equivalent");
 const vaultName = document.getElementById("vault-name");
@@ -56,6 +58,109 @@ function showWriteResult(result, isError) {
     ${changes ? `<ul>${changes}</ul>` : ""}
     ${result.equivalent_cli ? `<code>${escapeHtml(result.equivalent_cli)}</code>` : ""}
   </div>`;
+}
+
+function bareName(value) {
+  return String(value || "").replace(/\[\[|\]\]/g, "").trim();
+}
+
+function proposalCard(proposal) {
+  const fields = proposal.fields || {};
+  const owners = (fields.owners || []).map(bareName).join(", ");
+  const confidence = typeof proposal.confidence === "number" ? proposal.confidence : 0;
+  const low = confidence < 0.5;
+  const checked = proposal.status === "pending" && !low ? "checked" : "";
+  const provenance = (proposal.provenance || []).map(escapeHtml).join(" · ");
+  const field = (key, label, value) =>
+    `<label class="field"><span>${escapeHtml(label)}</span>
+      <input data-field="${key}" value="${escapeHtml(value || "")}" /></label>`;
+  return `<div class="proposal row${low ? " low" : ""}" data-id="${escapeHtml(proposal.id)}" data-action="${escapeHtml(
+    proposal.action
+  )}">
+    <label class="pick"><input type="checkbox" class="pick-box" ${checked} /></label>
+    <div class="proposal-body">
+      <div class="proposal-head">
+        <span class="tag">${escapeHtml(proposal.action)}</span>
+        <span class="conf">${escapeHtml(confidence.toFixed(2))}</span>
+        ${low ? '<span class="low-flag">low confidence</span>' : ""}
+        <span class="path">${escapeHtml(proposal.source_path)}</span>
+      </div>
+      <div class="proposal-fields">
+        ${field("title", "Title", fields.title)}
+        ${field("owners", "Owner", owners)}
+        ${field("project", "Project", bareName(fields.project))}
+        ${field("priority", "Priority", fields.priority)}
+        ${field("due", "Due", fields.due)}
+      </div>
+      <div class="provenance">${provenance}</div>
+      <button type="button" class="dismiss" data-dismiss="${escapeHtml(proposal.id)}">Dismiss</button>
+    </div>
+  </div>`;
+}
+
+function collectSelection() {
+  const ids = [];
+  const actions = [];
+  const overrides = {};
+  for (const node of document.querySelectorAll(".proposal")) {
+    const box = node.querySelector(".pick-box");
+    if (!box || !box.checked) continue;
+    const id = node.dataset.id;
+    ids.push(id);
+    actions.push(node.dataset.action);
+    const fields = {};
+    for (const input of node.querySelectorAll("input[data-field]")) {
+      const key = input.dataset.field;
+      const value = input.value.trim();
+      if (value) fields[key] = value;
+    }
+    overrides[id] = fields;
+  }
+  return { ids, actions, overrides };
+}
+
+async function applyTriage() {
+  const selected = collectSelection();
+  if (!selected.ids.length) {
+    showWriteResult({ error: "Select at least one proposal." }, true);
+    return;
+  }
+  const reason = window.prompt("Reason for this triage batch?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  const needsConfirm = selected.actions.some((action) => action === "merge" || action === "drop");
+  if (needsConfirm && !window.confirm("This batch includes merge/drop proposals. Apply?")) return;
+  try {
+    const result = await postAction("ingest-apply", {
+      reason: reason.trim(),
+      ids: selected.ids,
+      overrides: selected.overrides,
+      confirmed: needsConfirm,
+    });
+    showWriteResult(result, false);
+    await show("triage");
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
+async function dismissProposal(id) {
+  const reason = window.prompt("Reason for dismissing this proposal?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  try {
+    const result = await postAction("ingest-dismiss", { id, reason: reason.trim() });
+    showWriteResult(result, false);
+    await show("triage");
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
 }
 
 async function completeAction(path, title) {
@@ -147,6 +252,19 @@ const sections = {
       heading("Today", `${data.attention.length} attention item(s)`) +
       (await healthBanner()) +
       attentionRows(data.attention);
+  },
+
+  async triage() {
+    const data = await postAction("ingest-scan", {});
+    equivalent.textContent = data.equivalent_cli;
+    state.triage = data.proposals || [];
+    const rows = state.triage.map(proposalCard).join("");
+    view.innerHTML =
+      heading("Triage", `${state.triage.length} proposal(s)`) +
+      `<div class="triage-actions"><button type="button" id="apply-triage">Apply selected</button></div>` +
+      (rows || empty("Nothing to triage."));
+    const apply = document.getElementById("apply-triage");
+    apply.addEventListener("click", applyTriage);
   },
 
   async review() {
@@ -301,6 +419,11 @@ view.addEventListener("click", (event) => {
   const complete = event.target.closest("[data-complete]");
   if (complete) {
     completeAction(complete.dataset.complete, complete.dataset.title || complete.dataset.complete);
+    return;
+  }
+  const dismiss = event.target.closest("[data-dismiss]");
+  if (dismiss) {
+    dismissProposal(dismiss.dataset.dismiss);
     return;
   }
   const node = event.target.closest("[data-target]");

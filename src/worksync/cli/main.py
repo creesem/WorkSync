@@ -14,6 +14,7 @@ from worksync.context.association import index_associations
 from worksync.context.projection import get_staleness, read_context
 from worksync.context.registry import list_projects, resolve_project
 from worksync.core.config import ConfigError, load_config
+from worksync.core.model import LocalModel, ModelConfig
 from worksync.core.paths import PathSafetyError
 from worksync.html.generator import (
     AttentionRef,
@@ -30,6 +31,7 @@ from worksync.html.writer import generated_zones, write_pages
 from worksync.ingest import IngestError, load_manifest
 from worksync.ingest import apply as run_ingest_apply
 from worksync.ingest import dismiss as run_ingest_dismiss
+from worksync.ingest import import_note as run_ingest_import
 from worksync.ingest import scan as run_ingest_scan
 from worksync.inventory.index import index_path, index_vault
 from worksync.migrate import schema as schema_migration
@@ -214,6 +216,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--rough-notes", dest="rough_notes", default=None, help="Rough-notes root relative to the vault."
     )
     ingest_scan.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    ingest_scan.add_argument(
+        "--model", action="store_true", help="Enable the configured local model for weak-field suggestions."
+    )
     ingest_scan.add_argument("--json", action="store_true", help="Emit JSON.")
     ingest_scan.set_defaults(handler=_ingest_scan)
     ingest_show = ingest_sub.add_parser("show", help="Show the current triage queue.")
@@ -225,6 +230,9 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_apply.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
     ingest_apply.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
     ingest_apply.add_argument("--id", dest="ids", action="append", default=None, help="Apply only this proposal id.")
+    ingest_apply.add_argument(
+        "--set", dest="sets", action="append", default=None, help="Override a proposal's fields as id=<json>."
+    )
     ingest_apply.add_argument("--reason", required=True, help="Human-readable reason for the batch.")
     ingest_apply.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
     ingest_apply.add_argument("--confirm", action="store_true", help="Confirm a merge/drop batch.")
@@ -239,6 +247,19 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_dismiss.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
     ingest_dismiss.add_argument("--json", action="store_true", help="Emit JSON.")
     ingest_dismiss.set_defaults(handler=_ingest_dismiss)
+    ingest_import = ingest_sub.add_parser("import", help="Import a rough note into the inbox.")
+    ingest_import.add_argument("source", help="Rough-note path relative to the vault.")
+    ingest_import.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    ingest_import.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    ingest_import.add_argument("--inbox", default=None, help="Inbox root relative to the vault.")
+    ingest_import.add_argument(
+        "--rough-notes", dest="rough_notes", default=None, help="Rough-notes root relative to the vault."
+    )
+    ingest_import.add_argument("--reason", required=True, help="Human-readable reason for the import.")
+    ingest_import.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    ingest_import.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    ingest_import.add_argument("--json", action="store_true", help="Emit JSON.")
+    ingest_import.set_defaults(handler=_ingest_import)
 
     migrate = sub.add_parser("migrate", help="Detect or repair malformed vault frontmatter.")
     migrate_sub = migrate.add_subparsers(dest="migrate_command")
@@ -899,6 +920,14 @@ def _configured_ingest_roots() -> tuple[str | None, str | None]:
     return inbox, rough
 
 
+def _configured_model() -> LocalModel:
+    try:
+        config = load_config()
+    except (ConfigError, OSError):
+        return LocalModel()
+    return LocalModel(ModelConfig.from_raw(config.raw))
+
+
 def _ingest_scan(args: argparse.Namespace) -> int:
     try:
         vault, runtime = _vault_runtime_paths(args)
@@ -910,6 +939,7 @@ def _ingest_scan(args: argparse.Namespace) -> int:
             today=today,
             inbox_path=args.inbox or configured_inbox,
             rough_notes_path=args.rough_notes or configured_rough,
+            model=_configured_model() if args.model else None,
         )
     except (ConfigError, IngestError, OSError, ValueError) as exc:
         print(f"worksync: {exc}", file=sys.stderr)
@@ -942,6 +972,22 @@ def _print_manifest(manifest, as_json: bool) -> None:
         print(f"  [{proposal.status}] {proposal.action} {proposal.source_path}{target} ({proposal.confidence:.2f})")
 
 
+def _parse_sets(values: list[str] | None) -> dict[str, dict] | None:
+    overrides: dict[str, dict] = {}
+    for raw in values or []:
+        proposal_id, sep, payload = raw.partition("=")
+        if not sep or not proposal_id.strip():
+            raise ValueError(f"Invalid --set (expected id=<json>): {raw}")
+        try:
+            fields = json.loads(payload)
+        except ValueError as exc:
+            raise ValueError(f"Invalid --set JSON for {proposal_id.strip()}: {raw}") from exc
+        if not isinstance(fields, dict):
+            raise ValueError(f"--set values must be a JSON object: {raw}")
+        overrides[proposal_id.strip()] = fields
+    return overrides or None
+
+
 def _ingest_apply(args: argparse.Namespace) -> int:
     try:
         vault, runtime = _vault_runtime_paths(args)
@@ -954,6 +1000,7 @@ def _ingest_apply(args: argparse.Namespace) -> int:
             ids=tuple(args.ids) if args.ids else None,
             confirmed=args.confirm,
             today=_resolve_today(args.today),
+            overrides=_parse_sets(args.sets),
         )
         if result.committed:
             _rebuild_derived(vault, runtime)
@@ -984,6 +1031,38 @@ def _ingest_dismiss(args: argparse.Namespace) -> int:
         print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
         return 1
     _print_manifest(manifest, args.json)
+    return 0
+
+
+def _ingest_import(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        configured_inbox, configured_rough = _configured_ingest_roots()
+        result = run_ingest_import(
+            vault,
+            runtime,
+            source=args.source,
+            reviewer=reviewer,
+            reason=args.reason,
+            inbox_path=args.inbox or configured_inbox,
+            rough_notes_path=args.rough_notes or configured_rough,
+            today=_resolve_today(args.today),
+        )
+    except (ConfigError, IngestError, MutationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "committed": result.committed,
+        "target": result.target,
+        "archived": result.archived,
+        "journal": str(result.journal),
+        "changes": [dict(change) for change in result.changes],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+    else:
+        print(f"ingest: imported {args.source} -> {result.target}")
     return 0
 
 

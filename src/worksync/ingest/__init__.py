@@ -16,7 +16,8 @@ from worksync.ingest.discover import (
     discover_sources,
     resolve_roots,
 )
-from worksync.ingest.enrich import enrich
+from worksync.ingest.enrich import Suggester, enrich
+from worksync.ingest.imports import ImportResult, import_note
 from worksync.ingest.manifest import (
     Manifest,
     load_manifest,
@@ -33,15 +34,18 @@ __all__ = [
     "DEFAULT_ROUGH_NOTES",
     "PROPOSAL_STATUSES",
     "ApplyResult",
+    "ImportResult",
     "IngestError",
     "IngestRoots",
     "Manifest",
     "Proposal",
     "Source",
+    "Suggester",
     "apply",
     "discover_sources",
     "dismiss",
     "enrich",
+    "import_note",
     "load_manifest",
     "manifest_path",
     "manifest_sha256",

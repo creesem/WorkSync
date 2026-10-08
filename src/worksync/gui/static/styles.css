@@ -301,6 +301,102 @@ button.complete:hover {
   overflow-wrap: anywhere;
 }
 
+.triage-actions {
+  margin: 0.6rem 0 1rem;
+}
+
+.triage-actions button,
+.proposal .dismiss {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+  cursor: pointer;
+}
+
+.proposal {
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.proposal.low {
+  border-left: 3px solid var(--brass);
+}
+
+.proposal .low-flag {
+  padding: 0.05rem 0.35rem;
+  border: 1px solid var(--brass);
+  color: var(--brass);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.proposal .pick {
+  padding-top: 0.2rem;
+}
+
+.proposal-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.proposal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.proposal-head .conf {
+  color: var(--brass);
+  font-size: 0.8rem;
+}
+
+.proposal-head .path {
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.proposal-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.4rem 0.7rem;
+}
+
+.proposal-fields .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.proposal-fields .field input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  font-size: 0.85rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.proposal .provenance {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.proposal .dismiss {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--oxblood);
+  border-color: var(--oxblood);
+}
+
 @media (max-width: 640px) {
   .row {
     flex-direction: column;

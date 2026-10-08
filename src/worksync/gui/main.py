@@ -9,6 +9,7 @@ import webbrowser
 from pathlib import Path
 
 from worksync.core.config import ConfigError, load_config
+from worksync.core.model import LocalModel, ModelConfig
 from worksync.gui.controller import GuiService
 from worksync.gui.server import GuiHttpServer, create_server
 from worksync.inventory.index import index_path
@@ -17,8 +18,18 @@ from worksync.work.reviewer import ReviewerError, resolve_reviewer
 DEFAULT_HOST = "127.0.0.1"
 
 
-def build_service(*, vault: Path, runtime: Path, vault_name: str, reviewer: str | None, ui_port: int) -> GuiService:
-    """Pin the vault, index, and reviewer the server reads through."""
+def build_service(
+    *,
+    vault: Path,
+    runtime: Path,
+    vault_name: str,
+    reviewer: str | None,
+    ui_port: int,
+    model: object | None = None,
+    inbox_path: str | None = None,
+    rough_notes_path: str | None = None,
+) -> GuiService:
+    """Pin the vault, index, reviewer, model, and ingest roots the server reads through."""
     return GuiService(
         vault=Path(vault),
         db_path=index_path(runtime),
@@ -26,6 +37,9 @@ def build_service(*, vault: Path, runtime: Path, vault_name: str, reviewer: str 
         vault_name=vault_name,
         reviewer=reviewer,
         ui_port=ui_port,
+        model=model,
+        inbox_path=inbox_path,
+        rough_notes_path=rough_notes_path,
     )
 
 
@@ -64,7 +78,19 @@ def main(argv: list[str] | None = None) -> int:
         reviewer = None
     port = args.port if args.port is not None else config.ui_port
     token = args.token or secrets.token_urlsafe(24)
-    service = build_service(vault=vault, runtime=runtime, vault_name=config.vault_name, reviewer=reviewer, ui_port=port)
+    model = LocalModel(ModelConfig.from_raw(config.raw)) if ModelConfig.configured(config.raw) else None
+    inbox = str(config.raw.get("inbox_path") or "").strip() or None
+    rough = str(config.raw.get("rough_notes_path") or "").strip() or None
+    service = build_service(
+        vault=vault,
+        runtime=runtime,
+        vault_name=config.vault_name,
+        reviewer=reviewer,
+        ui_port=port,
+        model=model,
+        inbox_path=inbox,
+        rough_notes_path=rough,
+    )
     try:
         server = bind(service, token, host=args.host, port=port)
     except (OSError, ValueError) as exc:
