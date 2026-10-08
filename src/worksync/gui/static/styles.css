@@ -229,6 +229,78 @@ a.note-link {
   color: var(--oxblood);
 }
 
+button.complete {
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+button.complete:hover {
+  border-color: var(--oxblood);
+  color: var(--oxblood);
+}
+
+.reviewer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.6rem;
+  margin-top: 1.2rem;
+  max-width: 48rem;
+}
+
+.reviewer label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.reviewer input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.reviewer button {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--surface);
+  cursor: pointer;
+}
+
+.write-result {
+  padding: 0 1.4rem;
+}
+
+.write-ok,
+.write-error {
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.85rem;
+  border-left: 3px solid var(--brass);
+  background: var(--surface);
+  font-size: 0.85rem;
+}
+
+.write-error {
+  border-left-color: var(--oxblood);
+  color: var(--oxblood);
+}
+
+.write-ok ul {
+  margin: 0.4rem 0;
+  padding-left: 1.1rem;
+}
+
+.write-ok code {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 640px) {
   .row {
     flex-direction: column;

@@ -23,6 +23,7 @@ from worksync.inventory.index import index_vault
 TODAY = "2026-02-01"
 TOKEN = "test-run-token"
 PROJECT_NOTE = "9. Project/Project - Alpha.md"
+A_PATH = "Actions/A1.md"
 
 
 def _seed(vault: Path, write_note: Callable[..., Path]) -> None:
@@ -72,6 +73,19 @@ def _get(base: str, path: str, token: str | None = None) -> tuple[int, str, byte
 
 def _json(body: bytes) -> dict:
     return json.loads(body.decode("utf-8"))
+
+
+def _post(base: str, path: str, payload: dict | None, token: str | None = None) -> tuple[int, str, bytes]:
+    data = json.dumps(payload if payload is not None else {}).encode("utf-8")
+    request = urllib.request.Request(base + path, data=data, method="POST")
+    request.add_header("Content-Type", "application/json")
+    if token is not None:
+        request.add_header(TOKEN_HEADER, token)
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, response.headers.get_content_type(), response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.headers.get_content_type(), exc.read()
 
 
 def test_api_requires_the_per_run_token(gui_server: tuple[str, GuiService]) -> None:
@@ -134,6 +148,69 @@ def test_gui_read_surface_does_not_write(gui_server: tuple[str, GuiService], vau
         assert _get(base, endpoint, TOKEN)[0] == 200, endpoint
     assert {path: path.read_bytes() for path in vault.rglob("*.md")} == before_vault
     assert gui.db_path.read_bytes() == before_db
+
+
+def test_action_endpoint_requires_the_token(gui_server: tuple[str, GuiService]) -> None:
+    base, _gui = gui_server
+    assert _post(base, "/api/action/complete-action", {"path": A_PATH, "reason": "x"})[0] == 401
+    assert _post(base, "/api/action/complete-action", {"path": A_PATH, "reason": "x"}, "wrong")[0] == 401
+
+
+def test_action_endpoint_unknown_action_is_not_found(gui_server: tuple[str, GuiService]) -> None:
+    base, _gui = gui_server
+    status, _content_type, body = _post(base, "/api/action/nope", {}, TOKEN)
+    assert status == 404
+    assert _json(body)["error"] == "unknown_action"
+
+
+def test_action_endpoint_rejects_a_malformed_body(gui_server: tuple[str, GuiService]) -> None:
+    base, _gui = gui_server
+    request = urllib.request.Request(base + "/api/action/complete-action", data=b"{not json", method="POST")
+    request.add_header(TOKEN_HEADER, TOKEN)
+    try:
+        with urllib.request.urlopen(request, timeout=5):
+            status = 200
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    assert status == 400
+
+
+def test_action_endpoint_completes_an_action(gui_server: tuple[str, GuiService]) -> None:
+    base, gui = gui_server
+    status, _content_type, body = _post(
+        base, "/api/action/complete-action", {"path": A_PATH, "reason": "Finished"}, TOKEN
+    )
+    assert status == 200
+    payload = _json(body)
+    assert payload["state"] == "ok"
+    assert payload["committed"] is True
+    assert payload["equivalent_cli"].startswith("worksync task complete")
+    assert payload["changes"] and payload["changes"][0]["reviewer"] == "Myles"
+    assert "status: done" in (gui.vault / A_PATH).read_text(encoding="utf-8")
+
+
+def test_action_endpoint_stale_sha_is_conflict(gui_server: tuple[str, GuiService]) -> None:
+    base, gui = gui_server
+    payload = {"path": A_PATH, "reason": "Finished", "expected": "deadbeef"}
+    status, _content_type, body = _post(base, "/api/action/complete-action", payload, TOKEN)
+    assert status == 409
+    assert _json(body)["error"] == "stale_hash"
+    assert "status: open" in (gui.vault / A_PATH).read_text(encoding="utf-8")
+
+
+def test_action_endpoint_missing_reason_is_bad_request(gui_server: tuple[str, GuiService]) -> None:
+    base, _gui = gui_server
+    status, _content_type, body = _post(base, "/api/action/complete-action", {"path": A_PATH}, TOKEN)
+    assert status == 400
+    assert _json(body)["error"] == "missing_reason"
+
+
+def test_set_reviewer_action_persists(gui_server: tuple[str, GuiService]) -> None:
+    base, gui = gui_server
+    status, _content_type, body = _post(base, "/api/action/set-reviewer", {"reviewer": "Dana"}, TOKEN)
+    assert status == 200
+    assert _json(body)["reviewer"] == "Dana"
+    assert (gui.runtime_root / "reviewer.json").is_file()
 
 
 def test_health_endpoint_surfaces_validation_issues(
@@ -210,10 +287,9 @@ def _imports_of(module_name: str, path: Path) -> set[str]:
     return found
 
 
-def test_gui_import_closure_reaches_no_write_helper() -> None:
-    modules = _module_index()
+def _closure(entries: tuple[str, ...], modules: dict[str, Path]) -> set[str]:
     seen: set[str] = set()
-    stack = ["worksync.gui.main", "worksync.gui.server", "worksync.gui.controller"]
+    stack = list(entries)
     while stack:
         name = stack.pop()
         if name in seen or name not in modules:
@@ -225,8 +301,27 @@ def test_gui_import_closure_reaches_no_write_helper() -> None:
                     if candidate not in seen:
                         stack.append(candidate)
                     break
+    return seen
+
+
+def _closure_targets(closure: set[str], modules: dict[str, Path]) -> set[str]:
     targets: set[str] = set()
-    for name in seen:
+    for name in closure:
         targets |= _imports_of(name, modules[name])
+    return targets
+
+
+def test_gui_read_seam_import_closure_reaches_no_write_helper() -> None:
+    modules = _module_index()
+    targets = _closure_targets(_closure(("worksync.gui.controller",), modules), modules)
     assert "worksync.inventory.index.connect" not in targets
     assert not any(target == "worksync.safety" or target.startswith("worksync.safety.") for target in targets)
+
+
+def test_gui_write_seam_reaches_the_gateway() -> None:
+    modules = _module_index()
+    closure = _closure(("worksync.gui.actions",), modules)
+    targets = _closure_targets(closure, modules)
+    assert "worksync.safety.gateway" in targets
+    assert not any(name.startswith("worksync.context") for name in closure)
+    assert "sqlite3" not in targets

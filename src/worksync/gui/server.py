@@ -17,13 +17,16 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from worksync.context.retrieval import ServiceError
 from worksync.core.paths import PathSafetyError, ensure_under
+from worksync.gui.actions import ActionError, dispatch_action
 from worksync.gui.controller import GuiService
 
 TOKEN_HEADER = "X-Gui-Token"
 TOKEN_PLACEHOLDER = "__WORKSYNC_TOKEN__"
 DEFAULT_STATIC_DIR = Path(__file__).resolve().parent / "static"
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
+ACTION_PREFIX = "/api/action/"
 MAX_LIMIT = 50
+MAX_BODY = 1 << 20
 
 
 class GuiHttpServer(ThreadingHTTPServer):
@@ -49,6 +52,48 @@ class GuiHandler(BaseHTTPRequestHandler):
             self._handle_api(parsed)
         else:
             self._handle_static(parsed.path)
+
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        parsed = urlparse(self.path)
+        if not parsed.path.startswith(ACTION_PREFIX):
+            self._send_json(404, {"error": "not_found", "message": f"No endpoint: {parsed.path}"})
+            return
+        if not self._authorized():
+            self._send_json(401, {"error": "unauthorized", "message": "A valid X-Gui-Token header is required."})
+            return
+        name = parsed.path[len(ACTION_PREFIX) :].strip("/")
+        if not name:
+            self._send_json(404, {"error": "not_found", "message": "No action name was provided."})
+            return
+        try:
+            payload = self._read_json()
+        except ValueError as exc:
+            self._send_json(400, {"error": "bad_request", "message": str(exc)})
+            return
+        try:
+            result = dispatch_action(self.server.service, name, payload)
+        except ActionError as exc:
+            self._send_json(exc.status, {"error": exc.code, "message": str(exc), "affected": list(exc.affected)})
+            return
+        self._send_json(200, result)
+
+    def _read_json(self) -> dict:
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError as exc:
+            raise ValueError("Invalid Content-Length header.") from exc
+        if length > MAX_BODY:
+            raise ValueError("Request body is too large.")
+        raw = self.rfile.read(length) if length else b""
+        if not raw:
+            return {}
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise ValueError("Request body must be valid JSON.") from exc
+        if not isinstance(data, dict):
+            raise ValueError("Request body must be a JSON object.")
+        return data
 
     def log_message(self, format: str, *args: object) -> None:
         return

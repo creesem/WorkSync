@@ -12,6 +12,7 @@ from worksync.core.config import ConfigError, load_config
 from worksync.gui.controller import GuiService
 from worksync.gui.server import GuiHttpServer, create_server
 from worksync.inventory.index import index_path
+from worksync.work.reviewer import ReviewerError, resolve_reviewer
 
 DEFAULT_HOST = "127.0.0.1"
 
@@ -56,7 +57,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     vault = Path(args.vault) if args.vault is not None else config.vault_path
     runtime = Path(args.runtime) if args.runtime is not None else config.runtime_root
-    reviewer = str(config.raw.get("reviewer") or "").strip() or None
+    configured = str(config.raw.get("reviewer") or "").strip() or None
+    try:
+        reviewer = resolve_reviewer(runtime, configured=configured, remember=False)
+    except ReviewerError:
+        reviewer = None
     port = args.port if args.port is not None else config.ui_port
     token = args.token or secrets.token_urlsafe(24)
     service = build_service(vault=vault, runtime=runtime, vault_name=config.vault_name, reviewer=reviewer, ui_port=port)

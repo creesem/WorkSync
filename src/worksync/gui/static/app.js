@@ -6,6 +6,7 @@ const TOKEN_HEADER = "X-Gui-Token";
 const view = document.getElementById("view");
 const equivalent = document.getElementById("equivalent");
 const vaultName = document.getElementById("vault-name");
+const writeResult = document.getElementById("write-result");
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -22,18 +23,69 @@ async function api(path) {
   return response.json();
 }
 
+async function postAction(name, payload) {
+  const response = await fetch(`/api/action/${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: { [TOKEN_HEADER]: TOKEN, "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.message || `${response.status} ${response.statusText}`);
+  }
+  return data;
+}
+
+function showWriteResult(result, isError) {
+  if (isError) {
+    writeResult.innerHTML = `<div class="write-error">${escapeHtml(result.error)}</div>`;
+    return;
+  }
+  const changes = (result.changes || [])
+    .map(
+      (change) =>
+        `<li>${escapeHtml(change.kind)} ${escapeHtml(change.path)}${
+          change.zone ? ` <span class="tag">${escapeHtml(change.zone)}</span>` : ""
+        }</li>`
+    )
+    .join("");
+  writeResult.innerHTML = `<div class="write-ok">
+    <p>${escapeHtml(result.action)} — committed ${escapeHtml(String(result.committed))}${
+      result.reviewer ? ` by ${escapeHtml(result.reviewer)}` : ""
+    }</p>
+    ${changes ? `<ul>${changes}</ul>` : ""}
+    ${result.equivalent_cli ? `<code>${escapeHtml(result.equivalent_cli)}</code>` : ""}
+  </div>`;
+}
+
+async function completeAction(path, title) {
+  const reason = window.prompt(`Reason for completing "${title}"?`, "Completed from the GUI");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  try {
+    const result = await postAction("complete-action", { path, reason: reason.trim() });
+    showWriteResult(result, false);
+    await show(current);
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
 function empty(message) {
   return `<div class="empty">${escapeHtml(message || "Nothing here.")}</div>`;
 }
 
-function row(state, tag, title, reason, meta, target) {
+function row(state, tag, title, reason, meta, target, extra) {
   const attrs = target
     ? ` data-target="${escapeHtml(target.kind)}" data-name="${escapeHtml(target.name)}" tabindex="0" role="button"`
     : "";
   return `<div class="row ${escapeHtml(state)}"${attrs}>
     <div class="who">${escapeHtml(title)}</div>
     <div class="what"><span class="tag">${escapeHtml(tag)}</span>${escapeHtml(reason)}</div>
-    <div class="meta">${escapeHtml(meta || "")}</div>
+    <div class="meta">${escapeHtml(meta || "")}${extra || ""}</div>
   </div>`;
 }
 
@@ -44,7 +96,15 @@ function heading(title, subtitle) {
 function attentionRows(items) {
   if (!items || !items.length) return empty("No attention items.");
   return items
-    .map((item) => row(item.kind, item.kind, item.title, item.reason, item.path))
+    .map((item) => {
+      const extra =
+        item.entity_type === "action" && item.path
+          ? ` <button type="button" class="complete" data-complete="${escapeHtml(item.path)}" data-title="${escapeHtml(
+              item.title
+            )}">Complete</button>`
+          : "";
+      return row(item.kind, item.kind, item.title, item.reason, item.path, null, extra);
+    })
     .join("");
 }
 
@@ -195,7 +255,26 @@ const sections = {
       `<dl class="settings">${fields
         .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd>`)
         .join("")}</dl>` +
+      `<form class="reviewer" id="reviewer-form">
+        <label>Current reviewer
+          <input type="text" id="reviewer-name" value="${escapeHtml(data.reviewer || "")}" placeholder="Your name" />
+        </label>
+        <button type="submit">Set reviewer</button>
+      </form>` +
       (await healthBanner());
+    const form = document.getElementById("reviewer-form");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = document.getElementById("reviewer-name").value.trim();
+      if (!name) return;
+      try {
+        const result = await postAction("set-reviewer", { reviewer: name });
+        showWriteResult(result, false);
+        await show("settings");
+      } catch (error) {
+        showWriteResult({ error: String(error.message || error) }, true);
+      }
+    });
   },
 };
 
@@ -219,6 +298,11 @@ document.getElementById("nav").addEventListener("click", (event) => {
 });
 
 view.addEventListener("click", (event) => {
+  const complete = event.target.closest("[data-complete]");
+  if (complete) {
+    completeAction(complete.dataset.complete, complete.dataset.title || complete.dataset.complete);
+    return;
+  }
   const node = event.target.closest("[data-target]");
   if (!node) return;
   const { target: kind, name } = node.dataset;
