@@ -92,13 +92,18 @@ def save_manifest(
     expected_absent: bool = False,
 ) -> Path:
     """Write the manifest with a stale-state precondition; a mismatch fails closed."""
-    return derived.write_json(
+    return derived.write_text(
         staging_root(runtime_root),
         MANIFEST_REL,
-        manifest.to_dict(),
+        render_manifest(manifest),
         expected=expected,
         expected_absent=expected_absent,
     )
+
+
+def render_manifest(manifest: Manifest) -> str:
+    """Return the exact manifest bytes as text, shared by scan and apply."""
+    return json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False, default=str) + "\n"
 
 
 def _now() -> str:

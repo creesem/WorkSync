@@ -6,15 +6,48 @@ apply a reviewed batch through the single mutation gateway. Imports no ``context
 
 from __future__ import annotations
 
-from worksync.ingest.manifest import Manifest, load_manifest, manifest_path, save_manifest
+from worksync.ingest.apply import ApplyResult, apply, dismiss
+from worksync.ingest.discover import (
+    DEFAULT_INBOX,
+    DEFAULT_ROUGH_NOTES,
+    IngestError,
+    IngestRoots,
+    Source,
+    discover_sources,
+    resolve_roots,
+)
+from worksync.ingest.enrich import enrich
+from worksync.ingest.manifest import (
+    Manifest,
+    load_manifest,
+    manifest_path,
+    manifest_sha256,
+    save_manifest,
+)
 from worksync.ingest.proposal import ACTION_KINDS, PROPOSAL_STATUSES, Proposal
+from worksync.ingest.service import merge_manifest, scan, scan_token
 
 __all__ = [
     "ACTION_KINDS",
+    "DEFAULT_INBOX",
+    "DEFAULT_ROUGH_NOTES",
     "PROPOSAL_STATUSES",
+    "ApplyResult",
+    "IngestError",
+    "IngestRoots",
     "Manifest",
     "Proposal",
+    "Source",
+    "apply",
+    "discover_sources",
+    "dismiss",
+    "enrich",
     "load_manifest",
     "manifest_path",
+    "manifest_sha256",
+    "merge_manifest",
+    "resolve_roots",
     "save_manifest",
+    "scan",
+    "scan_token",
 ]

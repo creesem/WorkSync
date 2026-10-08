@@ -11,17 +11,17 @@ reason and keeps the proposal from reappearing.
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-07; full suite 414 passed, ruff clean)
 
-- [ ] `ingest.apply` builds one `ChangeSet` and calls `safety.commit` once; a single
+- [x] `ingest.apply` builds one `ChangeSet` and calls `safety.commit` once; a single
       proposal is the one-item case.
-- [ ] The active action note is created and the source is disposition-moved only after the
+- [x] The active action note is created and the source is disposition-moved only after the
       destination succeeds and a recoverable backup exists; a source is never unlinked.
-- [ ] A stale source hash, a missing/ambiguous target, and a mid-batch failure all fail
+- [x] A stale source hash, a missing/ambiguous target, and a mid-batch failure all fail
       closed and leave the vault unchanged.
-- [ ] `merge`/`drop` require confirmation and a reason; every canonical write records the
+- [x] `merge`/`drop` require confirmation and a reason; every canonical write records the
       reviewer and reason.
-- [ ] `ingest.dismiss` requires a named reviewer and reason, persists with the manifest
+- [x] `ingest.dismiss` requires a named reviewer and reason, persists with the manifest
       entry, and is not re-proposed for the same source state.
-- [ ] Tests cover create+archive, link-existing/merge/drop, stale source, missing target,
+- [x] Tests cover create+archive, link-existing/merge/drop, stale source, missing target,
       mid-batch rollback, dismissal, and the CLI apply/dismiss paths.

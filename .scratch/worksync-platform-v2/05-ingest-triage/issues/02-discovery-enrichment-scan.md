@@ -9,18 +9,18 @@ that were not rediscovered.
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-07; full suite 414 passed, ruff clean)
 
-- [ ] `ingest.discover` scans the configured inbox root with the single scanner (content,
+- [x] `ingest.discover` scans the configured inbox root with the single scanner (content,
       not only frontmatter) and produces the expected proposal kinds.
-- [ ] `ingest.enrich` fills title, owner, project, priority, and due deterministically,
+- [x] `ingest.enrich` fills title, owner, project, priority, and due deterministically,
       each with a human-readable provenance reason; duplicate detection uses the shared
       similarity scoring.
-- [ ] Ingest roots are configured and validated inside the vault; a missing configured root
+- [x] Ingest roots are configured and validated inside the vault; a missing configured root
       fails closed.
-- [ ] A re-scan marks undiscovered pending proposals `obsolete` and removes them from the
+- [x] A re-scan marks undiscovered pending proposals `obsolete` and removes them from the
       actionable queue.
-- [ ] `worksync ingest scan` persists the manifest and prints the proposals (and JSON);
+- [x] `worksync ingest scan` persists the manifest and prints the proposals (and JSON);
       `worksync ingest show` reads it.
-- [ ] Tests cover discovery, each enrichment field, the duplicate path, the retire path,
+- [x] Tests cover discovery, each enrichment field, the duplicate path, the retire path,
       the missing-root failure, and the CLI.

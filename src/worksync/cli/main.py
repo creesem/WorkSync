@@ -27,6 +27,10 @@ from worksync.html.generator import (
     build_pages,
 )
 from worksync.html.writer import generated_zones, write_pages
+from worksync.ingest import IngestError, load_manifest
+from worksync.ingest import apply as run_ingest_apply
+from worksync.ingest import dismiss as run_ingest_dismiss
+from worksync.ingest import scan as run_ingest_scan
 from worksync.inventory.index import index_path, index_vault
 from worksync.migrate import schema as schema_migration
 from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
@@ -199,6 +203,42 @@ def build_parser() -> argparse.ArgumentParser:
     interface_build.add_argument("--dry-run", dest="dry_run", action="store_true", help="Render without writing.")
     interface_build.add_argument("--json", action="store_true", help="Emit JSON.")
     interface_build.set_defaults(handler=_interface_build)
+
+    ingest = sub.add_parser("ingest", help="Scan raw sources into a reviewable triage queue.")
+    ingest_sub = ingest.add_subparsers(dest="ingest_command")
+    ingest_scan = ingest_sub.add_parser("scan", help="Discover and enrich sources into the manifest.")
+    ingest_scan.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    ingest_scan.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    ingest_scan.add_argument("--inbox", default=None, help="Inbox root relative to the vault.")
+    ingest_scan.add_argument(
+        "--rough-notes", dest="rough_notes", default=None, help="Rough-notes root relative to the vault."
+    )
+    ingest_scan.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    ingest_scan.add_argument("--json", action="store_true", help="Emit JSON.")
+    ingest_scan.set_defaults(handler=_ingest_scan)
+    ingest_show = ingest_sub.add_parser("show", help="Show the current triage queue.")
+    ingest_show.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    ingest_show.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    ingest_show.add_argument("--json", action="store_true", help="Emit JSON.")
+    ingest_show.set_defaults(handler=_ingest_show)
+    ingest_apply = ingest_sub.add_parser("apply", help="Apply selected pending proposals as one transaction.")
+    ingest_apply.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    ingest_apply.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    ingest_apply.add_argument("--id", dest="ids", action="append", default=None, help="Apply only this proposal id.")
+    ingest_apply.add_argument("--reason", required=True, help="Human-readable reason for the batch.")
+    ingest_apply.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    ingest_apply.add_argument("--confirm", action="store_true", help="Confirm a merge/drop batch.")
+    ingest_apply.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    ingest_apply.add_argument("--json", action="store_true", help="Emit JSON.")
+    ingest_apply.set_defaults(handler=_ingest_apply)
+    ingest_dismiss = ingest_sub.add_parser("dismiss", help="Dismiss a proposal with a reason.")
+    ingest_dismiss.add_argument("proposal_id", help="The proposal id to dismiss.")
+    ingest_dismiss.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    ingest_dismiss.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    ingest_dismiss.add_argument("--reason", required=True, help="Human-readable reason for the dismissal.")
+    ingest_dismiss.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    ingest_dismiss.add_argument("--json", action="store_true", help="Emit JSON.")
+    ingest_dismiss.set_defaults(handler=_ingest_dismiss)
 
     migrate = sub.add_parser("migrate", help="Detect or repair malformed vault frontmatter.")
     migrate_sub = migrate.add_subparsers(dest="migrate_command")
@@ -847,6 +887,104 @@ def _rebuild_derived(vault: Path, runtime: Path) -> None:
     db = index_path(runtime)
     index_vault(db, vault, rebuild=True)
     index_associations(db, vault)
+
+
+def _configured_ingest_roots() -> tuple[str | None, str | None]:
+    try:
+        config = load_config()
+    except (ConfigError, OSError):
+        return None, None
+    inbox = str(config.raw.get("inbox_path") or "").strip() or None
+    rough = str(config.raw.get("rough_notes_path") or "").strip() or None
+    return inbox, rough
+
+
+def _ingest_scan(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        today = _resolve_today(args.today)
+        configured_inbox, configured_rough = _configured_ingest_roots()
+        manifest = run_ingest_scan(
+            vault,
+            runtime,
+            today=today,
+            inbox_path=args.inbox or configured_inbox,
+            rough_notes_path=args.rough_notes or configured_rough,
+        )
+    except (ConfigError, IngestError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    _print_manifest(manifest, args.json)
+    return 0
+
+
+def _ingest_show(args: argparse.Namespace) -> int:
+    try:
+        _vault, runtime = _vault_runtime_paths(args)
+        manifest = load_manifest(runtime)
+    except (ConfigError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    if manifest is None:
+        print("worksync: no ingest manifest; run 'worksync ingest scan' first.", file=sys.stderr)
+        return 1
+    _print_manifest(manifest, args.json)
+    return 0
+
+
+def _print_manifest(manifest, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(manifest.to_dict(), indent=2, ensure_ascii=False))
+        return
+    print(f"ingest: {len(manifest.proposals)} proposal(s)")
+    for proposal in manifest.proposals:
+        target = f" -> {proposal.target_path}" if proposal.target_path else ""
+        print(f"  [{proposal.status}] {proposal.action} {proposal.source_path}{target} ({proposal.confidence:.2f})")
+
+
+def _ingest_apply(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        result = run_ingest_apply(
+            vault,
+            runtime,
+            reviewer=reviewer,
+            reason=args.reason,
+            ids=tuple(args.ids) if args.ids else None,
+            confirmed=args.confirm,
+            today=_resolve_today(args.today),
+        )
+        if result.committed:
+            _rebuild_derived(vault, runtime)
+    except (ConfigError, IngestError, MutationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "committed": result.committed,
+        "applied": list(result.applied),
+        "journal": str(result.journal),
+        "changes": [dict(change) for change in result.changes],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+    else:
+        print(f"ingest: applied {len(result.applied)} proposal(s)")
+        for change in result.changes:
+            print(f"  {change['kind']} {change['path']}")
+    return 0
+
+
+def _ingest_dismiss(args: argparse.Namespace) -> int:
+    try:
+        _vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        manifest = run_ingest_dismiss(runtime, args.proposal_id, reviewer=reviewer, reason=args.reason)
+    except (ConfigError, IngestError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    _print_manifest(manifest, args.json)
+    return 0
 
 
 def _migrate_payload(
