@@ -10,11 +10,11 @@ any canonical write.
 
 **Blocked by:** 05.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-08; full suite 442 passed, ruff clean, pre-commit clean)
 
-- [ ] The layer matrix admits `ingest` and the dependency graph stays acyclic.
-- [ ] An import-closure test proves `ingest` imports no `context`/`html` and only writes
+- [x] The layer matrix admits `ingest` and the dependency graph stays acyclic.
+- [x] An import-closure test proves `ingest` imports no `context`/`html` and only writes
       through `safety`.
-- [ ] `docs/architecture.md` documents the ingest discover/enrich/review/apply pipeline.
-- [ ] `docs/mutation-contract.md` notes ingest applies batches through the one gateway.
-- [ ] The full test suite and Ruff pass.
+- [x] `docs/architecture.md` documents the ingest discover/enrich/review/apply pipeline.
+- [x] `docs/mutation-contract.md` notes ingest applies batches through the one gateway.
+- [x] The full test suite and Ruff pass.

@@ -72,6 +72,9 @@ Arrows point from a package to what it depends on.
   mapping); it never imports `context` or a write helper, so the parser stays pure and
   the gateway stays the only write seam.
 - `context` and `ingest` depend on `work` (and therefore on the foundations).
+- `ingest` additionally reads through `inventory.parse` and writes only through
+  `safety`; it never imports `context` or `html`. The model provider it consults lives
+  in `core` precisely so this stays true (see [local-model.md](local-model.md)).
 - `html` depends on `core`, `safety`, and `work` only; it never imports `context`, so
   the interface consumes resolved entities and can be split into its own repository
   later. The `cli` orchestrates the reads and passes entities into `html`.
@@ -89,6 +92,31 @@ Arrows point from a package to what it depends on.
   rows purely and persists them through an `inventory`-owned derived-write adapter.
   See [ADR-0013](adr/0013-read-only-boundary-scope.md).
 - No GUI-only business rules: `gui` calls `work`/`context` services.
+
+## Ingest pipeline
+
+`ingest` turns raw sources into reviewed canonical writes without a second parser or a
+second write seam. It reads through `inventory.parse`, resolves entities through
+`work`, and reaches `safety` for every write; it imports no `context` and no `html`.
+
+1. **Discover** — `ingest.discover` finds candidate sources under the configured roots
+   (inbox, rough notes) using the single `inventory.parse` scanner.
+2. **Enrich** — `ingest.enrich` runs deterministic rules first and always produces a
+   complete `Proposal`. An optional injected `Suggester` (the `core.model` provider
+   seam) only fills weak fields as suggestions with capped confidence and provenance;
+   the deterministic path never depends on the model.
+3. **Review** — `ingest.service.scan` merges fresh proposals into the staging manifest
+   through `safety.derived` with a stale-state precondition, so a first-create race or
+   a concurrent tab fails closed. Review edits, dismissals, and the reviewer/reason are
+   persisted the same way.
+4. **Apply** — `ingest.apply` builds one `ChangeSet` for a reviewed batch (the canonical
+   creates/updates/moves plus the manifest update) and commits it through
+   `safety.gateway.commit`. A batch either commits coherently or restores its prior
+   state; a source is disposition-moved only after its destination write succeeds and a
+   recoverable backup exists.
+
+See [`docs/mutation-contract.md`](mutation-contract.md) for how an ingest batch uses the
+same gateway as any other canonical write.
 
 ## Source mapping
 

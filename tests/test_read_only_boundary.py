@@ -129,6 +129,27 @@ def test_html_layer_import_closure_excludes_context() -> None:
     assert "worksync.safety.gateway" in _closure_targets(closure, modules)
 
 
+def test_ingest_import_closure_stays_in_its_layers_and_writes_through_safety() -> None:
+    modules = _module_index()
+    closure = _closure(("worksync.ingest",), modules)
+    targets = _closure_targets(closure, modules)
+
+    assert "worksync.ingest" in closure
+    assert not any(name.startswith("worksync.context") for name in closure)
+    assert not any(name.startswith("worksync.html") for name in closure)
+    assert WRITE_HELPER not in targets
+    assert "worksync.safety.gateway" in targets
+    assert "worksync.safety.derived" in targets
+
+    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
+    for name in (module for module in closure if module.startswith("worksync.ingest")):
+        for imported in _imports_of(name, modules[name]):
+            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
+                f"{name} imports a raw write primitive: {imported}"
+            )
+            assert imported != "sqlite3", f"{name} opens a raw database connection"
+
+
 def test_mcp_adapter_imports_only_context() -> None:
     modules = _module_index()
     direct = {target for target in _imports_of("worksync.mcp.main", modules["worksync.mcp.main"])}

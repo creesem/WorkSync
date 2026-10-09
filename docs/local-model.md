@@ -11,11 +11,21 @@ vault truth.
 
 ## Placement
 
-A dedicated `ai` package (V2):
+The provider seam (`LocalModel` / `ModelConfig`) lives in `core.model`:
 
-- depends on `core` (config) and `context` (retrieval);
-- **never imports `safety`** — it has no way to write;
-- consumers (CLI, GUI, `ingest`) call it. None reaches a model provider directly.
+- it depends on nothing else in `worksync` and **never imports `safety`** — it has no
+  way to write;
+- it is pure config plus a bounded HTTP call, so it belongs in the shared kernel;
+- consumers (CLI, GUI) construct it and pass it in; `ingest` receives it through the
+  `Suggester` protocol, so it never imports a model package itself.
+
+`ingest` must not import `context`, so the raw provider cannot live in a
+context-bearing package. A separate consumer-level `ai` package (V2) remains the home
+for model features that *do* need retrieval — workbench chat, workload summaries — and
+depends on `core` and `context`; it is not needed for ingest enrichment.
+
+This is a recorded deviation from ADR-0011's original `ai`-package placement. The
+suggestion-only boundary and the single-seam intent are unchanged.
 
 ## Provider and configuration
 
@@ -64,5 +74,7 @@ result is returned with a warning, never a failure.
 
 ## One seam
 
-Workbench chat, next-action classification, workload summaries, and Krisp extraction
-all call `ai`. There is one model seam to test and to bound.
+Every model feature resolves to the one provider seam in `core.model`. Ingest
+enrichment consumes it now; workbench chat, next-action classification, workload
+summaries, and Krisp extraction call it through the consumer-level `ai` package (V2).
+There is one model seam to test and to bound.

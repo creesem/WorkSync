@@ -22,6 +22,14 @@ We place it in a dedicated `ai` package (V2)
 5. **One seam.** Workbench, classification, workload, and Krisp extraction all call
    `ai`.
 
+**Update (ingest boundary, ticket 06):** the provider seam is implemented in
+`core.model`, not a standalone `ai` package. `ingest` must not import `context`, and the
+raw provider (`LocalModel` / `ModelConfig`) needs nothing but config, so it lives in the
+shared kernel and consumers inject it through the `Suggester` protocol. The `ai` package
+remains the home for consumer-level features that *do* need retrieval (workbench chat,
+workload summaries). The suggestion-only boundary and the single-seam intent above are
+unchanged. See [`docs/local-model.md`](../local-model.md).
+
 **Status:** accepted
 
 **Considered options:** folding the model into `ingest` (rejected: workbench chat

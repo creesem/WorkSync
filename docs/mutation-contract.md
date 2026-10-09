@@ -175,6 +175,21 @@ or ownership-changing verb requires confirmation and a reason exactly as the CLI
 batch confirmation is one `ChangeSet`, so a batch either commits coherently or restores
 the prior state. The generated HTML layer stays read-only and never writes.
 
+### The ingest batch
+
+Ingest is not a second write path. Discover and enrich produce proposals, and scan
+persists the review manifest in the `staging` derived zone. Applying a reviewed batch
+builds one `ChangeSet` — the canonical creates, updates, and disposition-moves plus the
+manifest update — and calls the same `safety.commit`, so SHA preconditions, recoverable
+backups, reverse-order rollback, reviewer, and reason apply exactly as for any other
+canonical write. A batch either commits coherently or restores its prior state; a source
+is never unlinked, only disposition-moved after its destination write succeeds.
+
+When the batch's verb needs confirmation (`merge`, `drop`), the gateway refuses with
+`needs_confirmation` unless `confirmed=True`. The GUI's JavaScript prompt is a usability
+affordance only; the backend `409` is the authoritative gate, and no consumer implements
+its own rule.
+
 ## Concurrency
 
 The preconditions are the entire concurrency control. A first-create race is caught
