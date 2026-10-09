@@ -38,6 +38,9 @@ from worksync.migrate import schema as schema_migration
 from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
 from worksync.safety.activity import list_events
 from worksync.safety.models import MutationError
+from worksync.work.duplicates import DuplicatesError
+from worksync.work.duplicates import dismiss as run_duplicates_dismiss
+from worksync.work.duplicates import scan as run_duplicates_scan
 from worksync.work.relationships import related_to
 from worksync.work.render import (
     attention_to_dict,
@@ -260,6 +263,25 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_import.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
     ingest_import.add_argument("--json", action="store_true", help="Emit JSON.")
     ingest_import.set_defaults(handler=_ingest_import)
+
+    duplicates = sub.add_parser("duplicates", help="Detect and review duplicate action pairs.")
+    duplicates_sub = duplicates.add_subparsers(dest="duplicates_command")
+    dup_scan = duplicates_sub.add_parser("scan", help="Detect duplicate pairs into the manifest.")
+    dup_scan.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    dup_scan.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    dup_scan.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    dup_scan.add_argument("--dry-run", dest="dry_run", action="store_true", help="Detect without writing the manifest.")
+    dup_scan.add_argument("--json", action="store_true", help="Emit JSON.")
+    dup_scan.set_defaults(handler=_duplicates_scan)
+    dup_dismiss = duplicates_sub.add_parser("dismiss", help="Reject a pair as keep-both with a reason.")
+    dup_dismiss.add_argument("proposal_id", help="The pair id to reject.")
+    dup_dismiss.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    dup_dismiss.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    dup_dismiss.add_argument("--reason", required=True, help="Human-readable reason for the rejection.")
+    dup_dismiss.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    dup_dismiss.add_argument("--dry-run", dest="dry_run", action="store_true", help="Show the change without writing.")
+    dup_dismiss.add_argument("--json", action="store_true", help="Emit JSON.")
+    dup_dismiss.set_defaults(handler=_duplicates_dismiss)
 
     migrate = sub.add_parser("migrate", help="Detect or repair malformed vault frontmatter.")
     migrate_sub = migrate.add_subparsers(dest="migrate_command")
@@ -1064,6 +1086,45 @@ def _ingest_import(args: argparse.Namespace) -> int:
     else:
         print(f"ingest: imported {args.source} -> {result.target}")
     return 0
+
+
+def _duplicates_scan(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        manifest = run_duplicates_scan(vault, runtime, today=_resolve_today(args.today), dry_run=args.dry_run)
+    except (ConfigError, DuplicatesError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 2
+    _print_duplicates(manifest, args.json, dry_run=args.dry_run)
+    return 0
+
+
+def _duplicates_dismiss(args: argparse.Namespace) -> int:
+    try:
+        _vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        manifest = run_duplicates_dismiss(
+            runtime, args.proposal_id, reviewer=reviewer, reason=args.reason, dry_run=args.dry_run
+        )
+    except (ConfigError, DuplicatesError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    _print_duplicates(manifest, args.json, dry_run=args.dry_run)
+    return 0
+
+
+def _print_duplicates(manifest, as_json: bool, *, dry_run: bool = False) -> None:
+    if as_json:
+        payload = {
+            "dry_run": dry_run,
+            "scan_token": manifest.scan_token,
+            "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    print(f"duplicates: {len(manifest.proposals)} pair(s)")
+    for proposal in manifest.proposals:
+        print(f"  [{proposal.status}] {proposal.source_path} -> {proposal.target_path} ({proposal.confidence:.2f})")
 
 
 def _migrate_payload(

@@ -20,7 +20,9 @@ from worksync.ingest import apply as ingest_apply
 from worksync.ingest import dismiss as ingest_dismiss
 from worksync.ingest import scan as ingest_scan
 from worksync.safety.models import MutationError
+from worksync.work import duplicates as duplicates_service
 from worksync.work import reviewer as reviewer_store
+from worksync.work.duplicates import DuplicatesError
 from worksync.work.reviewer import ReviewerError
 from worksync.work.writer import (
     ActionWriteError,
@@ -109,7 +111,7 @@ def dispatch_action(
         raise ActionError("unknown_action", f"Unknown action: {name}", 404)
     try:
         return handler(service, payload, confirmed=bool(payload.get("confirmed")), today=today)
-    except (ActionWriteError, ReviewerError, MutationError, IngestError) as exc:
+    except (ActionWriteError, ReviewerError, MutationError, IngestError, DuplicatesError) as exc:
         raise _as_action_error(exc) from exc
 
 
@@ -323,6 +325,34 @@ def _ingest_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, to
     }
 
 
+def _duplicates_scan(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    manifest = duplicates_service.scan(service.vault, service.runtime_root, today=today)
+    return {
+        "state": "ok",
+        "action": "duplicates-scan",
+        "committed": False,
+        "scan_token": manifest.scan_token,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": _duplicates_scan_cli(today),
+    }
+
+
+def _duplicates_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    proposal_id = _required(payload, "id", "invalid_target")
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    manifest = duplicates_service.dismiss(service.runtime_root, proposal_id, reviewer=reviewer, reason=reason)
+    return {
+        "state": "ok",
+        "action": "duplicates-dismiss",
+        "committed": False,
+        "reviewer": reviewer,
+        "reason": reason,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": _duplicates_dismiss_cli(proposal_id, reason, reviewer),
+    }
+
+
 ACTIONS: dict[str, ActionHandler] = {
     "update-action": _update_action,
     "complete-action": _complete_action,
@@ -331,6 +361,8 @@ ACTIONS: dict[str, ActionHandler] = {
     "ingest-scan": _ingest_scan,
     "ingest-apply": _ingest_apply,
     "ingest-dismiss": _ingest_dismiss,
+    "duplicates-scan": _duplicates_scan,
+    "duplicates-dismiss": _duplicates_dismiss,
 }
 
 
@@ -420,6 +452,28 @@ def _ingest_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str:
         [
             "worksync",
             "ingest",
+            "dismiss",
+            _quote(proposal_id),
+            "--reason",
+            _quote(reason),
+            "--reviewer",
+            _quote(reviewer),
+        ]
+    )
+
+
+def _duplicates_scan_cli(today: date | None) -> str:
+    parts = ["worksync", "duplicates", "scan"]
+    if today is not None:
+        parts += ["--today", today.isoformat()]
+    return " ".join(parts)
+
+
+def _duplicates_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str:
+    return " ".join(
+        [
+            "worksync",
+            "duplicates",
             "dismiss",
             _quote(proposal_id),
             "--reason",

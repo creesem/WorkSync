@@ -3,7 +3,7 @@
 const TOKEN = window.__GUI_TOKEN__ || "";
 const TOKEN_HEADER = "X-Gui-Token";
 
-const state = { triage: [] };
+const state = { triage: [], queueTab: "triage", duplicates: [] };
 
 const view = document.getElementById("view");
 const equivalent = document.getElementById("equivalent");
@@ -163,6 +163,97 @@ async function dismissProposal(id) {
   }
 }
 
+function duplicateCard(proposal) {
+  const fields = proposal.fields || {};
+  const confidence = typeof proposal.confidence === "number" ? proposal.confidence : 0;
+  const rejected = proposal.status === "dismissed";
+  const checked = proposal.status === "pending" ? "checked" : "";
+  const evidence = (proposal.provenance || []).map(escapeHtml).join(" · ");
+  return `<div class="proposal row${rejected ? " low" : ""}" data-id="${escapeHtml(proposal.id)}" data-action="merge">
+    <label class="pick"><input type="checkbox" class="pick-box" ${checked} /></label>
+    <div class="proposal-body">
+      <div class="proposal-head">
+        <span class="tag">${escapeHtml(proposal.status)}</span>
+        <span class="conf">${escapeHtml(confidence.toFixed(2))}</span>
+        <span class="path">${escapeHtml(proposal.target_path || "")}</span>
+      </div>
+      <div class="proposal-fields">
+        <div><strong>Keep</strong> ${escapeHtml(fields.canonical_title || proposal.target_path || "")}</div>
+        <div><strong>Merge / redirect</strong> ${escapeHtml(
+          fields.duplicate_title || proposal.source_path || ""
+        )}</div>
+      </div>
+      <div class="provenance">${evidence}</div>
+      <button type="button" class="dismiss" data-dismiss-duplicate="${escapeHtml(
+        proposal.id
+      )}">Reject / keep both</button>
+    </div>
+  </div>`;
+}
+
+async function dismissDuplicate(id) {
+  const reason = window.prompt("Reason for keeping both notes?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  try {
+    const result = await postAction("duplicates-dismiss", { id, reason: reason.trim() });
+    showWriteResult(result, false);
+    await renderQueue();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
+const queueTabs = [
+  { id: "triage", label: "Triage" },
+  { id: "duplicates", label: "Duplicates" },
+];
+
+function queueBar() {
+  return `<div class="tabs">${queueTabs
+    .map(
+      (tab) =>
+        `<button type="button" class="tab${state.queueTab === tab.id ? " active" : ""}" data-queue-tab="${tab.id}">${escapeHtml(
+          tab.label
+        )}</button>`
+    )
+    .join("")}</div>`;
+}
+
+async function renderQueue() {
+  const bar = queueBar();
+  if (state.queueTab === "duplicates") {
+    await renderDuplicatesTab(bar);
+    return;
+  }
+  await renderTriageTab(bar);
+}
+
+async function renderTriageTab(bar) {
+  const data = await postAction("ingest-scan", {});
+  equivalent.textContent = data.equivalent_cli;
+  state.triage = data.proposals || [];
+  const rows = state.triage.map(proposalCard).join("");
+  view.innerHTML =
+    heading("Review", "Triage queue") +
+    bar +
+    `<div class="triage-actions"><button type="button" id="apply-triage">Apply selected</button></div>` +
+    (rows || empty("Nothing to triage."));
+  const apply = document.getElementById("apply-triage");
+  apply.addEventListener("click", applyTriage);
+}
+
+async function renderDuplicatesTab(bar) {
+  const data = await postAction("duplicates-scan", {});
+  equivalent.textContent = data.equivalent_cli;
+  state.duplicates = data.proposals || [];
+  const rows = state.duplicates.map(duplicateCard).join("");
+  view.innerHTML = heading("Review", "Duplicate pairs") + bar + (rows || empty("No duplicate pairs."));
+}
+
 async function completeAction(path, title) {
   const reason = window.prompt(`Reason for completing "${title}"?`, "");
   if (reason === null) return;
@@ -255,16 +346,7 @@ const sections = {
   },
 
   async triage() {
-    const data = await postAction("ingest-scan", {});
-    equivalent.textContent = data.equivalent_cli;
-    state.triage = data.proposals || [];
-    const rows = state.triage.map(proposalCard).join("");
-    view.innerHTML =
-      heading("Triage", `${state.triage.length} proposal(s)`) +
-      `<div class="triage-actions"><button type="button" id="apply-triage">Apply selected</button></div>` +
-      (rows || empty("Nothing to triage."));
-    const apply = document.getElementById("apply-triage");
-    apply.addEventListener("click", applyTriage);
+    await renderQueue();
   },
 
   async review() {
@@ -416,6 +498,17 @@ document.getElementById("nav").addEventListener("click", (event) => {
 });
 
 view.addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-queue-tab]");
+  if (tab) {
+    state.queueTab = tab.dataset.queueTab;
+    renderQueue();
+    return;
+  }
+  const dismissDup = event.target.closest("[data-dismiss-duplicate]");
+  if (dismissDup) {
+    dismissDuplicate(dismissDup.dataset.dismissDuplicate);
+    return;
+  }
   const complete = event.target.closest("[data-complete]");
   if (complete) {
     completeAction(complete.dataset.complete, complete.dataset.title || complete.dataset.complete);
