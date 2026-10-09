@@ -20,8 +20,10 @@ from worksync.ingest import apply as ingest_apply
 from worksync.ingest import dismiss as ingest_dismiss
 from worksync.ingest import scan as ingest_scan
 from worksync.safety.models import MutationError
+from worksync.work import clarification as clarification_service
 from worksync.work import duplicates as duplicates_service
 from worksync.work import reviewer as reviewer_store
+from worksync.work.clarification import ClarificationError
 from worksync.work.duplicates import DuplicatesError
 from worksync.work.reviewer import ReviewerError
 from worksync.work.writer import (
@@ -111,7 +113,7 @@ def dispatch_action(
         raise ActionError("unknown_action", f"Unknown action: {name}", 404)
     try:
         return handler(service, payload, confirmed=bool(payload.get("confirmed")), today=today)
-    except (ActionWriteError, ReviewerError, MutationError, IngestError, DuplicatesError) as exc:
+    except (ActionWriteError, ReviewerError, MutationError, IngestError, DuplicatesError, ClarificationError) as exc:
         raise _as_action_error(exc) from exc
 
 
@@ -384,6 +386,49 @@ def _duplicates_apply(service: WriteContext, payload: dict, *, confirmed: bool, 
     }
 
 
+def _clarification_scan(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    manifest = clarification_service.scan(service.vault, service.runtime_root, today=today)
+    return {
+        "state": "ok",
+        "action": "clarification-scan",
+        "committed": False,
+        "scan_token": manifest.scan_token,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": _clarification_scan_cli(today),
+    }
+
+
+def _clarification_apply(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    ids = payload.get("ids")
+    if ids is not None and (not isinstance(ids, list) or not ids):
+        raise ActionError("bad_request", "ids must be a non-empty list.", 400)
+    overrides = payload.get("overrides")
+    if overrides is not None and not isinstance(overrides, dict):
+        raise ActionError("bad_request", "overrides must be a JSON object.", 400)
+    result = clarification_service.apply(
+        service.vault,
+        service.runtime_root,
+        reviewer=reviewer,
+        reason=reason,
+        ids=tuple(str(item) for item in ids) if ids else None,
+        confirmed=confirmed,
+        today=today,
+        overrides=overrides,
+    )
+    return {
+        "state": "ok",
+        "action": "clarification-apply",
+        "committed": result.committed,
+        "reviewer": reviewer,
+        "reason": reason,
+        "applied": list(result.applied),
+        "changes": [dict(change) for change in result.changes],
+        "equivalent_cli": _clarification_apply_cli(reason, reviewer, ids, confirmed, overrides),
+    }
+
+
 ACTIONS: dict[str, ActionHandler] = {
     "update-action": _update_action,
     "complete-action": _complete_action,
@@ -395,6 +440,8 @@ ACTIONS: dict[str, ActionHandler] = {
     "duplicates-scan": _duplicates_scan,
     "duplicates-dismiss": _duplicates_dismiss,
     "duplicates-apply": _duplicates_apply,
+    "clarification-scan": _clarification_scan,
+    "clarification-apply": _clarification_apply,
 }
 
 
@@ -518,6 +565,25 @@ def _duplicates_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str
 
 def _duplicates_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
     parts = ["worksync", "duplicates", "apply", "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
+    for item in ids if isinstance(ids, list) else ():
+        parts += ["--id", _quote(str(item))]
+    for proposal_id, fields in overrides.items() if isinstance(overrides, dict) else ():
+        if fields:
+            parts += ["--set", _quote(f"{proposal_id}={json.dumps(fields, ensure_ascii=False)}")]
+    if confirmed:
+        parts += ["--confirm"]
+    return " ".join(parts)
+
+
+def _clarification_scan_cli(today: date | None) -> str:
+    parts = ["worksync", "clarification", "scan"]
+    if today is not None:
+        parts += ["--today", today.isoformat()]
+    return " ".join(parts)
+
+
+def _clarification_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
+    parts = ["worksync", "clarification", "apply", "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
     for item in ids if isinstance(ids, list) else ():
         parts += ["--id", _quote(str(item))]
     for proposal_id, fields in overrides.items() if isinstance(overrides, dict) else ():

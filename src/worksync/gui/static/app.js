@@ -3,7 +3,7 @@
 const TOKEN = window.__GUI_TOKEN__ || "";
 const TOKEN_HEADER = "X-Gui-Token";
 
-const state = { triage: [], queueTab: "triage", duplicates: [] };
+const state = { triage: [], queueTab: "triage", duplicates: [], clarification: [] };
 
 const view = document.getElementById("view");
 const equivalent = document.getElementById("equivalent");
@@ -216,6 +216,7 @@ async function dismissDuplicate(id) {
 const queueTabs = [
   { id: "triage", label: "Triage" },
   { id: "duplicates", label: "Duplicates" },
+  { id: "clarification", label: "Clarification" },
 ];
 
 function queueBar() {
@@ -233,6 +234,10 @@ async function renderQueue() {
   const bar = queueBar();
   if (state.queueTab === "duplicates") {
     await renderDuplicatesTab(bar);
+    return;
+  }
+  if (state.queueTab === "clarification") {
+    await renderClarificationTab(bar);
     return;
   }
   await renderTriageTab(bar);
@@ -304,6 +309,100 @@ async function applyDuplicates() {
   } catch (error) {
     showWriteResult({ error: String(error.message || error) }, true);
   }
+}
+
+function clarifyCard(proposal) {
+  const fields = proposal.fields || {};
+  const reasons = (proposal.provenance || []).map(escapeHtml).join(" · ");
+  const checked = proposal.status === "pending" ? "checked" : "";
+  return `<div class="proposal row" data-id="${escapeHtml(proposal.id)}">
+    <label class="pick"><input type="checkbox" class="pick-box" ${checked} /></label>
+    <div class="proposal-body">
+      <div class="proposal-head">
+        <span class="tag">${escapeHtml(proposal.status)}</span>
+        <span class="path">${escapeHtml(proposal.source_path)}</span>
+      </div>
+      <div class="proposal-fields">
+        <div><strong>Why</strong> ${escapeHtml(fields.reasons || reasons)}</div>
+        ${fields.matches ? `<div class="meta"><strong>Nearby</strong> ${escapeHtml(fields.matches)}</div>` : ""}
+      </div>
+      <label class="field"><span>Resolution</span>
+        <select data-resolution>
+          <option value="keep">keep</option>
+          <option value="archive">archive</option>
+          <option value="reclassify">waiting-on</option>
+          <option value="merge">merge</option>
+        </select>
+      </label>
+      <div class="proposal-fields">
+        <input data-field="canonical" placeholder="merge target path" />
+        <input data-field="project" placeholder="project" />
+        <input data-field="owner" placeholder="owner" />
+        <input data-field="dependency" placeholder="waiting on" />
+        <input data-field="next_review" placeholder="next review YYYY-MM-DD" />
+      </div>
+    </div>
+  </div>`;
+}
+
+function collectClarifySelection() {
+  const ids = [];
+  const overrides = {};
+  for (const node of document.querySelectorAll(".proposal[data-id]")) {
+    const box = node.querySelector(".pick-box");
+    if (!box || !box.checked) continue;
+    const id = node.dataset.id;
+    ids.push(id);
+    const select = node.querySelector("select[data-resolution]");
+    const entry = { resolution: select ? select.value : "keep" };
+    for (const input of node.querySelectorAll("input[data-field]")) {
+      const value = input.value.trim();
+      if (value) entry[input.dataset.field] = value;
+    }
+    overrides[id] = entry;
+  }
+  return { ids, overrides };
+}
+
+async function applyClarification() {
+  const selected = collectClarifySelection();
+  if (!selected.ids.length) {
+    showWriteResult({ error: "Select at least one item." }, true);
+    return;
+  }
+  const reason = window.prompt("Reason for this clarification batch?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  const normal = selected.ids.every((id) => ["keep", "reclassify"].includes(selected.overrides[id].resolution));
+  if (!normal && !window.confirm("This batch merges/archives notes and cannot be undone. Apply?")) return;
+  try {
+    const result = await postAction("clarification-apply", {
+      reason: reason.trim(),
+      ids: selected.ids,
+      overrides: selected.overrides,
+      confirmed: !normal,
+    });
+    showWriteResult(result, false);
+    await renderQueue();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
+async function renderClarificationTab(bar) {
+  const data = await postAction("clarification-scan", {});
+  equivalent.textContent = data.equivalent_cli;
+  state.clarification = data.proposals || [];
+  const rows = state.clarification.map(clarifyCard).join("");
+  view.innerHTML =
+    heading("Review", "Clarification queue") +
+    bar +
+    `<div class="triage-actions"><button type="button" id="apply-clarification">Apply selected</button></div>` +
+    (rows || empty("Nothing needs clarification."));
+  document.getElementById("apply-clarification").addEventListener("click", applyClarification);
 }
 
 async function completeAction(path, title) {

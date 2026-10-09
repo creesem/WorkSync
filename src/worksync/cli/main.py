@@ -38,6 +38,10 @@ from worksync.migrate import schema as schema_migration
 from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
 from worksync.safety.activity import list_events
 from worksync.safety.models import MutationError
+from worksync.work.clarification import ClarificationError
+from worksync.work.clarification import apply as run_clarification_apply
+from worksync.work.clarification import dismiss as run_clarification_dismiss
+from worksync.work.clarification import scan as run_clarification_scan
 from worksync.work.duplicates import DuplicatesError
 from worksync.work.duplicates import apply as run_duplicates_apply
 from worksync.work.duplicates import dismiss as run_duplicates_dismiss
@@ -297,6 +301,39 @@ def build_parser() -> argparse.ArgumentParser:
     dup_apply.add_argument("--dry-run", dest="dry_run", action="store_true", help="Validate without writing.")
     dup_apply.add_argument("--json", action="store_true", help="Emit JSON.")
     dup_apply.set_defaults(handler=_duplicates_apply)
+
+    clarification = sub.add_parser("clarification", help="Surface and resolve actions needing clarification.")
+    clarification_sub = clarification.add_subparsers(dest="clarification_command")
+    cl_scan = clarification_sub.add_parser("scan", help="Queue actions needing clarification.")
+    cl_scan.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    cl_scan.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    cl_scan.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    cl_scan.add_argument("--dry-run", dest="dry_run", action="store_true", help="Detect without writing the manifest.")
+    cl_scan.add_argument("--json", action="store_true", help="Emit JSON.")
+    cl_scan.set_defaults(handler=_clarification_scan)
+    cl_dismiss = clarification_sub.add_parser("dismiss", help="Dismiss an item with a reason.")
+    cl_dismiss.add_argument("proposal_id", help="The item id to dismiss.")
+    cl_dismiss.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    cl_dismiss.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    cl_dismiss.add_argument("--reason", required=True, help="Human-readable reason for the dismissal.")
+    cl_dismiss.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    cl_dismiss.add_argument("--dry-run", dest="dry_run", action="store_true", help="Show the change without writing.")
+    cl_dismiss.add_argument("--json", action="store_true", help="Emit JSON.")
+    cl_dismiss.set_defaults(handler=_clarification_dismiss)
+    cl_apply = clarification_sub.add_parser("apply", help="Resolve selected pending items as one transaction.")
+    cl_apply.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    cl_apply.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    cl_apply.add_argument("--id", dest="ids", action="append", default=None, help="Apply only this item id.")
+    cl_apply.add_argument(
+        "--set", dest="sets", action="append", default=None, metavar="ID=JSON", help="Override an item's resolution."
+    )
+    cl_apply.add_argument("--reason", required=True, help="Human-readable reason for the batch.")
+    cl_apply.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    cl_apply.add_argument("--confirm", action="store_true", help="Confirm a merge/archive batch.")
+    cl_apply.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    cl_apply.add_argument("--dry-run", dest="dry_run", action="store_true", help="Validate without writing.")
+    cl_apply.add_argument("--json", action="store_true", help="Emit JSON.")
+    cl_apply.set_defaults(handler=_clarification_apply)
 
     migrate = sub.add_parser("migrate", help="Detect or repair malformed vault frontmatter.")
     migrate_sub = migrate.add_subparsers(dest="migrate_command")
@@ -1176,6 +1213,82 @@ def _print_duplicates(manifest, as_json: bool, *, dry_run: bool = False) -> None
     print(f"duplicates: {len(manifest.proposals)} pair(s)")
     for proposal in manifest.proposals:
         print(f"  [{proposal.status}] {proposal.source_path} -> {proposal.target_path} ({proposal.confidence:.2f})")
+
+
+def _clarification_scan(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        manifest = run_clarification_scan(vault, runtime, today=_resolve_today(args.today), dry_run=args.dry_run)
+    except (ConfigError, ClarificationError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 2
+    _print_clarifications(manifest, args.json, dry_run=args.dry_run)
+    return 0
+
+
+def _clarification_dismiss(args: argparse.Namespace) -> int:
+    try:
+        _vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        manifest = run_clarification_dismiss(
+            runtime, args.proposal_id, reviewer=reviewer, reason=args.reason, dry_run=args.dry_run
+        )
+    except (ConfigError, ClarificationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    _print_clarifications(manifest, args.json, dry_run=args.dry_run)
+    return 0
+
+
+def _clarification_apply(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        result = run_clarification_apply(
+            vault,
+            runtime,
+            reviewer=reviewer,
+            reason=args.reason,
+            ids=tuple(args.ids) if args.ids else None,
+            confirmed=args.confirm,
+            today=_resolve_today(args.today),
+            overrides=_parse_sets(args.sets),
+            dry_run=args.dry_run,
+        )
+        if result.committed:
+            _rebuild_derived(vault, runtime)
+    except (ConfigError, ClarificationError, MutationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "dry_run": args.dry_run,
+        "committed": result.committed,
+        "applied": list(result.applied),
+        "journal": str(result.journal),
+        "changes": [dict(change) for change in result.changes],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+    else:
+        print(f"clarification: applied {len(result.applied)} item(s)")
+        for change in result.changes:
+            print(f"  {change['kind']} {change['path']}")
+    return 0
+
+
+def _print_clarifications(manifest, as_json: bool, *, dry_run: bool = False) -> None:
+    if as_json:
+        payload = {
+            "dry_run": dry_run,
+            "scan_token": manifest.scan_token,
+            "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    print(f"clarification: {len(manifest.proposals)} item(s)")
+    for proposal in manifest.proposals:
+        reasons = "; ".join(proposal.provenance)
+        print(f"  [{proposal.status}] {proposal.source_path} — {reasons}")
 
 
 def _migrate_payload(

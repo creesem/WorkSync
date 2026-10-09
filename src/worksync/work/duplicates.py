@@ -10,17 +10,17 @@ imports no ``context``.
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 from worksync.core.paths import PathSafetyError, ensure_under
-from worksync.inventory.parse import edit_frontmatter_fields, parse_note, split_frontmatter
+from worksync.inventory.parse import parse_note
 from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit
 from worksync.safety.models import ChangeSet, CommitResult, FileOp
 from worksync.safety.zones import write_zones
+from worksync.work.consolidate import merged_content, redirect_content
 from worksync.work.models import EntityBase, EntityType
 from worksync.work.queue import Manifest, Proposal, QueueStore, merge_manifest
 from worksync.work.repository import WorkIndex
@@ -231,8 +231,6 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-LAST_ACTION_LIMIT = 240
-MERGED_HEADING = "## Merged context"
 RESOLUTIONS = ("merge", "redirect")
 
 
@@ -358,7 +356,7 @@ def _pair_ops(
                 "update",
                 Path(canonical_path),
                 "trusted",
-                content=_merged_content(canonical, duplicate),
+                content=merged_content(canonical.content, duplicate.content),
                 expected=canonical.sha,
             )
         )
@@ -367,7 +365,14 @@ def _pair_ops(
             "update",
             Path(duplicate_path),
             "trusted",
-            content=_redirect_content(duplicate, canonical.title, when=when, reviewer=reviewer, reason=reason),
+            content=redirect_content(
+                duplicate.content,
+                duplicate.frontmatter,
+                canonical.title,
+                when=when.isoformat(),
+                reviewer=reviewer,
+                reason=reason,
+            ),
             expected=duplicate.sha,
         )
     )
@@ -403,34 +408,6 @@ def _load(vault_root: Path, relative: str, expected: str | None, proposal_id: st
     return _Note(
         relative=relative, content=record.content, title=record.title, frontmatter=record.frontmatter, sha=current
     )
-
-
-def _merged_content(canonical: _Note, duplicate: _Note) -> str:
-    body = split_frontmatter(duplicate.content)[1].strip()
-    if not body:
-        return canonical.content
-    return canonical.content.rstrip("\n") + f"\n\n{MERGED_HEADING}\n\n{body}\n"
-
-
-def _redirect_content(note: _Note, canonical_title: str, *, when: date, reviewer: str, reason: str) -> str:
-    revision = _revision(note.frontmatter) + 1
-    fields = {
-        "type": "redirect",
-        "status": "cancelled",
-        "redirect": json.dumps(f"[[{canonical_title}]]"),
-        "updated": when.isoformat(),
-        "revision": str(revision),
-        "updated_by": str(reviewer).strip(),
-        "last_action": str(reason).strip()[:LAST_ACTION_LIMIT],
-    }
-    return edit_frontmatter_fields(note.content, set_fields=fields)
-
-
-def _revision(frontmatter: dict) -> int:
-    try:
-        return int(frontmatter.get("revision"))
-    except (TypeError, ValueError):
-        return 0
 
 
 def _op_dict(op: FileOp) -> dict:
