@@ -81,6 +81,22 @@ def test_clarification_apply_archive_confirmed(vault: Path, write_note: Callable
     assert result["equivalent_cli"].startswith("worksync clarification apply")
 
 
+def test_clarification_dismiss_requires_a_reason(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed(vault, write_note)
+    service = _service(vault, tmp_path / "var")
+    scan = dispatch_action(service, "clarification-scan", {}, today=TODAY)
+    proposal_id = scan["proposals"][0]["id"]
+
+    with pytest.raises(ActionError) as excinfo:
+        dispatch_action(service, "clarification-dismiss", {"id": proposal_id}, today=TODAY)
+    assert excinfo.value.code == "missing_reason"
+    assert excinfo.value.status == 400
+
+    result = dispatch_action(service, "clarification-dismiss", {"id": proposal_id, "reason": "fine"}, today=TODAY)
+    assert result["proposals"][0]["status"] == "dismissed"
+    assert result["equivalent_cli"].startswith("worksync clarification dismiss")
+
+
 @pytest.fixture
 def clarify_server(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> Iterator[tuple[str, GuiService]]:
     _seed(vault, write_note)
@@ -100,5 +116,5 @@ def test_static_shell_exposes_the_clarification_surface(clarify_server: tuple[st
     base, _service = clarify_server
     with urllib.request.urlopen(base + "/app.js", timeout=5) as response:
         script = response.read().decode("utf-8")
-    for action in ("clarification-scan", "clarification-apply"):
+    for action in ("clarification-scan", "clarification-apply", "clarification-dismiss"):
         assert action in script

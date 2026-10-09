@@ -184,6 +184,16 @@ function duplicateCard(proposal) {
         )}</div>
       </div>
       <div class="provenance">${evidence}</div>
+      <label class="field"><span>Keep</span>
+        <select data-canonical>
+          <option value="${escapeHtml(proposal.target_path || "")}">${escapeHtml(
+            fields.canonical_title || proposal.target_path || ""
+          )}</option>
+          <option value="${escapeHtml(proposal.source_path || "")}">${escapeHtml(
+            fields.duplicate_title || proposal.source_path || ""
+          )}</option>
+        </select>
+      </label>
       <label class="field"><span>Resolution</span>
         <select data-resolution>
           <option value="merge">merge</option>
@@ -280,6 +290,8 @@ function collectDuplicateSelection() {
     ids.push(id);
     const select = node.querySelector("select[data-resolution]");
     overrides[id] = { resolution: select ? select.value : "merge" };
+    const canonical = node.querySelector("select[data-canonical]");
+    if (canonical && canonical.value) overrides[id].canonical = canonical.value;
   }
   return { ids, overrides };
 }
@@ -341,6 +353,9 @@ function clarifyCard(proposal) {
         <input data-field="dependency" placeholder="waiting on" />
         <input data-field="next_review" placeholder="next review YYYY-MM-DD" />
       </div>
+      <button type="button" class="dismiss" data-dismiss-clarification="${escapeHtml(
+        proposal.id
+      )}">Dismiss</button>
     </div>
   </div>`;
 }
@@ -376,8 +391,9 @@ async function applyClarification() {
     showWriteResult({ error: "A human-readable reason is required." }, true);
     return;
   }
-  const normal = selected.ids.every((id) => ["keep", "reclassify"].includes(selected.overrides[id].resolution));
-  if (!normal && !window.confirm("This batch merges/archives notes and cannot be undone. Apply?")) return;
+  const normal = selected.ids.every((id) => selected.overrides[id].resolution === "keep");
+  if (!normal && !window.confirm("This batch changes ownership or merges/archives notes and cannot be undone. Apply?"))
+    return;
   try {
     const result = await postAction("clarification-apply", {
       reason: reason.trim(),
@@ -385,6 +401,22 @@ async function applyClarification() {
       overrides: selected.overrides,
       confirmed: !normal,
     });
+    showWriteResult(result, false);
+    await renderQueue();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
+async function dismissClarification(id) {
+  const reason = window.prompt("Reason for dismissing this item?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  try {
+    const result = await postAction("clarification-dismiss", { id, reason: reason.trim() });
     showWriteResult(result, false);
     await renderQueue();
   } catch (error) {
@@ -658,6 +690,11 @@ view.addEventListener("click", (event) => {
   const dismissDup = event.target.closest("[data-dismiss-duplicate]");
   if (dismissDup) {
     dismissDuplicate(dismissDup.dataset.dismissDuplicate);
+    return;
+  }
+  const dismissClarify = event.target.closest("[data-dismiss-clarification]");
+  if (dismissClarify) {
+    dismissClarification(dismissClarify.dataset.dismissClarification);
     return;
   }
   const complete = event.target.closest("[data-complete]");

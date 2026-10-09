@@ -7,7 +7,7 @@ from pathlib import Path
 
 CANONICAL_ZONES = frozenset({"trusted"})
 DERIVED_ZONES = frozenset({"staging", "ingest", "views", "generated", "runtime"})
-CONFIRM_VERBS = frozenset({"drop", "merge", "redirect", "archive", "supersede", "reassign"})
+CONFIRM_VERBS = frozenset({"drop", "merge", "redirect", "archive", "supersede", "reassign", "reclassify"})
 
 
 class MutationError(RuntimeError):

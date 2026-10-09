@@ -332,8 +332,13 @@ def _reclassify_content(
     if project_entity is None:
         raise ClarificationError("unknown_project", f"Unknown project: {project}", affected=(project,))
     owner_entity = index.get("person", owner)
-    if owner_entity is None:
-        raise ClarificationError("unknown_owner", f"Unknown owner: {owner}", affected=(owner,))
+    if owner_entity is None or getattr(owner_entity, "status", "") != "active":
+        raise ClarificationError("unknown_owner", f"Owner is not a current active person: {owner}", affected=(owner,))
+    existing_owners = _owner_targets(note.frontmatter)
+    if existing_owners and link_target(owner) not in existing_owners:
+        raise ClarificationError(
+            "owner_conflict", f"Item already has a different owner than: {owner}", affected=(note.relative,)
+        )
     if parse_iso_date(next_review) is None:
         raise ClarificationError(
             "invalid_next_review", f"Next review is not an ISO date: {next_review}", affected=(next_review,)
@@ -369,6 +374,16 @@ def _reasons(entity, index: WorkIndex, today: date) -> list[str]:
     if due is not None and due.date() < today and entity.status not in TERMINAL_STATUSES:
         reasons.append(f"past due {due.date().isoformat()} with status {entity.status}")
     return reasons
+
+
+def _owner_targets(frontmatter: dict) -> set[str]:
+    owners = frontmatter.get("owners")
+    if isinstance(owners, (list, tuple)):
+        return {link_target(str(owner)) for owner in owners if link_target(str(owner))}
+    if owners is None:
+        return set()
+    target = link_target(str(owners))
+    return {target} if target else set()
 
 
 def _top_matches(entity, actions) -> list[str]:

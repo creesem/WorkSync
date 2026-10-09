@@ -128,6 +128,7 @@ def test_apply_reclassify_waiting_on(vault: Path, write_note: Callable[..., Path
         runtime,
         reviewer="Myles",
         reason="Waiting on vendor",
+        confirmed=True,
         today=TODAY,
         overrides={
             proposal_id: {
@@ -145,6 +146,26 @@ def test_apply_reclassify_waiting_on(vault: Path, write_note: Callable[..., Path
     assert "waiting_on: Vendor response" in text
     assert "due: 2026-11-01" in text
     assert "[[Myles]]" in text
+
+
+def test_apply_merge_into_non_action_fails_closed(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed_entities(write_note, vault)
+    _action(write_note, vault, "NoOwner", "Call the vendor")
+    runtime = tmp_path / "var"
+    proposal_id = scan(vault, runtime, today=TODAY).proposals[0].id
+
+    with pytest.raises(ClarificationError) as excinfo:
+        apply(
+            vault,
+            runtime,
+            reviewer="Myles",
+            reason="Consolidate",
+            confirmed=True,
+            today=TODAY,
+            ids=(proposal_id,),
+            overrides={proposal_id: {"resolution": "merge", "canonical": "9. Project/Project - Alpha.md"}},
+        )
+    assert excinfo.value.code == "not_action"
 
 
 def test_apply_reclassify_fails_closed_without_required_fields(

@@ -85,6 +85,7 @@ def test_cli_clarification_reclassify(vault: Path, write_note: Callable[..., Pat
                 "Waiting on vendor",
                 "--reviewer",
                 "Myles",
+                "--confirm",
                 "--today",
                 TODAY.isoformat(),
             ]

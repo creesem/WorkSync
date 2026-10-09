@@ -79,6 +79,12 @@ _STATUS_BY_CODE = {
     "invalid_due": 422,
     "invalid_op": 422,
     "not_action": 422,
+    "unsupported_resolution": 422,
+    "missing_reclassify_fields": 422,
+    "unknown_project": 422,
+    "unknown_owner": 422,
+    "invalid_next_review": 422,
+    "owner_conflict": 409,
     "waiting_requires_waiting_on": 422,
     "already_done": 422,
     "rolled_back": 500,
@@ -398,6 +404,22 @@ def _clarification_scan(service: WriteContext, payload: dict, *, confirmed: bool
     }
 
 
+def _clarification_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    proposal_id = _required(payload, "id", "invalid_target")
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    manifest = clarification_service.dismiss(service.runtime_root, proposal_id, reviewer=reviewer, reason=reason)
+    return {
+        "state": "ok",
+        "action": "clarification-dismiss",
+        "committed": False,
+        "reviewer": reviewer,
+        "reason": reason,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": _clarification_dismiss_cli(proposal_id, reason, reviewer),
+    }
+
+
 def _clarification_apply(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
     reason = _required(payload, "reason", "missing_reason")
     reviewer = _reviewer(service)
@@ -442,6 +464,7 @@ ACTIONS: dict[str, ActionHandler] = {
     "duplicates-apply": _duplicates_apply,
     "clarification-scan": _clarification_scan,
     "clarification-apply": _clarification_apply,
+    "clarification-dismiss": _clarification_dismiss,
 }
 
 
@@ -580,6 +603,21 @@ def _clarification_scan_cli(today: date | None) -> str:
     if today is not None:
         parts += ["--today", today.isoformat()]
     return " ".join(parts)
+
+
+def _clarification_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str:
+    return " ".join(
+        [
+            "worksync",
+            "clarification",
+            "dismiss",
+            _quote(proposal_id),
+            "--reason",
+            _quote(reason),
+            "--reviewer",
+            _quote(reviewer),
+        ]
+    )
 
 
 def _clarification_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
