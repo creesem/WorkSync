@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -19,7 +18,7 @@ from worksync.ingest.manifest import (
     load_manifest_with_hash,
     save_manifest,
 )
-from worksync.ingest.proposal import Proposal
+from worksync.work.queue import merge_manifest
 from worksync.work.repository import WorkIndex
 
 
@@ -57,26 +56,3 @@ def scan_token(sources: tuple[Source, ...]) -> str:
     """Return a stable hash of the discovered source set (path + content hash)."""
     payload = sorted((source.record.path, source.record.content_hash) for source in sources)
     return hashlib.sha256(json.dumps(payload).encode("utf-8")).hexdigest()
-
-
-def merge_manifest(previous: Manifest | None, fresh: tuple[Proposal, ...], *, token: str) -> Manifest:
-    """Merge fresh proposals with the previous manifest.
-
-    A dismissed proposal is retained while its source hash is unchanged; a pending
-    proposal that was not rediscovered is retired as ``obsolete``.
-    """
-    previous_by_id = {proposal.id: proposal for proposal in previous.proposals} if previous else {}
-    fresh_ids = {proposal.id for proposal in fresh}
-    merged: list[Proposal] = []
-    for proposal in fresh:
-        old = previous_by_id.get(proposal.id)
-        if old is not None and old.status == "dismissed" and old.source_sha256 == proposal.source_sha256:
-            merged.append(old)
-        else:
-            merged.append(proposal)
-    if previous:
-        for old in previous.proposals:
-            if old.id not in fresh_ids and old.status == "pending":
-                merged.append(replace(old, status="obsolete"))
-    base = previous or Manifest(scan_token=token)
-    return base.with_proposals(tuple(merged), scan_token=token)

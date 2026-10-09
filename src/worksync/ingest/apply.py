@@ -19,7 +19,6 @@ from worksync.ingest.manifest import (
     MANIFEST_REL,
     Manifest,
     load_manifest_with_hash,
-    render_manifest,
     save_manifest,
 )
 from worksync.ingest.proposal import Proposal
@@ -28,6 +27,7 @@ from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit
 from worksync.safety.models import ChangeSet, CommitResult, FileOp
 from worksync.safety.zones import write_zones
+from worksync.work.queue import QueueStore
 from worksync.work.schema import canonical_action_status, canonical_priority
 
 DEFAULT_ACTIVE = "7. Task Notes/Active"
@@ -90,15 +90,7 @@ def apply(
         for proposal in manifest.proposals
     )
     new_manifest = manifest.with_proposals(updated)
-    ops.append(
-        FileOp(
-            "update",
-            MANIFEST_REL,
-            "staging",
-            content=render_manifest(new_manifest),
-            expected=manifest_hash,
-        )
-    )
+    ops.append(QueueStore(runtime, MANIFEST_REL).manifest_op(new_manifest, expected=manifest_hash))
 
     changeset = ChangeSet(_verb(selected), tuple(ops), reviewer=reviewer, reason=str(reason).strip())
     result: CommitResult = commit(changeset, write_zones(vault_root, runtime), confirmed=confirmed)
