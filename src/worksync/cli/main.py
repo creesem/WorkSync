@@ -39,6 +39,7 @@ from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
 from worksync.safety.activity import list_events
 from worksync.safety.models import MutationError
 from worksync.work.duplicates import DuplicatesError
+from worksync.work.duplicates import apply as run_duplicates_apply
 from worksync.work.duplicates import dismiss as run_duplicates_dismiss
 from worksync.work.duplicates import scan as run_duplicates_scan
 from worksync.work.relationships import related_to
@@ -282,6 +283,20 @@ def build_parser() -> argparse.ArgumentParser:
     dup_dismiss.add_argument("--dry-run", dest="dry_run", action="store_true", help="Show the change without writing.")
     dup_dismiss.add_argument("--json", action="store_true", help="Emit JSON.")
     dup_dismiss.set_defaults(handler=_duplicates_dismiss)
+    dup_apply = duplicates_sub.add_parser("apply", help="Resolve selected pending pairs as one transaction.")
+    dup_apply.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    dup_apply.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    dup_apply.add_argument("--id", dest="ids", action="append", default=None, help="Apply only this pair id.")
+    dup_apply.add_argument(
+        "--set", dest="sets", action="append", default=None, metavar="ID=JSON", help="Override a pair's resolution."
+    )
+    dup_apply.add_argument("--reason", required=True, help="Human-readable reason for the batch.")
+    dup_apply.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    dup_apply.add_argument("--confirm", action="store_true", help="Confirm a merge/redirect batch.")
+    dup_apply.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    dup_apply.add_argument("--dry-run", dest="dry_run", action="store_true", help="Validate without writing.")
+    dup_apply.add_argument("--json", action="store_true", help="Emit JSON.")
+    dup_apply.set_defaults(handler=_duplicates_apply)
 
     migrate = sub.add_parser("migrate", help="Detect or repair malformed vault frontmatter.")
     migrate_sub = migrate.add_subparsers(dest="migrate_command")
@@ -1110,6 +1125,42 @@ def _duplicates_dismiss(args: argparse.Namespace) -> int:
         print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
         return 1
     _print_duplicates(manifest, args.json, dry_run=args.dry_run)
+    return 0
+
+
+def _duplicates_apply(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        result = run_duplicates_apply(
+            vault,
+            runtime,
+            reviewer=reviewer,
+            reason=args.reason,
+            ids=tuple(args.ids) if args.ids else None,
+            confirmed=args.confirm,
+            today=_resolve_today(args.today),
+            overrides=_parse_sets(args.sets),
+            dry_run=args.dry_run,
+        )
+        if result.committed:
+            _rebuild_derived(vault, runtime)
+    except (ConfigError, DuplicatesError, MutationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "dry_run": args.dry_run,
+        "committed": result.committed,
+        "applied": list(result.applied),
+        "journal": str(result.journal),
+        "changes": [dict(change) for change in result.changes],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+    else:
+        print(f"duplicates: applied {len(result.applied)} pair(s)")
+        for change in result.changes:
+            print(f"  {change['kind']} {change['path']}")
     return 0
 
 

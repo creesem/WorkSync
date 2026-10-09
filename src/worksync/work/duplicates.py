@@ -10,15 +10,21 @@ imports no ``context``.
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
+from worksync.core.paths import PathSafetyError, ensure_under
+from worksync.inventory.parse import edit_frontmatter_fields, parse_note, split_frontmatter
 from worksync.safety.files import sha256_file
+from worksync.safety.gateway import commit
+from worksync.safety.models import ChangeSet, CommitResult, FileOp
+from worksync.safety.zones import write_zones
 from worksync.work.models import EntityBase, EntityType
 from worksync.work.queue import Manifest, Proposal, QueueStore, merge_manifest
 from worksync.work.repository import WorkIndex
-from worksync.work.schema import ACTIVE_ACTION_STATUSES, link_target
+from worksync.work.schema import ACTIVE_ACTION_STATUSES, detect_type, link_target
 from worksync.work.similarity import score, title_tokens
 
 MANIFEST_REL = Path("duplicates") / "manifest.json"
@@ -223,3 +229,216 @@ def _created(entity: EntityBase) -> str:
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+LAST_ACTION_LIMIT = 240
+MERGED_HEADING = "## Merged context"
+RESOLUTIONS = ("merge", "redirect")
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    """The visible outcome of applying a reviewed batch of duplicate resolutions."""
+
+    committed: bool
+    journal: Path
+    changes: tuple[dict, ...]
+    applied: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _Note:
+    relative: str
+    content: str
+    title: str
+    frontmatter: dict
+    sha: str
+
+
+def load_manifest(runtime: str | Path) -> Manifest | None:
+    """Load the duplicates manifest, or ``None`` when absent."""
+    return QueueStore(runtime, MANIFEST_REL).load()
+
+
+def manifest_path(runtime: str | Path) -> Path:
+    """Return the duplicates manifest path under the staging zone."""
+    return QueueStore(runtime, MANIFEST_REL).path()
+
+
+def apply(
+    vault: str | Path,
+    runtime: str | Path,
+    *,
+    reviewer: str,
+    reason: str,
+    ids: tuple[str, ...] | None = None,
+    confirmed: bool = False,
+    today: date | None = None,
+    overrides: dict[str, dict] | None = None,
+    dry_run: bool = False,
+) -> ApplyResult:
+    """Apply the selected pending pairs as one transaction through the gateway."""
+    if not str(reviewer).strip():
+        raise DuplicatesError("missing_reviewer", "An apply requires a named reviewer.")
+    if not str(reason).strip():
+        raise DuplicatesError("missing_reason", "An apply requires a human-readable reason.")
+    store = QueueStore(runtime, MANIFEST_REL)
+    loaded = store.load_with_hash()
+    if loaded is None:
+        raise DuplicatesError("no_manifest", "No duplicates manifest; run 'worksync duplicates scan' first.")
+    manifest, manifest_hash = loaded
+    wanted = set(ids) if ids is not None else None
+    selected = tuple(
+        proposal
+        for proposal in manifest.proposals
+        if proposal.status == "pending" and (wanted is None or proposal.id in wanted)
+    )
+    if not selected:
+        raise DuplicatesError("no_proposals", "No pending pairs were selected.")
+
+    when = today or date.today()
+    vault_root = Path(vault).expanduser().resolve()
+    ops: list[FileOp] = []
+    resolutions: list[str] = []
+    for proposal in selected:
+        override = (overrides or {}).get(proposal.id) or {}
+        if not isinstance(override, dict):
+            raise DuplicatesError(
+                "invalid_override", f"Override for {proposal.id} must be an object.", affected=(proposal.id,)
+            )
+        pair_ops, resolution = _pair_ops(vault_root, proposal, override, when=when, reviewer=reviewer, reason=reason)
+        ops.extend(pair_ops)
+        resolutions.append(resolution)
+
+    selected_ids = {proposal.id for proposal in selected}
+    updated = tuple(
+        replace(proposal, status="applied", reviewer=reviewer, reason=reason, decided_at=_now())
+        if proposal.id in selected_ids
+        else proposal
+        for proposal in manifest.proposals
+    )
+    ops.append(store.manifest_op(manifest.with_proposals(updated), expected=manifest_hash))
+
+    if dry_run:
+        return ApplyResult(
+            committed=False,
+            journal=Path(),
+            changes=tuple(_op_dict(op) for op in ops),
+            applied=tuple(proposal.id for proposal in selected),
+        )
+
+    verb = "merge" if "merge" in resolutions else "redirect"
+    changeset = ChangeSet(verb, tuple(ops), reviewer=str(reviewer).strip(), reason=str(reason).strip())
+    result: CommitResult = commit(changeset, write_zones(vault_root, runtime), confirmed=confirmed)
+    return ApplyResult(
+        committed=result.committed,
+        journal=result.journal,
+        changes=result.changes,
+        applied=tuple(proposal.id for proposal in selected),
+    )
+
+
+def _pair_ops(
+    vault_root: Path, proposal: Proposal, override: dict, *, when: date, reviewer: str, reason: str
+) -> tuple[list[FileOp], str]:
+    resolution = str(override.get("resolution") or proposal.action or "merge").strip().casefold()
+    if resolution not in RESOLUTIONS:
+        raise DuplicatesError(
+            "unsupported_resolution", f"Unsupported resolution: {resolution}", affected=(proposal.id,)
+        )
+    canonical_path, duplicate_path = _sides(proposal, override)
+    expected = {proposal.target_path: proposal.target_sha256, proposal.source_path: proposal.source_sha256}
+    canonical = _load(vault_root, canonical_path, expected.get(canonical_path), proposal.id)
+    duplicate = _load(vault_root, duplicate_path, expected.get(duplicate_path), proposal.id)
+
+    ops: list[FileOp] = []
+    if resolution == "merge":
+        ops.append(
+            FileOp(
+                "update",
+                Path(canonical_path),
+                "trusted",
+                content=_merged_content(canonical, duplicate),
+                expected=canonical.sha,
+            )
+        )
+    ops.append(
+        FileOp(
+            "update",
+            Path(duplicate_path),
+            "trusted",
+            content=_redirect_content(duplicate, canonical.title, when=when, reviewer=reviewer, reason=reason),
+            expected=duplicate.sha,
+        )
+    )
+    return ops, resolution
+
+
+def _sides(proposal: Proposal, override: dict) -> tuple[str, str]:
+    canonical = str(override.get("canonical") or proposal.target_path or "").strip()
+    if canonical == proposal.source_path:
+        return proposal.source_path, proposal.target_path or ""
+    if canonical == proposal.target_path:
+        return proposal.target_path or "", proposal.source_path
+    raise DuplicatesError(
+        "invalid_target", f"Canonical override must name one of the pair: {canonical}", affected=(canonical,)
+    )
+
+
+def _load(vault_root: Path, relative: str, expected: str | None, proposal_id: str) -> _Note:
+    if not relative:
+        raise DuplicatesError("missing_target", f"Pair is missing a side: {proposal_id}", affected=(proposal_id,))
+    try:
+        target = ensure_under(vault_root, vault_root / relative)
+    except PathSafetyError as exc:
+        raise DuplicatesError("invalid_source", str(exc), affected=(relative,)) from exc
+    if not target.is_file():
+        raise DuplicatesError("missing_source", f"Note not found: {relative}", affected=(relative,))
+    current = sha256_file(target)
+    if expected and current != expected:
+        raise DuplicatesError("stale_source", f"Note changed since the scan: {relative}", affected=(relative,))
+    record = parse_note(target, vault_root)
+    if detect_type(record.frontmatter.get("type")) != EntityType.ACTION.value:
+        raise DuplicatesError("not_action", f"Target is not an action note: {relative}", affected=(relative,))
+    return _Note(
+        relative=relative, content=record.content, title=record.title, frontmatter=record.frontmatter, sha=current
+    )
+
+
+def _merged_content(canonical: _Note, duplicate: _Note) -> str:
+    body = split_frontmatter(duplicate.content)[1].strip()
+    if not body:
+        return canonical.content
+    return canonical.content.rstrip("\n") + f"\n\n{MERGED_HEADING}\n\n{body}\n"
+
+
+def _redirect_content(note: _Note, canonical_title: str, *, when: date, reviewer: str, reason: str) -> str:
+    revision = _revision(note.frontmatter) + 1
+    fields = {
+        "type": "redirect",
+        "status": "cancelled",
+        "redirect": json.dumps(f"[[{canonical_title}]]"),
+        "updated": when.isoformat(),
+        "revision": str(revision),
+        "updated_by": str(reviewer).strip(),
+        "last_action": str(reason).strip()[:LAST_ACTION_LIMIT],
+    }
+    return edit_frontmatter_fields(note.content, set_fields=fields)
+
+
+def _revision(frontmatter: dict) -> int:
+    try:
+        return int(frontmatter.get("revision"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _op_dict(op: FileOp) -> dict:
+    return {
+        "kind": op.kind,
+        "zone": op.zone,
+        "path": str(op.path),
+        "destination": str(op.destination) if op.destination else None,
+        "before": None,
+        "after": None,
+    }

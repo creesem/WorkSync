@@ -184,6 +184,12 @@ function duplicateCard(proposal) {
         )}</div>
       </div>
       <div class="provenance">${evidence}</div>
+      <label class="field"><span>Resolution</span>
+        <select data-resolution>
+          <option value="merge">merge</option>
+          <option value="redirect">redirect</option>
+        </select>
+      </label>
       <button type="button" class="dismiss" data-dismiss-duplicate="${escapeHtml(
         proposal.id
       )}">Reject / keep both</button>
@@ -251,7 +257,53 @@ async function renderDuplicatesTab(bar) {
   equivalent.textContent = data.equivalent_cli;
   state.duplicates = data.proposals || [];
   const rows = state.duplicates.map(duplicateCard).join("");
-  view.innerHTML = heading("Review", "Duplicate pairs") + bar + (rows || empty("No duplicate pairs."));
+  view.innerHTML =
+    heading("Review", "Duplicate pairs") +
+    bar +
+    `<div class="triage-actions"><button type="button" id="apply-duplicates">Apply selected</button></div>` +
+    (rows || empty("No duplicate pairs."));
+  document.getElementById("apply-duplicates").addEventListener("click", applyDuplicates);
+}
+
+function collectDuplicateSelection() {
+  const ids = [];
+  const overrides = {};
+  for (const node of document.querySelectorAll(".proposal[data-id]")) {
+    const box = node.querySelector(".pick-box");
+    if (!box || !box.checked) continue;
+    const id = node.dataset.id;
+    ids.push(id);
+    const select = node.querySelector("select[data-resolution]");
+    overrides[id] = { resolution: select ? select.value : "merge" };
+  }
+  return { ids, overrides };
+}
+
+async function applyDuplicates() {
+  const selected = collectDuplicateSelection();
+  if (!selected.ids.length) {
+    showWriteResult({ error: "Select at least one pair." }, true);
+    return;
+  }
+  const reason = window.prompt("Reason for this duplicate-resolution batch?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  if (!window.confirm("This batch merges/redirects notes and cannot be undone. Apply?")) return;
+  try {
+    const result = await postAction("duplicates-apply", {
+      reason: reason.trim(),
+      ids: selected.ids,
+      overrides: selected.overrides,
+      confirmed: true,
+    });
+    showWriteResult(result, false);
+    await renderQueue();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
 }
 
 async function completeAction(path, title) {

@@ -65,3 +65,20 @@ def test_cli_duplicates_dismiss_without_reviewer_fails(
     capsys.readouterr()
     # A fresh runtime has no remembered reviewer and no configured reviewer.
     assert main(["duplicates", "dismiss", "deadbeef", *base, "--reason", "why"]) == 1
+
+
+def test_cli_duplicates_apply_merges(vault: Path, write_note: Callable[..., Path], tmp_path: Path, capsys) -> None:
+    _seed(vault, write_note)
+    runtime = tmp_path / "var"
+    base = ["--vault", str(vault), "--runtime", str(runtime)]
+    main(["duplicates", "scan", *base, "--json"])
+    capsys.readouterr()
+
+    assert (
+        main(["duplicates", "apply", *base, "--reason", "Duplicate", "--reviewer", "Myles", "--confirm", "--json"]) == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["committed"] is True
+    assert payload["applied"]
+    rendered = {path.name: path.read_text(encoding="utf-8") for path in (vault / ACTIVE).glob("*.md")}
+    assert any("type: redirect" in text for text in rendered.values())

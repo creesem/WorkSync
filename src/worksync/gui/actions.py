@@ -353,6 +353,37 @@ def _duplicates_dismiss(service: WriteContext, payload: dict, *, confirmed: bool
     }
 
 
+def _duplicates_apply(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    ids = payload.get("ids")
+    if ids is not None and (not isinstance(ids, list) or not ids):
+        raise ActionError("bad_request", "ids must be a non-empty list.", 400)
+    overrides = payload.get("overrides")
+    if overrides is not None and not isinstance(overrides, dict):
+        raise ActionError("bad_request", "overrides must be a JSON object.", 400)
+    result = duplicates_service.apply(
+        service.vault,
+        service.runtime_root,
+        reviewer=reviewer,
+        reason=reason,
+        ids=tuple(str(item) for item in ids) if ids else None,
+        confirmed=confirmed,
+        today=today,
+        overrides=overrides,
+    )
+    return {
+        "state": "ok",
+        "action": "duplicates-apply",
+        "committed": result.committed,
+        "reviewer": reviewer,
+        "reason": reason,
+        "applied": list(result.applied),
+        "changes": [dict(change) for change in result.changes],
+        "equivalent_cli": _duplicates_apply_cli(reason, reviewer, ids, confirmed, overrides),
+    }
+
+
 ACTIONS: dict[str, ActionHandler] = {
     "update-action": _update_action,
     "complete-action": _complete_action,
@@ -363,6 +394,7 @@ ACTIONS: dict[str, ActionHandler] = {
     "ingest-dismiss": _ingest_dismiss,
     "duplicates-scan": _duplicates_scan,
     "duplicates-dismiss": _duplicates_dismiss,
+    "duplicates-apply": _duplicates_apply,
 }
 
 
@@ -482,6 +514,18 @@ def _duplicates_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str
             _quote(reviewer),
         ]
     )
+
+
+def _duplicates_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
+    parts = ["worksync", "duplicates", "apply", "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
+    for item in ids if isinstance(ids, list) else ():
+        parts += ["--id", _quote(str(item))]
+    for proposal_id, fields in overrides.items() if isinstance(overrides, dict) else ():
+        if fields:
+            parts += ["--set", _quote(f"{proposal_id}={json.dumps(fields, ensure_ascii=False)}")]
+    if confirmed:
+        parts += ["--confirm"]
+    return " ".join(parts)
 
 
 def _quote(value: str) -> str:

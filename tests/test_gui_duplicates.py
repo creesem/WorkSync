@@ -64,6 +64,30 @@ def test_duplicates_dismiss_requires_a_reason(vault: Path, write_note: Callable[
     assert result["equivalent_cli"].startswith("worksync duplicates dismiss")
 
 
+def test_duplicates_apply_requires_confirmation(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed(vault, write_note)
+    service = _service(vault, tmp_path / "var")
+    dispatch_action(service, "duplicates-scan", {}, today=TODAY)
+
+    with pytest.raises(ActionError) as excinfo:
+        dispatch_action(service, "duplicates-apply", {"reason": "Duplicate"}, today=TODAY)
+    assert excinfo.value.code == "needs_confirmation"
+    assert excinfo.value.status == 409
+
+
+def test_duplicates_apply_merges_confirmed(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed(vault, write_note)
+    service = _service(vault, tmp_path / "var")
+    dispatch_action(service, "duplicates-scan", {}, today=TODAY)
+
+    result = dispatch_action(service, "duplicates-apply", {"reason": "Duplicate", "confirmed": True}, today=TODAY)
+    assert result["action"] == "duplicates-apply"
+    assert result["committed"] is True
+    assert result["equivalent_cli"].startswith("worksync duplicates apply")
+    rendered = {path.name: path.read_text(encoding="utf-8") for path in (vault / ACTIVE).glob("*.md")}
+    assert any("type: redirect" in text for text in rendered.values())
+
+
 def _post(base: str, path: str, payload: dict | None, token: str | None) -> tuple[int, bytes]:
     data = json.dumps(payload if payload is not None else {}).encode("utf-8")
     request = urllib.request.Request(base + path, data=data, method="POST")
@@ -103,5 +127,5 @@ def test_static_shell_exposes_the_duplicates_surface(dup_server: tuple[str, GuiS
     base, _service = dup_server
     with urllib.request.urlopen(base + "/app.js", timeout=5) as response:
         script = response.read().decode("utf-8")
-    for action in ("duplicates-scan", "duplicates-dismiss"):
+    for action in ("duplicates-scan", "duplicates-dismiss", "duplicates-apply"):
         assert action in script
