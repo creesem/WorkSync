@@ -186,9 +186,9 @@ canonical write. A batch either commits coherently or restores its prior state; 
 is never unlinked, only disposition-moved after its destination write succeeds.
 
 When the batch's verb needs confirmation (`merge`, `drop`), the gateway refuses with
-`needs_confirmation` unless `confirmed=True`. The GUI's JavaScript prompt is a usability
-affordance only; the backend `409` is the authoritative gate, and no consumer implements
-its own rule.
+`needs_confirmation` unless `confirmed=True`. The GUI's JavaScript prompt mirrors that
+rule as a usability affordance, but the backend `409` is the authoritative gate: the JS
+prompt never substitutes for it, and the server enforces the rule independently.
 
 ## Concurrency
 

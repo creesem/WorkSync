@@ -75,6 +75,6 @@ result is returned with a warning, never a failure.
 ## One seam
 
 Every model feature resolves to the one provider seam in `core.model`. Ingest
-enrichment consumes it now; workbench chat, next-action classification, workload
-summaries, and Krisp extraction call it through the consumer-level `ai` package (V2).
-There is one model seam to test and to bound.
+enrichment consumes it today; workbench chat, next-action classification, workload
+summaries, and Krisp extraction will call it through the consumer-level `ai` package
+(V2, not yet built). There is one model seam to test and to bound.

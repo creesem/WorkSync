@@ -101,14 +101,15 @@ second write seam. It reads through `inventory.parse`, resolves entities through
 
 1. **Discover** — `ingest.discover` finds candidate sources under the configured roots
    (inbox, rough notes) using the single `inventory.parse` scanner.
-2. **Enrich** — `ingest.enrich` runs deterministic rules first and always produces a
-   complete `Proposal`. An optional injected `Suggester` (the `core.model` provider
-   seam) only fills weak fields as suggestions with capped confidence and provenance;
-   the deterministic path never depends on the model.
+2. **Enrich** — `ingest.enrich` runs deterministic rules first and, for each candidate
+   source, always produces a complete `Proposal` (a non-action or untitled source yields
+   no proposal). An optional injected `Suggester` (the `core.model` provider seam) only
+   fills weak fields as suggestions with capped confidence and provenance; the
+   deterministic path never depends on the model.
 3. **Review** — `ingest.service.scan` merges fresh proposals into the staging manifest
-   through `safety.derived` with a stale-state precondition, so a first-create race or
-   a concurrent tab fails closed. Review edits, dismissals, and the reviewer/reason are
-   persisted the same way.
+   and persists it through `safety.derived` with a stale-state precondition, so a
+   first-create race or a concurrent tab fails closed. Review edits, dismissals, and the
+   reviewer/reason are persisted the same way.
 4. **Apply** — `ingest.apply` builds one `ChangeSet` for a reviewed batch (the canonical
    creates/updates/moves plus the manifest update) and commits it through
    `safety.gateway.commit`. A batch either commits coherently or restores its prior
