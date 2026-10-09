@@ -303,6 +303,26 @@ def test_mcp_read_surface_does_not_write(vault: Path, write_note: Callable[..., 
     assert db.read_bytes() == before_db
 
 
+def test_review_queues_reach_safety_and_import_no_context_or_html() -> None:
+    modules = _module_index()
+    closure = _closure(("worksync.work.duplicates", "worksync.work.clarification"), modules)
+    targets = _closure_targets(closure, modules)
+
+    assert "worksync.work.queue" in closure
+    assert "worksync.safety.gateway" in targets
+    assert WRITE_HELPER not in targets
+    assert not any(name.startswith("worksync.context") for name in closure)
+    assert not any(name.startswith("worksync.html") for name in closure)
+
+    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
+    for name in (module for module in closure if module.startswith("worksync.work.")):
+        for imported in _imports_of(name, modules[name]):
+            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
+                f"{name} imports a raw write primitive: {imported}"
+            )
+            assert imported != "sqlite3", f"{name} opens a raw database connection"
+
+
 def test_membership_writer_uses_inventory_adapter_not_raw_connect() -> None:
     modules = _module_index()
     imports = _imports_of("worksync.context.association", modules["worksync.context.association"])

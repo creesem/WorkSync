@@ -54,7 +54,7 @@ Arrows point from a package to what it depends on.
 | `core` | Machine config + secrets loading, vault root/containment/legacy-path rebase, safe-name and unique-target helpers. No internal dependencies. | yes |
 | `inventory` | The single vault reader: `parse` (`IndexRecord`, YAML-faithful frontmatter read/write, headings/tags/links/tasks) and `index` (SQLite/FTS, incremental update, `fts_repaired`, `index_outdated`), config-driven scopes, structural/health validation. Read-only. | yes |
 | `safety` | The single mutation gateway: `backed_up_write`, `rollback_backed_up_write`, `settled_snapshot`, atomic write preconditions, and the narrow `derived` seam for non-canonical runtime writes. No internal dependencies beyond `core`. | yes |
-| `work` | Work-management semantics: typed entities (`project`/`person`/`ticket`/`meeting`/`action`), schema detection, entity validation, relationships, attention/rollups, generated views, deterministic rendering, contained view writer, the canonical action write service (allowlisted edits and quick completion as one `safety.commit` transaction), and the five-slot workday plan with steering. | yes |
+| `work` | Work-management semantics: typed entities (`project`/`person`/`ticket`/`meeting`/`action`), schema detection, entity validation, relationships, attention/rollups, generated views, deterministic rendering, contained view writer, the canonical action write service (allowlisted edits and quick completion as one `safety.commit` transaction), the five-slot workday plan with steering, and the shared review-queue primitive (`work.queue`) with the duplicate and clarification review→commit pipelines. | yes |
 | `migrate` | Vault migrations: detection and reviewable repair of malformed frontmatter, and normalization of work-entity frontmatter to the reconciled schema. Reads through `inventory` and the `work` mapping, writes only through the `safety` gateway; never adds a parser and never imports `context`. | V2 |
 | `context` | Retrieval and evidence: managed-repo registry and availability, membership vs relevance vs authority, the retrieval service (resolve/search/read/staleness), generated project context, managed-block integration. | yes |
 | `ingest` | Raw-to-staged-to-canonical ingestion and review/promotion: inbox, triage, inbox triage, backfill, routing, Krisp, email; PDF/Patron deferred. | V2 |
@@ -118,6 +118,34 @@ second write seam. It reads through `inventory.parse`, resolves entities through
 
 See [`docs/mutation-contract.md`](mutation-contract.md) for how an ingest batch uses the
 same gateway as any other canonical write.
+
+## Review queues pipeline
+
+`work.duplicates` and `work.clarification` are two review-first workflows over
+already-canonical `action` notes, built on one shared primitive (`work.queue`). They read
+through `inventory.parse` and `work` semantics, reach `safety` for every write, and import
+no `context` or `html` (see [ADR-0018](adr/0018-shared-review-queue.md)).
+
+1. **Detect** — `work.duplicates.discover_duplicates` scores active action pairs with the
+   shared `work.similarity` scorer plus evidence bonuses for a shared project, owner, and
+   title terms; `work.clarification.discover_clarifications` is a pure predicate over
+   canonical fields (no project/owner, invalid priority, past-due non-terminal). Neither
+   detector writes; each returns `Proposal`s, and detection holds no model dependency.
+2. **Queue** — each concern's `scan` merges fresh proposals into a `staging` manifest with
+   a stale-state precondition through `work.queue`, so a first-create race or a concurrent
+   tab fails closed. A retained decision is honored only while its basis matches; a basis
+   change voids it back to `pending` with history; an undiscovered pending proposal is
+   retired as `obsolete`. An explicit dismissal records a named reviewer and reason.
+3. **Apply** — each concern's `apply` selects the pending proposals, re-checks every
+   basis/SHA precondition up front, builds the canonical operations, appends the
+   primitive's manifest-update operation, and calls `safety.gateway.commit` once. A merge
+   or archive is a destructive verb and requires confirmation. A mid-batch failure rolls
+   back in reverse order and leaves the vault byte-identical. The manifest is the decision
+   ledger; there is no separate rejection or decision file.
+
+The GUI exposes both pipelines through the existing write seam
+(`duplicates-scan`/`duplicates-apply`/`duplicates-dismiss` and
+`clarification-scan`/`clarification-apply`), and the CLI mirrors every action.
 
 ## Source mapping
 

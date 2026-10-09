@@ -164,9 +164,24 @@ MCP protocol revision; it observes WorkSync state and cannot change it.
 _Avoid_: MCP server layer, tool host
 
 **Legacy path**:
-A stored Vault path pointing at a former root that must be rebased to the configured
-root at read time.
+A stored Vault path pointing at a former root that must be rebased to the configured root at read time.
 _Avoid_: broken path
+
+**Review queue**:
+The shared review-and-remember mechanism (`work.queue`) that holds proposals, applies guarded stale-safe persistence and merge-on-rescan, and commits a reviewed batch as one transaction. It knows nothing about what makes a record a duplicate or need clarification.
+_Avoid_: triage engine, worklist
+
+**Proposal**:
+One reviewable candidate in a review queue, carrying its id, action, source reference(s), proposed fields, confidence, provenance, status, and decision state.
+_Avoid_: item, task
+
+**Decision basis**:
+The fingerprint of exactly the inputs that were reviewed — both notes' full content for a duplicate pair, or the material frontmatter fields for a clarification item — against which a remembered decision is honored.
+_Avoid_: source hash, checksum
+
+**Invalidated decision**:
+A remembered decision whose basis no longer matches, returned to `pending` with a decision-history entry rather than silently dropped, so a changed record forces fresh review.
+_Avoid_: expired decision, stale decision
 
 ### Mutation
 
