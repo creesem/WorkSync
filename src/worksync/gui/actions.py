@@ -81,6 +81,8 @@ _STATUS_BY_CODE = {
     "unmapped_field": 422,
     "unmappable_status": 422,
     "unmappable_priority": 422,
+    "invalid_meeting_status": 422,
+    "invalid_meeting_date": 422,
     "invalid_due": 422,
     "invalid_op": 422,
     "not_action": 422,

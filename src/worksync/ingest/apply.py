@@ -424,11 +424,22 @@ def _resolve_krisp_source(inbox_root: Path, relative: str, expected_sha: str, pr
 
 
 def render_meeting_note(fields: dict) -> str:
-    """Render a meeting note using only the current ``meeting`` schema."""
-    status = str(fields.get("status") or "held").strip().casefold()
+    """Render a meeting note using only the current ``meeting`` schema.
+
+    Fails closed on an invalid draft instead of coercing it: a status outside the
+    canonical set, or a missing/unparseable date, aborts the render so the whole batch
+    writes nothing.
+    """
+    status = str(fields.get("status") or "").strip().casefold()
     if status not in MEETING_STATUSES:
-        status = "held"
+        raise IngestError("invalid_meeting_status", f"Unknown meeting status: {fields.get('status')!r}")
     date_value = str(fields.get("date") or "").strip()
+    try:
+        date.fromisoformat(date_value)
+    except ValueError as exc:
+        raise IngestError(
+            "invalid_meeting_date", f"Meeting date is missing or not an ISO date: {fields.get('date')!r}"
+        ) from exc
     lines = ["---", "type: meeting", f"status: {status}", f"date: {date_value}"]
     if fields.get("date_status"):
         lines.append(f"date_status: {_scalar(fields['date_status'])}")

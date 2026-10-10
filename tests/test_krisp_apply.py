@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 import pytest
 
-from worksync.ingest import apply, scan
+from worksync.ingest import apply, load_manifest, save_manifest, scan
+from worksync.ingest.apply import render_meeting_note
 from worksync.ingest.discover import IngestError
 from worksync.ingest.krisp import write_sidecar
+from worksync.ingest.manifest import load_manifest_with_hash
 
 TODAY = date(2026, 10, 7)
 PERSON = "---\ntype: person\nstatus: active\n---\n# Myles Creese\n"
@@ -172,3 +175,64 @@ def test_dry_run_lists_ops_without_writing(vault: Path, write_note: Callable[...
     assert any(change["kind"] == "create" for change in result.changes)
     assert not (vault / "10. Meetings" / "Meeting - Q3 Sync.md").exists()
     assert (inbox / TRANSCRIPT_NAME).is_file()
+
+
+def _tamper_meeting_fields(runtime: Path, fields: dict) -> None:
+    loaded = load_manifest_with_hash(runtime)
+    assert loaded is not None
+    manifest, expected = loaded
+    updated = tuple(
+        replace(proposal, fields={**proposal.fields, **fields}) if proposal.id == PROPOSAL_ID else proposal
+        for proposal in manifest.proposals
+    )
+    save_manifest(runtime, manifest.with_proposals(updated), expected=expected, expected_absent=False)
+
+
+def test_render_meeting_note_rejects_unknown_status() -> None:
+    with pytest.raises(IngestError) as excinfo:
+        render_meeting_note({"status": "archived", "date": "2026-10-07"})
+    assert excinfo.value.code == "invalid_meeting_status"
+
+
+def test_render_meeting_note_rejects_a_missing_date() -> None:
+    with pytest.raises(IngestError) as excinfo:
+        render_meeting_note({"status": "held"})
+    assert excinfo.value.code == "invalid_meeting_date"
+
+
+def test_render_meeting_note_rejects_an_unparseable_date() -> None:
+    with pytest.raises(IngestError) as excinfo:
+        render_meeting_note({"status": "held", "date": "next Tuesday"})
+    assert excinfo.value.code == "invalid_meeting_date"
+
+
+def test_render_meeting_note_accepts_a_valid_draft() -> None:
+    content = render_meeting_note({"status": "held", "date": "2026-10-07", "date_status": "undated"})
+    assert "status: held" in content
+    assert "date: 2026-10-07" in content
+    assert 'date_status: "undated"' in content
+
+
+@pytest.mark.parametrize("fields", [{"status": "archived"}, {"date": "next Tuesday"}])
+def test_invalid_meeting_draft_fails_before_any_write(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path, fields: dict
+) -> None:
+    runtime, inbox = _seed(vault, write_note, tmp_path)
+    scan(vault, runtime, krisp_inbox_path=inbox, today=TODAY)
+    _tamper_meeting_fields(runtime, fields)
+    with pytest.raises(IngestError):
+        apply(
+            vault,
+            runtime,
+            reviewer="myles",
+            reason="Promote the meeting",
+            ids=(PROPOSAL_ID,),
+            today=TODAY,
+            krisp_inbox_path=inbox,
+        )
+    assert not (vault / "10. Meetings" / "Meeting - Q3 Sync.md").exists()
+    assert (inbox / TRANSCRIPT_NAME).is_file()
+    assert (inbox / TRANSCRIPT_NAME).with_suffix(".krisp.json").is_file()
+    loaded = load_manifest(runtime)
+    assert loaded is not None
+    assert all(proposal.status == "pending" for proposal in loaded.proposals)
