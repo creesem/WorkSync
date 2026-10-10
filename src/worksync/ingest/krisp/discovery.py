@@ -2,9 +2,16 @@
 
 Discovery reads the runtime inbox directly (transcripts and sidecars are not vault
 markdown), skips anything already processed, and builds a complete deterministic
-``meeting`` proposal from the sidecar. Attendees and projects are linked only when they
-resolve to a canonical Person or Project; unmatched or ambiguous names are recorded in
-provenance and never invented. No second markdown parser is involved.
+``meeting`` proposal from the sidecar. Attendees are linked only when a speaker name
+resolves to a canonical Person; unmatched and ambiguous speaker names are recorded in
+provenance and never invented.
+
+Project references are identified index-driven: a canonical project is proposed only when
+its ``title`` or ``project_id`` appears in the transcript. Because the source is free text
+with no explicit reference syntax, a project *reference* that fails to resolve cannot be
+detected, so there is no unmatched-project set; the only project failure mode is an
+ambiguous title (claimed by more than one entity), which is recorded and never linked. No
+second markdown parser is involved.
 """
 
 from __future__ import annotations

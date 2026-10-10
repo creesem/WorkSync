@@ -17,3 +17,16 @@ dropped.
       matching is index-driven and has no unmatched set.
 - [ ] A resolved project is linked; a regression test asserts the documented behaviour for
       both a resolved and a non-resolved reference.
+
+## Resolution
+
+Project references are **index-driven**: a canonical project is proposed only when its
+`title` or `project_id` appears in the transcript. A Krisp transcript is free text with no
+explicit reference syntax, so a *reference* that fails to resolve cannot be identified —
+only canonical projects can be recognized. Therefore there is **no unmatched-project set**;
+the spec's earlier "unmatched projects" line was inaccurate and is corrected. The one
+project failure mode that can exist is an **ambiguous title** (a matched title claimed by
+more than one entity), which is recorded as `ambiguous projects: <title>` and never linked
+(see ticket 02). Regression: `test_project_reference_matching_is_index_driven` asserts a
+resolved reference is linked and a non-resolved mention is neither linked nor recorded as
+unmatched.

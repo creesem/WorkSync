@@ -188,6 +188,24 @@ def test_ambiguous_project_title_is_not_linked(vault: Path, write_note: Callable
     assert "ambiguous projects: Project - Eleos" in proposal.provenance
 
 
+def test_project_reference_matching_is_index_driven(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed_vault(write_note, vault)
+    runtime = tmp_path / "var"
+    inbox = runtime / "krisp" / "inbox"
+    inbox.mkdir(parents=True)
+    transcript = inbox / "2026-10-07 - Q3 Sync [a1b2c3d4].txt"
+    transcript.write_text("Project - Eleos is on track, but Project - Nonexistent is not.\n", encoding="utf-8")
+    write_sidecar(inbox, transcript, _sidecar())
+    manifest = scan(vault, runtime, krisp_inbox_path=inbox)
+    proposal = next(p for p in manifest.proposals if p.action == "meeting")
+    assert proposal.fields["projects"] == ["[[Project - Eleos]]"]
+    assert "projects matched 1" in proposal.provenance
+    assert not any(reason.startswith("unmatched projects:") for reason in proposal.provenance)
+    assert not any(reason.startswith("ambiguous projects:") for reason in proposal.provenance)
+
+
 def test_empty_inbox_yields_no_meeting_proposals(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
     _seed_vault(write_note, vault)
     runtime = tmp_path / "var"
