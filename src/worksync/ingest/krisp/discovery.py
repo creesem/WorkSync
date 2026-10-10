@@ -17,6 +17,7 @@ from worksync.ingest.krisp.sidecar import read_sidecar
 from worksync.ingest.proposal import Proposal
 from worksync.safety.files import sha256_file
 from worksync.work.repository import WorkIndex
+from worksync.work.schema import link_target
 
 UNDATED_PLACEHOLDER = "1970-01-01"
 PROCESSED_DIRNAME = "processed"
@@ -92,8 +93,8 @@ def _fields(
     text = _read_text(transcript)
     title = str(sidecar.get("title") or transcript.stem).strip() or transcript.stem
     date_iso, date_status = _date(sidecar.get("started_at"), today=today)
-    attendees, unmatched = _attendees(sidecar.get("speakers") or (), index)
-    projects = _projects(text, index)
+    attendees, unmatched, ambiguous_speakers = _attendees(sidecar.get("speakers") or (), index)
+    projects, ambiguous_projects = _projects(text, index)
     key_points = _key_points(sidecar.get("notes") or {})
     action_items = _action_items(sidecar.get("notes") or {})
 
@@ -121,12 +122,17 @@ def _fields(
     ]
     if unmatched:
         provenance.append("unmatched speakers: " + ", ".join(unmatched))
+    if ambiguous_speakers:
+        provenance.append("ambiguous speakers: " + ", ".join(ambiguous_speakers))
+    if ambiguous_projects:
+        provenance.append("ambiguous projects: " + ", ".join(ambiguous_projects))
     return fields, provenance[:PROVENANCE_CAP]
 
 
-def _attendees(speakers: Any, index: WorkIndex) -> tuple[list[str], list[str]]:
+def _attendees(speakers: Any, index: WorkIndex) -> tuple[list[str], list[str], list[str]]:
     resolved: list[str] = []
     unmatched: list[str] = []
+    ambiguous: list[str] = []
     for speaker in speakers if isinstance(speakers, (list, tuple)) else ():
         if not isinstance(speaker, dict):
             continue
@@ -138,26 +144,37 @@ def _attendees(speakers: Any, index: WorkIndex) -> tuple[list[str], list[str]]:
             link = f"[[{person.title}]]"
             if link not in resolved:
                 resolved.append(link)
+        elif link_target(name) in index.duplicate_keys:
+            if name not in ambiguous:
+                ambiguous.append(name)
         elif name not in unmatched:
             unmatched.append(name)
-    return resolved, unmatched
+    return resolved, unmatched, ambiguous
 
 
-def _projects(text: str, index: WorkIndex) -> list[str]:
+def _projects(text: str, index: WorkIndex) -> tuple[list[str], list[str]]:
     haystack = text.casefold()
-    found: list[str] = []
+    resolved: list[str] = []
+    ambiguous: list[str] = []
     for project in index.list_type("project"):
         title = str(project.title or "").strip()
         project_id = str(getattr(project, "project_id", "") or "").strip()
-        link = f"[[{title}]]"
         matched = (bool(title) and title.casefold() in haystack) or (
             bool(project_id) and project_id.casefold() in haystack
         )
-        if matched and link not in found:
-            found.append(link)
-        if len(found) >= MAX_PROJECTS:
+        if not matched:
+            continue
+        entity = index.get("project", title) if title else None
+        if entity is None:
+            if title and title not in ambiguous:
+                ambiguous.append(title)
+            continue
+        link = f"[[{entity.title}]]"
+        if link not in resolved:
+            resolved.append(link)
+        if len(resolved) >= MAX_PROJECTS:
             break
-    return found
+    return resolved, ambiguous
 
 
 def _key_points(notes: Any) -> list[str]:

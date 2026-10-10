@@ -148,7 +148,44 @@ def test_ambiguous_person_name_is_not_linked(vault: Path, write_note: Callable[.
     manifest = scan(vault, runtime, krisp_inbox_path=inbox)
     proposal = next(p for p in manifest.proposals if p.action == "meeting")
     assert proposal.fields["attendees"] == []
-    assert any("Myles" in reason for reason in proposal.provenance)
+    assert "ambiguous speakers: Myles" in proposal.provenance
+    assert not any(reason.startswith("unmatched speakers:") for reason in proposal.provenance)
+
+
+def test_unmatched_speaker_records_the_unmatched_reason(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed_vault(write_note, vault)
+    runtime = tmp_path / "var"
+    inbox = runtime / "krisp" / "inbox"
+    sidecar = _sidecar()
+    sidecar["speakers"] = [{"first_name": "Nobody", "last_name": "Here"}]
+    inbox.mkdir(parents=True, exist_ok=True)
+    transcript = inbox / "2026-10-07 - Q3 Sync [a1b2c3d4].txt"
+    transcript.write_text("Nobody Here | 0:00\nHello\n", encoding="utf-8")
+    write_sidecar(inbox, transcript, sidecar)
+    manifest = scan(vault, runtime, krisp_inbox_path=inbox)
+    proposal = next(p for p in manifest.proposals if p.action == "meeting")
+    assert proposal.fields["attendees"] == []
+    assert "unmatched speakers: Nobody Here" in proposal.provenance
+    assert not any(reason.startswith("ambiguous speakers:") for reason in proposal.provenance)
+
+
+def test_ambiguous_project_title_is_not_linked(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    write_note(
+        vault, "9. Project/Alpha.md", "---\ntype: project\nstatus: active\nproject_id: alpha\n---\n# Project - Eleos\n"
+    )
+    write_note(
+        vault, "9. Project/Beta.md", "---\ntype: project\nstatus: active\nproject_id: beta\n---\n# Project - Eleos\n"
+    )
+    (vault / "7. Task Notes" / "Inbox").mkdir(parents=True, exist_ok=True)
+    runtime = tmp_path / "var"
+    inbox = runtime / "krisp" / "inbox"
+    _seed_inbox(inbox)
+    manifest = scan(vault, runtime, krisp_inbox_path=inbox)
+    proposal = next(p for p in manifest.proposals if p.action == "meeting")
+    assert proposal.fields["projects"] == []
+    assert "ambiguous projects: Project - Eleos" in proposal.provenance
 
 
 def test_empty_inbox_yields_no_meeting_proposals(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
