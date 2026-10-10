@@ -307,5 +307,9 @@ new seam is introduced.
   `<Month D YYYY>` form.
 - Recorded divergence: the proposal id is path-independent (`krisp:<meeting_id>`), unlike
   the vault-path-derived ids in ADR-0018.
-- Recorded limitation: recovery of a moved transcript is name-plus-fingerprint within the
-  configured inbox; a moved file outside the inbox fails closed.
+- Recorded limitation: the 0.1d guard for a moved or missing transcript is exact-file
+  containment plus `path.is_file()` inside the configured inbox; a moved file fails closed.
+  Name-plus-fingerprint moved-source recovery is **deferred** (not implemented in 0.1d); the
+  earlier "Sidecar / moved-source safety" decision describes the intended recovery and is
+  not yet realized. Re-open only if a real moved-transcript case appears (see
+  `review-fixes/index.md` "Out of scope").

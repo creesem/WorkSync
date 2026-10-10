@@ -8,6 +8,7 @@ it is disposition-moved only after its destination write succeeds and a backup e
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
@@ -16,7 +17,7 @@ from worksync.core.config import DEFAULT_KRISP_INBOX
 from worksync.core.names import safe_name
 from worksync.core.paths import PathSafetyError, ensure_under, unique_target
 from worksync.ingest.discover import IngestError
-from worksync.ingest.krisp.sidecar import PROCESSED_DIRNAME, require_transcript
+from worksync.ingest.krisp.sidecar import PROCESSED_DIRNAME, require_inbox_under, require_transcript
 from worksync.ingest.manifest import (
     MANIFEST_REL,
     Manifest,
@@ -38,6 +39,7 @@ DEFAULT_MEETINGS = "10. Meetings"
 OVERLAY_FIELDS = frozenset({"title", "status", "priority", "owners", "project", "due"})
 MEETING_OVERLAY_FIELDS = frozenset({"title", "date", "status", "attendees", "projects", "meeting_type"})
 MEETING_STATUSES = ("scheduled", "held", "cancelled")
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 @dataclass(frozen=True)
@@ -91,10 +93,7 @@ def apply(
         else runtime_root / DEFAULT_KRISP_INBOX
     )
     if any(proposal.action == "meeting" for proposal in selected):
-        try:
-            inbox_root = ensure_under(runtime_root, inbox_root)
-        except PathSafetyError as exc:
-            raise IngestError("invalid_root", f"Krisp inbox must be inside the runtime root: {inbox_root}") from exc
+        inbox_root = require_inbox_under(runtime_root, inbox_root)
 
     ops: list[FileOp] = []
     for proposal in selected:
@@ -434,11 +433,13 @@ def render_meeting_note(fields: dict) -> str:
     if status not in MEETING_STATUSES:
         raise IngestError("invalid_meeting_status", f"Unknown meeting status: {fields.get('status')!r}")
     date_value = str(fields.get("date") or "").strip()
+    if not _ISO_DATE_RE.fullmatch(date_value):
+        raise IngestError("invalid_meeting_date", f"Meeting date must be YYYY-MM-DD: {fields.get('date')!r}")
     try:
         date.fromisoformat(date_value)
     except ValueError as exc:
         raise IngestError(
-            "invalid_meeting_date", f"Meeting date is missing or not an ISO date: {fields.get('date')!r}"
+            "invalid_meeting_date", f"Meeting date is not a valid ISO date: {fields.get('date')!r}"
         ) from exc
     lines = ["---", "type: meeting", f"status: {status}", f"date: {date_value}"]
     if fields.get("date_status"):

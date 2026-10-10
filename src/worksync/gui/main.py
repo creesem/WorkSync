@@ -8,7 +8,7 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from worksync.core.config import ConfigError, load_config
+from worksync.core.config import DEFAULT_KRISP_SINCE_DAYS, ConfigError, load_config
 from worksync.core.model import LocalModel, ModelConfig
 from worksync.core.secrets import resolve_krisp_api_key
 from worksync.gui.controller import GuiService
@@ -30,7 +30,7 @@ def build_service(
     inbox_path: str | None = None,
     rough_notes_path: str | None = None,
     krisp_inbox_path: Path | None = None,
-    krisp_since_days: int = 14,
+    krisp_since_days: int = DEFAULT_KRISP_SINCE_DAYS,
     krisp_api_key: str | None = None,
 ) -> GuiService:
     """Pin the vault, index, reviewer, model, and ingest roots the server reads through."""

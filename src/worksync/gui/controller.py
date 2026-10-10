@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path
 
 from worksync.context import service
+from worksync.core.config import DEFAULT_KRISP_SINCE_DAYS
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,7 @@ class GuiService:
     inbox_path: str | None = None
     rough_notes_path: str | None = None
     krisp_inbox_path: Path | None = None
-    krisp_since_days: int = 14
+    krisp_since_days: int = DEFAULT_KRISP_SINCE_DAYS
     krisp_api_key: str | None = None
 
     def today(self, today: date) -> dict:

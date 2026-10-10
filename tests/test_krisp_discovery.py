@@ -188,6 +188,30 @@ def test_ambiguous_project_title_is_not_linked(vault: Path, write_note: Callable
     assert "ambiguous projects: Project - Eleos" in proposal.provenance
 
 
+def test_ambiguous_project_id_is_not_linked(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    write_note(
+        vault,
+        "9. Project/Alpha.md",
+        "---\ntype: project\nstatus: active\nproject_id: shared\n---\n# Project - Alpha\n",
+    )
+    write_note(
+        vault,
+        "9. Project/Beta.md",
+        "---\ntype: project\nstatus: active\nproject_id: shared\n---\n# Project - Beta\n",
+    )
+    (vault / "7. Task Notes" / "Inbox").mkdir(parents=True, exist_ok=True)
+    runtime = tmp_path / "var"
+    inbox = runtime / "krisp" / "inbox"
+    inbox.mkdir(parents=True)
+    transcript = inbox / "2026-10-07 - Q3 Sync [a1b2c3d4].txt"
+    transcript.write_text("We discussed the shared effort.\n", encoding="utf-8")
+    write_sidecar(inbox, transcript, _sidecar())
+    manifest = scan(vault, runtime, krisp_inbox_path=inbox)
+    proposal = next(p for p in manifest.proposals if p.action == "meeting")
+    assert proposal.fields["projects"] == []
+    assert any(reason.startswith("ambiguous projects:") for reason in proposal.provenance)
+
+
 def test_project_reference_matching_is_index_driven(
     vault: Path, write_note: Callable[..., Path], tmp_path: Path
 ) -> None:

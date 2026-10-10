@@ -116,6 +116,16 @@ def require_transcript(inbox: str | Path, transcript_path: str | Path) -> Path:
     return resolved
 
 
+def require_inbox_under(runtime: str | Path, inbox: str | Path) -> Path:
+    """Resolve *inbox* and require it to stay inside the runtime root."""
+    runtime_root = Path(runtime).expanduser().resolve()
+    inbox_root = Path(inbox).expanduser().resolve()
+    try:
+        return ensure_under(runtime_root, inbox_root)
+    except PathSafetyError as exc:
+        raise IngestError("invalid_root", f"Krisp inbox must be inside the runtime root: {inbox_root}") from exc
+
+
 def _date_part(started_at: str, *, today: date | None) -> str:
     return parse_iso_prefix(started_at) or (today or date.today()).isoformat()
 

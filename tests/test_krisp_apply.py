@@ -180,12 +180,18 @@ def test_dry_run_lists_ops_without_writing(vault: Path, write_note: Callable[...
     assert (inbox / TRANSCRIPT_NAME).is_file()
 
 
-def _tamper_meeting_fields(runtime: Path, fields: dict) -> None:
+def _tamper_meeting(runtime: Path, *, fields: dict | None = None, source_path: str | None = None) -> None:
     loaded = load_manifest_with_hash(runtime)
     assert loaded is not None
     manifest, expected = loaded
     updated = tuple(
-        replace(proposal, fields={**proposal.fields, **fields}) if proposal.id == PROPOSAL_ID else proposal
+        replace(
+            proposal,
+            fields={**proposal.fields, **(fields or {})},
+            source_path=source_path if source_path is not None else proposal.source_path,
+        )
+        if proposal.id == PROPOSAL_ID
+        else proposal
         for proposal in manifest.proposals
     )
     save_manifest(runtime, manifest.with_proposals(updated), expected=expected, expected_absent=False)
@@ -222,7 +228,7 @@ def test_invalid_meeting_draft_fails_before_any_write(
 ) -> None:
     runtime, inbox = _seed(vault, write_note, tmp_path)
     scan(vault, runtime, krisp_inbox_path=inbox, today=TODAY)
-    _tamper_meeting_fields(runtime, fields)
+    _tamper_meeting(runtime, fields=fields)
     with pytest.raises(IngestError):
         apply(
             vault,
@@ -307,3 +313,31 @@ def test_meeting_promote_mid_batch_failure_restores_the_vault_and_inbox(
     record = json.loads(journals[0].read_text(encoding="utf-8"))
     assert record["rolled_back"] is True
     assert any(op["kind"] == "create" for op in record["ops"])
+
+
+def test_render_meeting_note_rejects_a_non_canonical_iso_date() -> None:
+    with pytest.raises(IngestError) as excinfo:
+        render_meeting_note({"status": "held", "date": "20261007"})
+    assert excinfo.value.code == "invalid_meeting_date"
+
+
+def test_promote_refuses_a_transcript_outside_the_inbox(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    runtime, inbox = _seed(vault, write_note, tmp_path)
+    scan(vault, runtime, krisp_inbox_path=inbox, today=TODAY)
+    (inbox.parent / "escape.txt").write_text("not the transcript\n", encoding="utf-8")
+    _tamper_meeting(runtime, source_path="../escape.txt")
+    with pytest.raises(IngestError) as excinfo:
+        apply(
+            vault,
+            runtime,
+            reviewer="myles",
+            reason="Promote the meeting",
+            ids=(PROPOSAL_ID,),
+            today=TODAY,
+            krisp_inbox_path=inbox,
+        )
+    assert excinfo.value.code == "invalid_source"
+    assert not (vault / "10. Meetings" / "Meeting - Q3 Sync.md").exists()
+    assert (inbox / TRANSCRIPT_NAME).is_file()

@@ -16,6 +16,7 @@ second markdown parser is involved.
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -162,7 +163,9 @@ def _projects(text: str, index: WorkIndex) -> tuple[list[str], list[str]]:
     haystack = text.casefold()
     resolved: list[str] = []
     ambiguous: list[str] = []
-    for project in index.list_type("project"):
+    projects = index.list_type("project")
+    id_counts = Counter(str(getattr(project, "project_id", "") or "").strip() for project in projects)
+    for project in projects:
         title = str(project.title or "").strip()
         project_id = str(getattr(project, "project_id", "") or "").strip()
         matched = (bool(title) and title.casefold() in haystack) or (
@@ -171,9 +174,11 @@ def _projects(text: str, index: WorkIndex) -> tuple[list[str], list[str]]:
         if not matched:
             continue
         entity = index.get("project", title) if title else None
-        if entity is None:
-            if title and title not in ambiguous:
-                ambiguous.append(title)
+        ambiguous_id = bool(project_id) and id_counts[project_id] > 1
+        if entity is None or ambiguous_id:
+            label = title or project_id
+            if label and label not in ambiguous:
+                ambiguous.append(label)
             continue
         link = f"[[{entity.title}]]"
         if link not in resolved:

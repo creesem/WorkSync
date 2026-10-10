@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from worksync.core.config import DEFAULT_KRISP_INBOX
-from worksync.core.paths import PathSafetyError, ensure_under, unique_target
-from worksync.ingest.discover import IngestError
+from worksync.core.paths import unique_target
 from worksync.ingest.krisp.client import KrispClient
 from worksync.ingest.krisp.sidecar import (
     format_transcript,
     load_json,
+    require_inbox_under,
     sidecar_payload,
     transcript_filename,
     write_sidecar,
@@ -68,10 +68,7 @@ def pull(
     """Fetch recent meetings and write new transcripts + sidecars into the inbox."""
     runtime_root = Path(runtime).expanduser().resolve()
     inbox_root = Path(inbox).expanduser().resolve() if inbox is not None else (runtime_root / DEFAULT_KRISP_INBOX)
-    try:
-        inbox_root = ensure_under(runtime_root, inbox_root)
-    except PathSafetyError as exc:
-        raise IngestError("invalid_root", f"Krisp inbox must be inside the runtime root: {inbox_root}") from exc
+    inbox_root = require_inbox_under(runtime_root, inbox_root)
     inbox_root.mkdir(parents=True, exist_ok=True)
     when = now or datetime.now(UTC)
     ledger = _load_ledger(runtime_root)
