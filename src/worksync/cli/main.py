@@ -277,6 +277,12 @@ def build_parser() -> argparse.ArgumentParser:
     krisp_sub = krisp.add_subparsers(dest="krisp_command")
     krisp_pull = krisp_sub.add_parser("pull", help="Fetch recent Krisp meetings.")
     krisp_pull.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    krisp_pull.add_argument(
+        "--vault",
+        type=Path,
+        default=None,
+        help="Override the configured vault (accepted for parity; pull writes to the runtime inbox).",
+    )
     krisp_pull.add_argument("--inbox", default=None, help="Override the Krisp inbox path.")
     krisp_pull.add_argument("--since-days", type=int, default=None, help="Pull window in days (default: configured).")
     krisp_pull.add_argument("--api-key", default=None, help="Override the Krisp API key.")

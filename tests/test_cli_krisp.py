@@ -62,3 +62,14 @@ def test_cli_krisp_pull_succeeds_with_injected_client(tmp_path: Path, monkeypatc
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["pulled"] == ["a1b2c3d4e5f6"]
+
+
+def test_cli_krisp_pull_accepts_a_vault_override(tmp_path: Path, monkeypatch, capsys) -> None:
+    config = _write_config(tmp_path)
+    monkeypatch.setenv("WORKSYNC_CONFIG", str(config))
+    monkeypatch.setenv("KRISP_API_KEY", "test-key")
+    monkeypatch.setattr("worksync.cli.main.build_krisp_client", lambda key, **kw: FakeKrispClient(_meeting()))
+    code = main(["krisp", "pull", "--vault", str(tmp_path / "vault"), "--runtime", str(tmp_path / "var"), "--json"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["pulled"] == ["a1b2c3d4e5f6"]
