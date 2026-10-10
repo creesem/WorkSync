@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from krisp_fakes import sidecar as _sidecar
 from worksync.ingest import dismiss, scan
 from worksync.ingest.discover import IngestError
 from worksync.ingest.krisp import read_sidecar, write_sidecar
@@ -14,34 +15,6 @@ from worksync.ingest.proposal import ACTION_KINDS
 
 PERSON = "---\ntype: person\nstatus: active\n---\n# Myles Creese\n"
 PROJECT = "---\ntype: project\nstatus: active\nproject_id: eleos\n---\n# Project - Eleos\n"
-
-
-def _sidecar(meeting_id: str = "a1b2c3d4e5f6", started_at: str = "2026-10-07T14:00:00Z") -> dict:
-    return {
-        "meeting_id": meeting_id,
-        "title": "Q3 Sync",
-        "started_at": started_at,
-        "duration_seconds": 60,
-        "source": "krisp",
-        "tags": ["sync"],
-        "speakers": [{"first_name": "Myles", "last_name": "Creese"}],
-        "segments": [{"speaker": "Myles Creese", "start": 0, "end": 4, "text": "Project - Eleos is on track"}],
-        "notes": {
-            "blocks": [
-                {"type": "key_points", "children": [{"type": "key_point", "text": "Ship v2"}]},
-                {
-                    "type": "action_items",
-                    "children": [
-                        {
-                            "type": "action_item",
-                            "text": "Send deck",
-                            "assignee": {"first_name": "Myles", "last_name": "Creese"},
-                        }
-                    ],
-                },
-            ]
-        },
-    }
 
 
 def _seed_inbox(inbox: Path, *, text: str = "Myles Creese | 0:00\nProject - Eleos is on track\n", **sidecar) -> Path:

@@ -5,33 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from krisp_fakes import FakeKrispClient
+from krisp_fakes import meeting as _meeting
 from worksync.cli.main import main
-from worksync.ingest.krisp import KrispMeeting, MeetingStub
-
-
-class FakeKrispClient:
-    def __init__(self, meeting: KrispMeeting) -> None:
-        self._meeting = meeting
-
-    def list_meetings(self, *, since_days: int, limit: int | None = None) -> tuple[MeetingStub, ...]:
-        return (MeetingStub(self._meeting.meeting_id, self._meeting.title, self._meeting.started_at),)
-
-    def get_meeting(self, meeting_id: str) -> KrispMeeting:
-        return self._meeting
-
-
-def _meeting() -> KrispMeeting:
-    return KrispMeeting(
-        meeting_id="a1b2c3d4e5f6",
-        title="Q3 Sync",
-        started_at="2026-10-07T14:00:00Z",
-        duration_seconds=60,
-        source="krisp",
-        tags=("sync",),
-        speakers=(),
-        segments=({"speaker": "Myles Creese", "start": 0, "end": 4, "text": "Hello"},),
-        notes={"blocks": []},
-    )
 
 
 def _write_config(tmp_path: Path) -> Path:
@@ -57,7 +33,7 @@ def test_cli_krisp_pull_succeeds_with_injected_client(tmp_path: Path, monkeypatc
     config = _write_config(tmp_path)
     monkeypatch.setenv("WORKSYNC_CONFIG", str(config))
     monkeypatch.setenv("KRISP_API_KEY", "test-key")
-    monkeypatch.setattr("worksync.cli.main.build_client", lambda key, **kw: FakeKrispClient(_meeting()))
+    monkeypatch.setattr("worksync.cli.main.build_client", lambda key, **kw: FakeKrispClient((_meeting(),)))
     code = main(["krisp", "pull", "--runtime", str(tmp_path / "var"), "--json"])
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -68,7 +44,7 @@ def test_cli_krisp_pull_accepts_a_vault_override(tmp_path: Path, monkeypatch, ca
     config = _write_config(tmp_path)
     monkeypatch.setenv("WORKSYNC_CONFIG", str(config))
     monkeypatch.setenv("KRISP_API_KEY", "test-key")
-    monkeypatch.setattr("worksync.cli.main.build_client", lambda key, **kw: FakeKrispClient(_meeting()))
+    monkeypatch.setattr("worksync.cli.main.build_client", lambda key, **kw: FakeKrispClient((_meeting(),)))
     code = main(["krisp", "pull", "--vault", str(tmp_path / "vault"), "--runtime", str(tmp_path / "var"), "--json"])
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -79,7 +55,7 @@ def test_cli_krisp_pull_rebases_the_inbox_onto_the_runtime(tmp_path: Path, monke
     config = _write_config(tmp_path)
     monkeypatch.setenv("WORKSYNC_CONFIG", str(config))
     monkeypatch.setenv("KRISP_API_KEY", "test-key")
-    monkeypatch.setattr("worksync.cli.main.build_client", lambda key, **kw: FakeKrispClient(_meeting()))
+    monkeypatch.setattr("worksync.cli.main.build_client", lambda key, **kw: FakeKrispClient((_meeting(),)))
     runtime = tmp_path / "other-runtime"
     code = main(["krisp", "pull", "--runtime", str(runtime), "--json"])
     assert code == 0

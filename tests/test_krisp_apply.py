@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from krisp_fakes import sidecar as _sidecar
 from worksync.ingest import apply, load_manifest, save_manifest, scan
 from worksync.ingest.apply import render_meeting_note
 from worksync.ingest.discover import IngestError
@@ -23,25 +24,6 @@ PERSON = "---\ntype: person\nstatus: active\n---\n# Myles Creese\n"
 PROJECT = "---\ntype: project\nstatus: active\nproject_id: eleos\n---\n# Project - Eleos\n"
 TRANSCRIPT_NAME = "2026-10-07 - Q3 Sync [a1b2c3d4].txt"
 PROPOSAL_ID = "krisp:a1b2c3d4e5f6"
-
-
-def _sidecar(meeting_id: str = "a1b2c3d4e5f6") -> dict:
-    return {
-        "meeting_id": meeting_id,
-        "title": "Q3 Sync",
-        "started_at": "2026-10-07T14:00:00Z",
-        "duration_seconds": 60,
-        "source": "krisp",
-        "tags": ["sync"],
-        "speakers": [{"first_name": "Myles", "last_name": "Creese"}],
-        "segments": [{"speaker": "Myles Creese", "start": 0, "end": 4, "text": "Project - Eleos is on track"}],
-        "notes": {
-            "blocks": [
-                {"type": "key_points", "children": [{"type": "key_point", "text": "Ship v2"}]},
-                {"type": "action_items", "children": [{"type": "action_item", "text": "Send deck"}]},
-            ]
-        },
-    }
 
 
 def _seed(

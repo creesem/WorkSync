@@ -8,63 +8,17 @@ from pathlib import Path
 
 import pytest
 
+from krisp_fakes import FakeKrispClient
+from krisp_fakes import meeting as _meeting
+from krisp_fakes import sidecar as _sidecar
 from worksync.gui.actions import ActionError, dispatch_action
 from worksync.gui.controller import GuiService
-from worksync.ingest.krisp import KrispMeeting, MeetingStub, write_sidecar
+from worksync.ingest.krisp import write_sidecar
 
 TODAY = date(2026, 10, 7)
 PERSON = "---\ntype: person\nstatus: active\n---\n# Myles Creese\n"
 PROJECT = "---\ntype: project\nstatus: active\nproject_id: eleos\n---\n# Project - Eleos\n"
 TRANSCRIPT_NAME = "2026-10-07 - Q3 Sync [a1b2c3d4].txt"
-
-
-class FakeKrispClient:
-    def __init__(self, meeting: KrispMeeting) -> None:
-        self._meeting = meeting
-
-    def list_meetings(self, *, since_days: int, limit: int | None = None) -> tuple[MeetingStub, ...]:
-        return (MeetingStub(self._meeting.meeting_id, self._meeting.title, self._meeting.started_at),)
-
-    def get_meeting(self, meeting_id: str) -> KrispMeeting:
-        return self._meeting
-
-
-def _meeting() -> KrispMeeting:
-    return KrispMeeting(
-        meeting_id="a1b2c3d4e5f6",
-        title="Q3 Sync",
-        started_at="2026-10-07T14:00:00Z",
-        duration_seconds=60,
-        source="krisp",
-        tags=("sync",),
-        speakers=({"first_name": "Myles", "last_name": "Creese"},),
-        segments=({"speaker": "Myles Creese", "start": 0, "end": 4, "text": "Project - Eleos is on track"},),
-        notes={
-            "blocks": [
-                {"type": "key_points", "children": [{"type": "key_point", "text": "Ship v2"}]},
-                {"type": "action_items", "children": [{"type": "action_item", "text": "Send deck"}]},
-            ]
-        },
-    )
-
-
-def _sidecar() -> dict:
-    return {
-        "meeting_id": "a1b2c3d4e5f6",
-        "title": "Q3 Sync",
-        "started_at": "2026-10-07T14:00:00Z",
-        "duration_seconds": 60,
-        "source": "krisp",
-        "tags": ["sync"],
-        "speakers": [{"first_name": "Myles", "last_name": "Creese"}],
-        "segments": [{"speaker": "Myles Creese", "start": 0, "end": 4, "text": "Project - Eleos is on track"}],
-        "notes": {
-            "blocks": [
-                {"type": "key_points", "children": [{"type": "key_point", "text": "Ship v2"}]},
-                {"type": "action_items", "children": [{"type": "action_item", "text": "Send deck"}]},
-            ]
-        },
-    }
 
 
 def _service(vault: Path, runtime: Path, inbox: Path, *, api_key: str | None = "test-key") -> GuiService:
@@ -112,7 +66,7 @@ def test_pull_reports_a_summary(vault: Path, write_note: Callable[..., Path], tm
     runtime = tmp_path / "var"
     inbox = runtime / "krisp" / "inbox"
     service = _service(vault, runtime, inbox)
-    monkeypatch.setattr("worksync.gui.actions.build_client", lambda key, **kw: FakeKrispClient(_meeting()))
+    monkeypatch.setattr("worksync.gui.actions.build_client", lambda key, **kw: FakeKrispClient((_meeting(),)))
     result = dispatch_action(service, "krisp-pull", {}, today=TODAY)
     assert result["action"] == "krisp-pull"
     assert result["summary"]["pulled"] == ["a1b2c3d4e5f6"]
