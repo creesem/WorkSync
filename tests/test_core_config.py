@@ -93,3 +93,33 @@ def test_env_override_is_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 def test_find_config_path_prefers_explicit_root(tmp_path: Path) -> None:
     assert find_config_path(tmp_path) == tmp_path / "config" / "worksync.json"
+
+
+def test_krisp_since_days_defaults_to_14(tmp_path: Path) -> None:
+    _write_config(tmp_path)
+    config = load_config(root=tmp_path)
+    assert config.krisp_since_days == 14
+
+
+def test_krisp_since_days_is_configurable(tmp_path: Path) -> None:
+    _write_config(tmp_path, krisp_since_days=30)
+    config = load_config(root=tmp_path)
+    assert config.krisp_since_days == 30
+
+
+def test_invalid_krisp_since_days_fails_closed(tmp_path: Path) -> None:
+    _write_config(tmp_path, krisp_since_days="soon")
+    with pytest.raises(ConfigError):
+        load_config(root=tmp_path)
+
+
+def test_krisp_inbox_path_defaults_under_runtime(tmp_path: Path) -> None:
+    _write_config(tmp_path)
+    config = load_config(root=tmp_path)
+    assert config.krisp_inbox_path == (tmp_path / "var" / "krisp" / "inbox").resolve()
+
+
+def test_krisp_inbox_path_is_configurable(tmp_path: Path) -> None:
+    _write_config(tmp_path, krisp_inbox_path="custom-krisp")
+    config = load_config(root=tmp_path)
+    assert config.krisp_inbox_path == (tmp_path / "var" / "custom-krisp").resolve()

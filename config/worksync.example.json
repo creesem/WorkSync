@@ -3,5 +3,7 @@
   "vault_name": "WorkSync",
   "runtime_root": "var",
   "ui_port": 8765,
-  "legacy_vault_roots": []
+  "legacy_vault_roots": [],
+  "krisp_since_days": 14,
+  "krisp_inbox_path": "krisp/inbox"
 }

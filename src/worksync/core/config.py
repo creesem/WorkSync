@@ -18,6 +18,8 @@ CONFIG_FILENAME = "worksync.json"
 EXAMPLE_FILENAME = "worksync.example.json"
 DEFAULT_PORT = 8765
 DEFAULT_RUNTIME_DIRNAME = "var"
+DEFAULT_KRISP_SINCE_DAYS = 14
+DEFAULT_KRISP_INBOX = Path("krisp") / "inbox"
 
 
 class ConfigError(RuntimeError):
@@ -63,6 +65,8 @@ class WorksyncConfig:
     source_path: Path
     legacy_vault_roots: tuple[str, ...] = ()
     raw: dict[str, object] = field(default_factory=dict)
+    krisp_since_days: int = DEFAULT_KRISP_SINCE_DAYS
+    krisp_inbox_path: Path = DEFAULT_KRISP_INBOX
 
 
 def _config_base(path: Path) -> Path:
@@ -106,6 +110,20 @@ def load_config(config_path: str | Path | None = None, *, root: str | Path | Non
     if not isinstance(legacy_raw, (list, tuple)):
         raise ConfigError(f"legacy_vault_roots must be a list, got {legacy_raw!r}")
 
+    since_raw = data.get("krisp_since_days", DEFAULT_KRISP_SINCE_DAYS)
+    try:
+        since_days = int(since_raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"krisp_since_days must be an integer, got {since_raw!r}") from exc
+    if since_days < 1:
+        raise ConfigError(f"krisp_since_days must be positive, got {since_raw!r}")
+
+    inbox_raw = str(data.get("krisp_inbox_path") or "").strip()
+    inbox = Path(inbox_raw).expanduser() if inbox_raw else DEFAULT_KRISP_INBOX
+    if not inbox.is_absolute():
+        inbox = runtime / inbox
+    inbox = inbox.resolve()
+
     return WorksyncConfig(
         vault_path=vault,
         vault_name=str(data.get("vault_name") or vault.name),
@@ -114,4 +132,6 @@ def load_config(config_path: str | Path | None = None, *, root: str | Path | Non
         source_path=path,
         legacy_vault_roots=tuple(str(item) for item in legacy_raw),
         raw=dict(data),
+        krisp_since_days=since_days,
+        krisp_inbox_path=inbox,
     )
