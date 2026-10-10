@@ -191,6 +191,28 @@ _Avoid_: assignee, current active person
 The schema-defined `## Updates` body section holding one deterministic, dated bullet (`date · reviewer · reason`) per review action; the domain layer appends it inside the same canonical transaction, and it is excluded from a decision basis so recording a review never voids a decision.
 _Avoid_: audit log, changelog
 
+### Krisp ingest
+
+**Transcript**:
+The plain-text `Speaker | mm:ss` rendering of a Krisp recording's segments, stored in the runtime inbox outside the vault.
+_Avoid_: recording, audio file
+
+**Krisp sidecar**:
+The `<stem>.krisp.json` file beside a transcript carrying the raw Krisp payload — meeting id, speakers, segments, and Krisp's own notes.
+_Avoid_: metadata file, manifest
+
+**Pull ledger**:
+The runtime record of which meetings have been pulled, keyed by meeting id; it is source state, not a decision ledger.
+_Avoid_: decision ledger, queue
+
+**Meeting-note candidate**:
+A `meeting` proposal on the ingest manifest — a deterministic draft of a canonical meeting note awaiting review.
+_Avoid_: meeting draft, staged note
+
+**Processed**:
+The dated subfolder inside the Krisp inbox a transcript and its sidecar are disposition-moved to after promotion, so the raw files are consumed and never deleted.
+_Avoid_: archive, done folder
+
 ### Mutation
 
 **Write zone**:

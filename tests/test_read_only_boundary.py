@@ -323,6 +323,36 @@ def test_review_queues_reach_safety_and_import_no_context_or_html() -> None:
             assert imported != "sqlite3", f"{name} opens a raw database connection"
 
 
+def test_krisp_source_reaches_safety_and_imports_no_context_or_html() -> None:
+    modules = _module_index()
+    entries = (
+        "worksync.ingest.krisp",
+        "worksync.ingest.krisp.discovery",
+        "worksync.ingest.krisp.pull",
+        "worksync.ingest.krisp.sidecar",
+    )
+    closure = _closure(entries, modules)
+    targets = _closure_targets(closure, modules)
+
+    assert "worksync.ingest.krisp" in closure
+    assert not any(name.startswith("worksync.context") for name in closure)
+    assert not any(name.startswith("worksync.html") for name in closure)
+    assert "worksync.safety.derived" in targets
+    assert "worksync.safety.files" in targets
+    assert WRITE_HELPER not in targets
+
+    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
+    for name in (module for module in closure if module.startswith("worksync.ingest.krisp")):
+        for imported in _imports_of(name, modules[name]):
+            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
+                f"{name} imports a raw write primitive: {imported}"
+            )
+            assert imported != "sqlite3", f"{name} opens a raw database connection"
+
+    promote = _closure(("worksync.ingest.apply",), modules)
+    assert "worksync.safety.gateway" in _closure_targets(promote, modules)
+
+
 def test_membership_writer_uses_inventory_adapter_not_raw_connect() -> None:
     modules = _module_index()
     imports = _imports_of("worksync.context.association", modules["worksync.context.association"])

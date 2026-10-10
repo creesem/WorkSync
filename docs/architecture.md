@@ -57,7 +57,7 @@ Arrows point from a package to what it depends on.
 | `work` | Work-management semantics: typed entities (`project`/`person`/`ticket`/`meeting`/`action`), schema detection, entity validation, relationships, attention/rollups, generated views, deterministic rendering, contained view writer, the canonical action write service (allowlisted edits and quick completion as one `safety.commit` transaction), the five-slot workday plan with steering, and the shared review-queue primitive (`work.queue`) with the duplicate and clarification review→commit pipelines. | yes |
 | `migrate` | Vault migrations: detection and reviewable repair of malformed frontmatter, and normalization of work-entity frontmatter to the reconciled schema. Reads through `inventory` and the `work` mapping, writes only through the `safety` gateway; never adds a parser and never imports `context`. | V2 |
 | `context` | Retrieval and evidence: managed-repo registry and availability, membership vs relevance vs authority, the retrieval service (resolve/search/read/staleness), generated project context, managed-block integration. | yes |
-| `ingest` | Raw-to-staged-to-canonical ingestion and review/promotion: inbox, triage, inbox triage, backfill, routing, Krisp, email; PDF/Patron deferred. | V2 |
+| `ingest` | Raw-to-staged-to-canonical ingestion and review/promotion: inbox, triage, inbox triage, backfill, routing, Krisp (pull → meeting-note candidate → promote), email; PDF/Patron deferred. | V2 |
 | `html` | The generated HTML interface: the one link contract, a pure deterministic generator of self-contained pages from already-resolved entities, and a contained derived writer into the `generated` zone (`0. System/Interface/`). Imports no `context`; no JavaScript, no forms, no second parser. | V2 |
 | `cli` | Unified console entry points over the layers. | yes |
 | `gui` | The interactive workspace: read-only dashboards and entity detail over the retrieval service, plus the write seam `POST /api/action/<name>` that dispatches named actions to `work`/`ingest` services and commits through `safety`. No business rules in the GUI or its JavaScript; it never sets `force`. | yes |
@@ -118,6 +118,29 @@ second write seam. It reads through `inventory.parse`, resolves entities through
 
 See [`docs/mutation-contract.md`](mutation-contract.md) for how an ingest batch uses the
 same gateway as any other canonical write.
+
+### Krisp pipeline
+
+Krisp is a discovery source on the same `ingest` pipeline, not a second review surface.
+
+1. **Pull** — `ingest.krisp.pull` fetches recent meetings through an injected
+   `KrispClient` and writes each transcript and its `.krisp.json` sidecar into the runtime
+   inbox (outside the vault). A pull ledger keyed by meeting id makes a second pull
+   idempotent and records failures for retry; a sync status reports the last pull. Sidecar
+   reads and writes require the exact transcript file and inbox containment, so a moved or
+   missing source fails closed.
+2. **Propose** — `ingest.krisp.discovery` reads the inbox (skipping a `Processed/`
+   subtree), builds a deterministic `meeting` proposal from the sidecar, and merges it into
+   the same `ingest` manifest. Attendees and projects are linked only when they resolve to
+   a canonical Person or Project; unmatched names stay in provenance. The optional local
+   model may draft the `## Notes` prose from a bounded input; the deterministic draft is
+   always the default.
+3. **Promote** — `ingest.apply` handles the `meeting` kind: it creates the canonical
+   meeting note in `10. Meetings` and moves the transcript and sidecar into
+   `Processed/<date>/` inside the inbox, both in one `ChangeSet` with the manifest update.
+   The batch verb is `promote` (not a confirmation verb); a source is never unlinked.
+
+Krisp imports no `context` and no `html`, and reaches `safety` for every write.
 
 ## Review queues pipeline
 

@@ -39,6 +39,16 @@ fields, that body append never voids a decision. A `waiting-on` reclassify requi
 The platform carries no separate team registry in 0.1, so team membership lives on the
 person's own `team` field.
 
+Spec 8 adds Krisp as a fourth producer on the same queue. A pulled transcript becomes one
+`meeting` proposal on the ingest manifest, and promoting it writes the canonical meeting
+note and consumes the transcript and its sidecar in one `ChangeSet`. Two deviations are
+recorded deliberately: a Krisp proposal id is `krisp:<meeting_id>`, stable and independent
+of any vault path (the vault-path id rule above still governs duplicate and clarification
+proposals), and a Krisp decision basis is the transcript content hash, so a later sidecar
+or Krisp-notes refresh does not void a dismissal while a changed transcript does. The
+`meeting` kind shares the one queue and the one review surface rather than adding a second
+mechanism.
+
 **Status:** accepted
 
 **Considered options:** keep a per-concern queue and ledger (rejected: three copies of
