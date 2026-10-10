@@ -13,6 +13,7 @@ from pathlib import Path
 
 from worksync.ingest.discover import Source, discover_sources, resolve_roots
 from worksync.ingest.enrich import Suggester, enrich
+from worksync.ingest.krisp.discovery import discover_krisp
 from worksync.ingest.manifest import (
     Manifest,
     load_manifest_with_hash,
@@ -29,6 +30,7 @@ def scan(
     today: date | None = None,
     inbox_path: str | None = None,
     rough_notes_path: str | None = None,
+    krisp_inbox_path: str | Path | None = None,
     model: Suggester | None = None,
 ) -> Manifest:
     """Discover and enrich sources, then persist the merged manifest with a precondition."""
@@ -39,7 +41,9 @@ def scan(
     fresh = tuple(
         proposal for source in sources if (proposal := enrich(source, index, today=when, model=model)) is not None
     )
-    token = scan_token(sources)
+    krisp = discover_krisp(krisp_inbox_path, index, today=when, model=model)
+    fresh = fresh + krisp
+    token = scan_token(sources, extra=tuple((proposal.id, proposal.source_sha256) for proposal in krisp))
     loaded = load_manifest_with_hash(runtime)
     previous = loaded[0] if loaded is not None else None
     manifest = merge_manifest(previous, fresh, token=token)
@@ -52,7 +56,8 @@ def scan(
     return manifest
 
 
-def scan_token(sources: tuple[Source, ...]) -> str:
+def scan_token(sources: tuple[Source, ...], *, extra: tuple[tuple[str, str], ...] = ()) -> str:
     """Return a stable hash of the discovered source set (path + content hash)."""
     payload = sorted((source.record.path, source.record.content_hash) for source in sources)
+    payload.extend(sorted((str(pid), str(digest)) for pid, digest in extra))
     return hashlib.sha256(json.dumps(payload).encode("utf-8")).hexdigest()

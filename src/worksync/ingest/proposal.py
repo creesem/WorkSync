@@ -9,6 +9,6 @@ from __future__ import annotations
 
 from worksync.work.queue import PROPOSAL_STATUSES, Proposal
 
-ACTION_KINDS = ("action", "link-existing", "merge", "drop")
+ACTION_KINDS = ("action", "link-existing", "merge", "drop", "meeting")
 
 __all__ = ["ACTION_KINDS", "PROPOSAL_STATUSES", "Proposal"]

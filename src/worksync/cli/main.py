@@ -1008,6 +1008,14 @@ def _configured_ingest_roots() -> tuple[str | None, str | None]:
     return inbox, rough
 
 
+def _configured_krisp_inbox() -> Path | None:
+    try:
+        config = load_config()
+    except (ConfigError, OSError):
+        return None
+    return config.krisp_inbox_path
+
+
 def _configured_model() -> LocalModel:
     try:
         config = load_config()
@@ -1027,6 +1035,7 @@ def _ingest_scan(args: argparse.Namespace) -> int:
             today=today,
             inbox_path=args.inbox or configured_inbox,
             rough_notes_path=args.rough_notes or configured_rough,
+            krisp_inbox_path=_configured_krisp_inbox(),
             model=_configured_model() if args.model else None,
         )
     except (ConfigError, IngestError, OSError, ValueError) as exc:

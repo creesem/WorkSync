@@ -273,6 +273,7 @@ def _ingest_scan(service: WriteContext, payload: dict, *, confirmed: bool, today
         service.runtime_root,
         inbox_path=inbox,
         rough_notes_path=rough,
+        krisp_inbox_path=getattr(service, "krisp_inbox_path", None),
         today=today,
         model=getattr(service, "model", None),
     )
