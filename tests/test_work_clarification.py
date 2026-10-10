@@ -32,7 +32,7 @@ def _seed_entities(write_note: Callable[..., Path], vault: Path) -> None:
         "9. Project/Project - Alpha.md",
         "---\ntype: project\nstatus: active\n---\n# Project - Alpha\n",
     )
-    _note(write_note, vault, "People/Myles.md", "---\ntype: person\nstatus: active\n---\n# Myles\n")
+    _note(write_note, vault, "People/Myles.md", "---\ntype: person\nstatus: active\nteam: Operations\n---\n# Myles\n")
 
 
 def _vault_state(vault: Path) -> dict[str, bytes]:
@@ -96,6 +96,86 @@ def test_apply_keep_records_the_review(vault: Path, write_note: Callable[..., Pa
     assert "last_action: Reviewed" in text
     loaded = load_manifest(runtime)
     assert loaded is not None and loaded.proposals[0].status == "applied"
+
+
+def test_apply_keep_appends_updates_history_without_voiding_the_basis(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed_entities(write_note, vault)
+    note = _action(write_note, vault, "NoOwner", "Call the vendor")
+    runtime = tmp_path / "var"
+    before = scan(vault, runtime, today=TODAY).proposals[0].basis_sha256
+
+    apply(vault, runtime, reviewer="Myles", reason="Reviewed", today=TODAY)
+
+    text = note.read_text(encoding="utf-8")
+    assert "## Updates" in text
+    assert "- 2026-10-06 · Myles · Reviewed" in text
+    # The body-only history append is not a material field, so the basis is unchanged.
+    assert scan(vault, runtime, today=TODAY).proposals[0].basis_sha256 == before
+
+
+def test_apply_keep_appends_to_an_existing_updates_section(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed_entities(write_note, vault)
+    text = (
+        "---\ntype: action\nstatus: open\n---\n# Call the vendor\n\nBody.\n\n"
+        "## Updates\n\n- 2026-09-01 · Myles · Earlier review\n"
+    )
+    note = _note(write_note, vault, f"{ACTIVE}/WithHistory.md", text)
+    runtime = tmp_path / "var"
+    scan(vault, runtime, today=TODAY)
+
+    apply(vault, runtime, reviewer="Myles", reason="Reviewed again", today=TODAY)
+
+    out = note.read_text(encoding="utf-8")
+    assert out.count("## Updates") == 1
+    assert "- 2026-09-01 · Myles · Earlier review" in out
+    assert "- 2026-10-06 · Myles · Reviewed again" in out
+
+
+def test_apply_keep_creates_a_recoverable_backup(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed_entities(write_note, vault)
+    note = _action(write_note, vault, "NoOwner", "Call the vendor")
+    runtime = tmp_path / "var"
+    scan(vault, runtime, today=TODAY)
+    before = note.read_text(encoding="utf-8")
+
+    apply(vault, runtime, reviewer="Myles", reason="Reviewed", today=TODAY)
+
+    backups = sorted((runtime / "backups").glob("backup-*/file-*"))
+    assert any(backup.read_text(encoding="utf-8") == before for backup in backups)
+
+
+def test_apply_reclassify_requires_a_current_team_member(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed_entities(write_note, vault)
+    _note(write_note, vault, "People/Outsider.md", "---\ntype: person\nstatus: active\n---\n# Outsider\n")
+    _action(write_note, vault, "NoOwner", "Call the vendor")
+    runtime = tmp_path / "var"
+    proposal_id = scan(vault, runtime, today=TODAY).proposals[0].id
+
+    with pytest.raises(ClarificationError) as excinfo:
+        apply(
+            vault,
+            runtime,
+            reviewer="Myles",
+            reason="Waiting",
+            confirmed=True,
+            today=TODAY,
+            overrides={
+                proposal_id: {
+                    "resolution": "reclassify",
+                    "project": "Project - Alpha",
+                    "owner": "Outsider",
+                    "dependency": "Vendor response",
+                    "next_review": "2026-11-01",
+                }
+            },
+        )
+    assert excinfo.value.code == "unknown_owner"
 
 
 def test_apply_archive_retires_the_item(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:

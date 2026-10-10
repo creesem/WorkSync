@@ -313,7 +313,7 @@ def _ingest_apply(service: WriteContext, payload: dict, *, confirmed: bool, toda
         "reason": reason,
         "applied": list(result.applied),
         "changes": [dict(change) for change in result.changes],
-        "equivalent_cli": _ingest_apply_cli(reason, reviewer, ids, confirmed, overrides),
+        "equivalent_cli": _apply_cli("ingest", reason, reviewer, ids, confirmed, overrides),
     }
 
 
@@ -329,7 +329,7 @@ def _ingest_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, to
         "reviewer": reviewer,
         "reason": reason,
         "proposals": [proposal.to_dict() for proposal in manifest.proposals],
-        "equivalent_cli": _ingest_dismiss_cli(proposal_id, reason, reviewer),
+        "equivalent_cli": _dismiss_cli("ingest", proposal_id, reason, reviewer),
     }
 
 
@@ -341,7 +341,7 @@ def _duplicates_scan(service: WriteContext, payload: dict, *, confirmed: bool, t
         "committed": False,
         "scan_token": manifest.scan_token,
         "proposals": [proposal.to_dict() for proposal in manifest.proposals],
-        "equivalent_cli": _duplicates_scan_cli(today),
+        "equivalent_cli": _today_scan_cli("duplicates", today),
     }
 
 
@@ -357,7 +357,7 @@ def _duplicates_dismiss(service: WriteContext, payload: dict, *, confirmed: bool
         "reviewer": reviewer,
         "reason": reason,
         "proposals": [proposal.to_dict() for proposal in manifest.proposals],
-        "equivalent_cli": _duplicates_dismiss_cli(proposal_id, reason, reviewer),
+        "equivalent_cli": _dismiss_cli("duplicates", proposal_id, reason, reviewer),
     }
 
 
@@ -388,7 +388,7 @@ def _duplicates_apply(service: WriteContext, payload: dict, *, confirmed: bool, 
         "reason": reason,
         "applied": list(result.applied),
         "changes": [dict(change) for change in result.changes],
-        "equivalent_cli": _duplicates_apply_cli(reason, reviewer, ids, confirmed, overrides),
+        "equivalent_cli": _apply_cli("duplicates", reason, reviewer, ids, confirmed, overrides),
     }
 
 
@@ -400,7 +400,7 @@ def _clarification_scan(service: WriteContext, payload: dict, *, confirmed: bool
         "committed": False,
         "scan_token": manifest.scan_token,
         "proposals": [proposal.to_dict() for proposal in manifest.proposals],
-        "equivalent_cli": _clarification_scan_cli(today),
+        "equivalent_cli": _today_scan_cli("clarification", today),
     }
 
 
@@ -416,7 +416,7 @@ def _clarification_dismiss(service: WriteContext, payload: dict, *, confirmed: b
         "reviewer": reviewer,
         "reason": reason,
         "proposals": [proposal.to_dict() for proposal in manifest.proposals],
-        "equivalent_cli": _clarification_dismiss_cli(proposal_id, reason, reviewer),
+        "equivalent_cli": _dismiss_cli("clarification", proposal_id, reason, reviewer),
     }
 
 
@@ -447,7 +447,7 @@ def _clarification_apply(service: WriteContext, payload: dict, *, confirmed: boo
         "reason": reason,
         "applied": list(result.applied),
         "changes": [dict(change) for change in result.changes],
-        "equivalent_cli": _clarification_apply_cli(reason, reviewer, ids, confirmed, overrides),
+        "equivalent_cli": _apply_cli("clarification", reason, reviewer, ids, confirmed, overrides),
     }
 
 
@@ -537,57 +537,15 @@ def _scan_cli(inbox: str | None, rough: str | None, today: date | None) -> str:
     return " ".join(parts)
 
 
-def _ingest_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
-    parts = ["worksync", "ingest", "apply", "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
-    for item in ids if isinstance(ids, list) else ():
-        parts += ["--id", _quote(str(item))]
-    for proposal_id, fields in overrides.items() if isinstance(overrides, dict) else ():
-        if fields:
-            parts += ["--set", _quote(f"{proposal_id}={json.dumps(fields, ensure_ascii=False)}")]
-    if confirmed:
-        parts += ["--confirm"]
-    return " ".join(parts)
-
-
-def _ingest_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str:
-    return " ".join(
-        [
-            "worksync",
-            "ingest",
-            "dismiss",
-            _quote(proposal_id),
-            "--reason",
-            _quote(reason),
-            "--reviewer",
-            _quote(reviewer),
-        ]
-    )
-
-
-def _duplicates_scan_cli(today: date | None) -> str:
-    parts = ["worksync", "duplicates", "scan"]
+def _today_scan_cli(command: str, today: date | None) -> str:
+    parts = ["worksync", command, "scan"]
     if today is not None:
         parts += ["--today", today.isoformat()]
     return " ".join(parts)
 
 
-def _duplicates_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str:
-    return " ".join(
-        [
-            "worksync",
-            "duplicates",
-            "dismiss",
-            _quote(proposal_id),
-            "--reason",
-            _quote(reason),
-            "--reviewer",
-            _quote(reviewer),
-        ]
-    )
-
-
-def _duplicates_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
-    parts = ["worksync", "duplicates", "apply", "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
+def _apply_cli(command: str, reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
+    parts = ["worksync", command, "apply", "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
     for item in ids if isinstance(ids, list) else ():
         parts += ["--id", _quote(str(item))]
     for proposal_id, fields in overrides.items() if isinstance(overrides, dict) else ():
@@ -598,18 +556,11 @@ def _duplicates_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bo
     return " ".join(parts)
 
 
-def _clarification_scan_cli(today: date | None) -> str:
-    parts = ["worksync", "clarification", "scan"]
-    if today is not None:
-        parts += ["--today", today.isoformat()]
-    return " ".join(parts)
-
-
-def _clarification_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> str:
+def _dismiss_cli(command: str, proposal_id: str, reason: str, reviewer: str) -> str:
     return " ".join(
         [
             "worksync",
-            "clarification",
+            command,
             "dismiss",
             _quote(proposal_id),
             "--reason",
@@ -618,18 +569,6 @@ def _clarification_dismiss_cli(proposal_id: str, reason: str, reviewer: str) -> 
             _quote(reviewer),
         ]
     )
-
-
-def _clarification_apply_cli(reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:
-    parts = ["worksync", "clarification", "apply", "--reason", _quote(reason), "--reviewer", _quote(reviewer)]
-    for item in ids if isinstance(ids, list) else ():
-        parts += ["--id", _quote(str(item))]
-    for proposal_id, fields in overrides.items() if isinstance(overrides, dict) else ():
-        if fields:
-            parts += ["--set", _quote(f"{proposal_id}={json.dumps(fields, ensure_ascii=False)}")]
-    if confirmed:
-        parts += ["--confirm"]
-    return " ".join(parts)
 
 
 def _quote(value: str) -> str:

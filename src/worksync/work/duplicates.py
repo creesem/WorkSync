@@ -10,21 +10,27 @@ imports no ``context``.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
-from worksync.core.paths import PathSafetyError, ensure_under
-from worksync.inventory.parse import parse_note
 from worksync.safety.files import sha256_file
-from worksync.safety.gateway import commit
-from worksync.safety.models import ChangeSet, CommitResult, FileOp
-from worksync.safety.zones import write_zones
+from worksync.safety.models import FileOp
 from worksync.work.consolidate import merged_content, redirect_content
 from worksync.work.models import EntityBase, EntityType
-from worksync.work.queue import Manifest, Proposal, QueueStore, merge_manifest
+from worksync.work.notes import Note, load_action_note
+from worksync.work.queue import (
+    ApplyResult,
+    Manifest,
+    Proposal,
+    QueueError,
+    QueueStore,
+    apply_proposals,
+    content_scan_token,
+    scan_manifest,
+)
 from worksync.work.repository import WorkIndex
-from worksync.work.schema import ACTIVE_ACTION_STATUSES, detect_type, link_target
+from worksync.work.schema import ACTIVE_ACTION_STATUSES, link_target
 from worksync.work.similarity import score, title_tokens
 
 MANIFEST_REL = Path("duplicates") / "manifest.json"
@@ -36,13 +42,8 @@ TERM_BONUS_CAP = 0.15
 PAIR_ID_LENGTH = 16
 
 
-class DuplicatesError(ValueError):
+class DuplicatesError(QueueError):
     """Raised when a duplicate-queue review action cannot be applied."""
-
-    def __init__(self, code: str, message: str, *, affected: tuple[str, ...] = ()) -> None:
-        super().__init__(message)
-        self.code = code
-        self.affected = tuple(affected)
 
 
 @dataclass(frozen=True)
@@ -111,17 +112,7 @@ def scan(vault: str | Path, runtime: str | Path, *, today: date | None = None, d
     del today  # detection is date-independent; accepted for CLI symmetry
     index = WorkIndex.from_vault(vault)
     fresh = discover_duplicates(vault, index)
-    store = QueueStore(runtime, MANIFEST_REL)
-    loaded = store.load_with_hash()
-    previous = loaded[0] if loaded is not None else None
-    manifest = merge_manifest(previous, fresh, token=_scan_token(vault, index))
-    if not dry_run:
-        store.save(
-            manifest,
-            expected=loaded[1] if loaded is not None else None,
-            expected_absent=loaded is None,
-        )
-    return manifest
+    return scan_manifest(QueueStore(runtime, MANIFEST_REL), fresh, token=_scan_token(vault, index), dry_run=dry_run)
 
 
 def dismiss(
@@ -133,31 +124,14 @@ def dismiss(
     dry_run: bool = False,
 ) -> Manifest:
     """Mark one pair dismissed with a named reviewer and reason."""
-    if not str(reviewer).strip():
-        raise DuplicatesError("missing_reviewer", "A dismissal requires a named reviewer.")
-    if not str(reason).strip():
-        raise DuplicatesError("missing_reason", "A dismissal requires a human-readable reason.")
-    store = QueueStore(runtime, MANIFEST_REL)
-    loaded = store.load_with_hash()
-    if loaded is None:
-        raise DuplicatesError("no_manifest", "No duplicates manifest; run 'worksync duplicates scan' first.")
-    manifest, expected = loaded
-
-    found = False
-    updated: list[Proposal] = []
-    for proposal in manifest.proposals:
-        if proposal.id == proposal_id:
-            updated.append(replace(proposal, status="dismissed", reviewer=reviewer, reason=reason, decided_at=_now()))
-            found = True
-        else:
-            updated.append(proposal)
-    if not found:
-        raise DuplicatesError("unknown_proposal", f"No proposal with id: {proposal_id}", affected=(proposal_id,))
-
-    new_manifest = manifest.with_proposals(tuple(updated))
-    if not dry_run:
-        store.save(new_manifest, expected=expected, expected_absent=False)
-    return new_manifest
+    return QueueStore(runtime, MANIFEST_REL).dismiss(
+        proposal_id,
+        reviewer=reviewer,
+        reason=reason,
+        error=DuplicatesError,
+        no_manifest="No duplicates manifest; run 'worksync duplicates scan' first.",
+        dry_run=dry_run,
+    )
 
 
 def pair_id_for(left_path: str, right_path: str) -> str:
@@ -192,13 +166,10 @@ def _basis(left_path: str, left_sha: str, right_path: str, right_sha: str) -> st
 
 
 def _scan_token(vault: str | Path, index: WorkIndex) -> str:
-    vault_root = Path(vault).expanduser().resolve()
-    payload = sorted(
-        (entity.path, sha256_file(vault_root / entity.path))
-        for entity in index.view_entities(EntityType.ACTION.value)
-        if entity.status in ACTIVE_ACTION_STATUSES
-    )
-    return hashlib.sha256("|".join(f"{path}:{digest}" for path, digest in payload).encode("utf-8")).hexdigest()
+    active = [
+        entity for entity in index.view_entities(EntityType.ACTION.value) if entity.status in ACTIVE_ACTION_STATUSES
+    ]
+    return content_scan_token(vault, active)
 
 
 def _canonical_choice(left: EntityBase, right: EntityBase) -> tuple[EntityBase, EntityBase]:
@@ -227,30 +198,7 @@ def _created(entity: EntityBase) -> str:
     return str((entity.raw or {}).get("created") or "9999-99-99")
 
 
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
-
-
 RESOLUTIONS = ("merge", "redirect")
-
-
-@dataclass(frozen=True)
-class ApplyResult:
-    """The visible outcome of applying a reviewed batch of duplicate resolutions."""
-
-    committed: bool
-    journal: Path
-    changes: tuple[dict, ...]
-    applied: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class _Note:
-    relative: str
-    content: str
-    title: str
-    frontmatter: dict
-    sha: str
 
 
 def load_manifest(runtime: str | Path) -> Manifest | None:
@@ -276,64 +224,29 @@ def apply(
     dry_run: bool = False,
 ) -> ApplyResult:
     """Apply the selected pending pairs as one transaction through the gateway."""
-    if not str(reviewer).strip():
-        raise DuplicatesError("missing_reviewer", "An apply requires a named reviewer.")
-    if not str(reason).strip():
-        raise DuplicatesError("missing_reason", "An apply requires a human-readable reason.")
-    store = QueueStore(runtime, MANIFEST_REL)
-    loaded = store.load_with_hash()
-    if loaded is None:
-        raise DuplicatesError("no_manifest", "No duplicates manifest; run 'worksync duplicates scan' first.")
-    manifest, manifest_hash = loaded
-    wanted = set(ids) if ids is not None else None
-    selected = tuple(
-        proposal
-        for proposal in manifest.proposals
-        if proposal.status == "pending" and (wanted is None or proposal.id in wanted)
-    )
-    if not selected:
-        raise DuplicatesError("no_proposals", "No pending pairs were selected.")
-
     when = today or date.today()
     vault_root = Path(vault).expanduser().resolve()
-    ops: list[FileOp] = []
-    resolutions: list[str] = []
-    for proposal in selected:
-        override = (overrides or {}).get(proposal.id) or {}
-        if not isinstance(override, dict):
-            raise DuplicatesError(
-                "invalid_override", f"Override for {proposal.id} must be an object.", affected=(proposal.id,)
-            )
-        pair_ops, resolution = _pair_ops(vault_root, proposal, override, when=when, reviewer=reviewer, reason=reason)
-        ops.extend(pair_ops)
-        resolutions.append(resolution)
-
-    selected_ids = {proposal.id for proposal in selected}
-    updated = tuple(
-        replace(proposal, status="applied", reviewer=reviewer, reason=reason, decided_at=_now())
-        if proposal.id in selected_ids
-        else proposal
-        for proposal in manifest.proposals
+    return apply_proposals(
+        QueueStore(runtime, MANIFEST_REL),
+        vault_root=vault_root,
+        reviewer=reviewer,
+        reason=reason,
+        ids=ids,
+        overrides=overrides,
+        confirmed=confirmed,
+        dry_run=dry_run,
+        error=DuplicatesError,
+        no_manifest="No duplicates manifest; run 'worksync duplicates scan' first.",
+        empty_selection="No pending pairs were selected.",
+        build_ops=lambda proposal, override: _pair_ops(
+            vault_root, proposal, override, when=when, reviewer=reviewer, reason=reason
+        ),
+        verb=_batch_verb,
     )
-    ops.append(store.manifest_op(manifest.with_proposals(updated), expected=manifest_hash))
 
-    if dry_run:
-        return ApplyResult(
-            committed=False,
-            journal=Path(),
-            changes=tuple(_op_dict(op) for op in ops),
-            applied=tuple(proposal.id for proposal in selected),
-        )
 
-    verb = "merge" if "merge" in resolutions else "redirect"
-    changeset = ChangeSet(verb, tuple(ops), reviewer=str(reviewer).strip(), reason=str(reason).strip())
-    result: CommitResult = commit(changeset, write_zones(vault_root, runtime), confirmed=confirmed)
-    return ApplyResult(
-        committed=result.committed,
-        journal=result.journal,
-        changes=result.changes,
-        applied=tuple(proposal.id for proposal in selected),
-    )
+def _batch_verb(resolutions: tuple[str, ...]) -> str:
+    return "merge" if "merge" in resolutions else "redirect"
 
 
 def _pair_ops(
@@ -344,7 +257,7 @@ def _pair_ops(
         raise DuplicatesError(
             "unsupported_resolution", f"Unsupported resolution: {resolution}", affected=(proposal.id,)
         )
-    canonical_path, duplicate_path = _sides(proposal, override)
+    canonical_path, duplicate_path = _pair_sides(proposal, override)
     expected = {proposal.target_path: proposal.target_sha256, proposal.source_path: proposal.source_sha256}
     canonical = _load(vault_root, canonical_path, expected.get(canonical_path), proposal.id)
     duplicate = _load(vault_root, duplicate_path, expected.get(duplicate_path), proposal.id)
@@ -379,7 +292,7 @@ def _pair_ops(
     return ops, resolution
 
 
-def _sides(proposal: Proposal, override: dict) -> tuple[str, str]:
+def _pair_sides(proposal: Proposal, override: dict) -> tuple[str, str]:
     canonical = str(override.get("canonical") or proposal.target_path or "").strip()
     if canonical == proposal.source_path:
         return proposal.source_path, proposal.target_path or ""
@@ -390,32 +303,12 @@ def _sides(proposal: Proposal, override: dict) -> tuple[str, str]:
     )
 
 
-def _load(vault_root: Path, relative: str, expected: str | None, proposal_id: str) -> _Note:
-    if not relative:
-        raise DuplicatesError("missing_target", f"Pair is missing a side: {proposal_id}", affected=(proposal_id,))
-    try:
-        target = ensure_under(vault_root, vault_root / relative)
-    except PathSafetyError as exc:
-        raise DuplicatesError("invalid_source", str(exc), affected=(relative,)) from exc
-    if not target.is_file():
-        raise DuplicatesError("missing_source", f"Note not found: {relative}", affected=(relative,))
-    current = sha256_file(target)
-    if expected and current != expected:
-        raise DuplicatesError("stale_source", f"Note changed since the scan: {relative}", affected=(relative,))
-    record = parse_note(target, vault_root)
-    if detect_type(record.frontmatter.get("type")) != EntityType.ACTION.value:
-        raise DuplicatesError("not_action", f"Target is not an action note: {relative}", affected=(relative,))
-    return _Note(
-        relative=relative, content=record.content, title=record.title, frontmatter=record.frontmatter, sha=current
+def _load(vault_root: Path, relative: str, expected: str | None, proposal_id: str) -> Note:
+    return load_action_note(
+        vault_root,
+        relative,
+        expected,
+        proposal_id=proposal_id,
+        error=DuplicatesError,
+        missing_message=f"Pair is missing a side: {proposal_id}",
     )
-
-
-def _op_dict(op: FileOp) -> dict:
-    return {
-        "kind": op.kind,
-        "zone": op.zone,
-        "path": str(op.path),
-        "destination": str(op.destination) if op.destination else None,
-        "before": None,
-        "after": None,
-    }

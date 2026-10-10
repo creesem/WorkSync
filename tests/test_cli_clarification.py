@@ -15,7 +15,7 @@ ACTIVE = "7. Task Notes/Active"
 
 def _seed(vault: Path, write_note: Callable[..., Path]) -> None:
     write_note(vault, "9. Project/Project - Alpha.md", "---\ntype: project\nstatus: active\n---\n# Project - Alpha\n")
-    write_note(vault, "People/Myles.md", "---\ntype: person\nstatus: active\n---\n# Myles\n")
+    write_note(vault, "People/Myles.md", "---\ntype: person\nstatus: active\nteam: Operations\n---\n# Myles\n")
     write_note(vault, f"{ACTIVE}/NoOwner.md", "---\ntype: action\nstatus: open\n---\n# Call the vendor\n")
 
 

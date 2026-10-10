@@ -150,9 +150,13 @@ resolved, the write fails rather than warning.
   invents one. The caller resolves it from a persisted *current reviewer*
   (config/session), not a hardcoded default, and it is recorded in the journal.
 - The journal is the authoritative audit. When a note's schema defines history
-  fields (`updated_by`, `last_action`, Updates history), the domain layer includes
-  those as field ops in the same transaction so the reason is visible in-note —
-  never as free-form body edits.
+  fields (`updated_by`, `last_action`), the domain layer includes those as field ops in
+  the same transaction so the reason is visible in-note. The schema also defines a
+  `## Updates` history section; the domain layer appends one deterministic, dated bullet
+  (`date · reviewer · reason`) to it within the same `ChangeSet`. That entry is
+  structured, generated history — never a free-form or human-authored body edit — and it
+  is excluded from a decision basis, so recording a review cannot void an unrelated
+  remembered decision.
 
 ## Confirmation and the visible change set
 

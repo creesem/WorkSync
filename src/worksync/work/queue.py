@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,12 +21,33 @@ from typing import Any
 
 from worksync.safety import derived
 from worksync.safety.files import sha256_file
-from worksync.safety.models import FileOp
-from worksync.safety.zones import staging_root
+from worksync.safety.gateway import commit
+from worksync.safety.models import ChangeSet, CommitResult, FileOp
+from worksync.safety.zones import staging_root, write_zones
+from worksync.work.models import EntityBase
 
 PROPOSAL_STATUSES = ("pending", "applied", "dismissed", "obsolete", "blocked")
 DECISION_STATUSES = ("dismissed",)
 MANIFEST_VERSION = 1
+
+
+class QueueError(ValueError):
+    """Raised when a review-queue action cannot be applied."""
+
+    def __init__(self, code: str, message: str, *, affected: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.code = code
+        self.affected = tuple(affected)
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    """The visible outcome of applying a reviewed batch through the gateway."""
+
+    committed: bool
+    journal: Path
+    changes: tuple[dict, ...]
+    applied: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -161,7 +183,7 @@ class Manifest:
             self,
             proposals=tuple(proposals),
             scan_token=scan_token if scan_token is not None else self.scan_token,
-            updated_at=_now(),
+            updated_at=now(),
         )
 
 
@@ -224,6 +246,44 @@ class QueueStore:
         """Return the manifest-update ``FileOp`` for a domain apply's ``ChangeSet``."""
         return FileOp("update", self.rel, "staging", content=render_manifest(manifest), expected=expected)
 
+    def dismiss(
+        self,
+        proposal_id: str,
+        *,
+        reviewer: str,
+        reason: str,
+        error: type[QueueError] = QueueError,
+        no_manifest: str = "No review manifest; run the queue scan first.",
+        dry_run: bool = False,
+    ) -> Manifest:
+        """Mark one proposal dismissed with a named reviewer and reason, guarded by hash."""
+        if not str(reviewer).strip():
+            raise error("missing_reviewer", "A dismissal requires a named reviewer.")
+        if not str(reason).strip():
+            raise error("missing_reason", "A dismissal requires a human-readable reason.")
+        loaded = self.load_with_hash()
+        if loaded is None:
+            raise error("no_manifest", no_manifest)
+        manifest, expected = loaded
+
+        found = False
+        updated: list[Proposal] = []
+        for proposal in manifest.proposals:
+            if proposal.id == proposal_id:
+                updated.append(
+                    replace(proposal, status="dismissed", reviewer=reviewer, reason=reason, decided_at=now())
+                )
+                found = True
+            else:
+                updated.append(proposal)
+        if not found:
+            raise error("unknown_proposal", f"No proposal with id: {proposal_id}", affected=(proposal_id,))
+
+        new_manifest = manifest.with_proposals(tuple(updated))
+        if not dry_run:
+            self.save(new_manifest, expected=expected, expected_absent=False)
+        return new_manifest
+
 
 def render_manifest(manifest: Manifest) -> str:
     """Return the exact manifest bytes as text, shared by scan and apply."""
@@ -246,7 +306,7 @@ def merge_manifest(previous: Manifest | None, fresh: tuple[Proposal, ...], *, to
             if old.effective_basis() == proposal.effective_basis():
                 merged.append(old)
             else:
-                entry = DecisionEntry(outcome=old.status, reason="basis changed", at=_now())
+                entry = DecisionEntry(outcome=old.status, reason="basis changed", at=now())
                 merged.append(replace(proposal, status="pending", decision_history=(*old.decision_history, entry)))
         else:
             merged.append(proposal)
@@ -258,5 +318,123 @@ def merge_manifest(previous: Manifest | None, fresh: tuple[Proposal, ...], *, to
     return base.with_proposals(tuple(merged), scan_token=token)
 
 
-def _now() -> str:
+def now() -> str:
+    """Return the current UTC timestamp used for manifest and decision records."""
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def scan_manifest(
+    store: QueueStore,
+    fresh: tuple[Proposal, ...],
+    *,
+    token: str,
+    dry_run: bool = False,
+) -> Manifest:
+    """Merge *fresh* proposals with the persisted manifest and save under a precondition."""
+    loaded = store.load_with_hash()
+    previous = loaded[0] if loaded is not None else None
+    manifest = merge_manifest(previous, fresh, token=token)
+    if not dry_run:
+        store.save(
+            manifest,
+            expected=loaded[1] if loaded is not None else None,
+            expected_absent=loaded is None,
+        )
+    return manifest
+
+
+def content_scan_token(vault: str | Path, entities: Iterable[EntityBase]) -> str:
+    """Return a stable scan token over the content of *entities* (caller filters)."""
+    vault_root = Path(vault).expanduser().resolve()
+    payload = sorted((entity.path, sha256_file(vault_root / entity.path)) for entity in entities)
+    return hashlib.sha256("|".join(f"{path}:{digest}" for path, digest in payload).encode("utf-8")).hexdigest()
+
+
+def op_dict(op: FileOp) -> dict:
+    """Return the display mapping for one planned file operation."""
+    return {
+        "kind": op.kind,
+        "zone": op.zone,
+        "path": str(op.path),
+        "destination": str(op.destination) if op.destination else None,
+        "before": None,
+        "after": None,
+    }
+
+
+def apply_proposals(
+    store: QueueStore,
+    *,
+    vault_root: Path,
+    reviewer: str,
+    reason: str,
+    ids: tuple[str, ...] | None,
+    overrides: dict[str, dict] | None,
+    confirmed: bool,
+    dry_run: bool,
+    error: type[QueueError],
+    no_manifest: str,
+    empty_selection: str,
+    build_ops: Callable[[Proposal, dict], tuple[list[FileOp], str]],
+    verb: Callable[[tuple[str, ...]], str],
+) -> ApplyResult:
+    """Apply the selected pending proposals as one transaction through the gateway.
+
+    The caller supplies the per-proposal op builder and the batch verb; this function
+    owns selection, manifest marking, the manifest-update op in the same ``ChangeSet``,
+    dry-run reporting, and the single commit.
+    """
+    if not str(reviewer).strip():
+        raise error("missing_reviewer", "An apply requires a named reviewer.")
+    if not str(reason).strip():
+        raise error("missing_reason", "An apply requires a human-readable reason.")
+    loaded = store.load_with_hash()
+    if loaded is None:
+        raise error("no_manifest", no_manifest)
+    manifest, manifest_hash = loaded
+    wanted = set(ids) if ids is not None else None
+    selected = tuple(
+        proposal
+        for proposal in manifest.proposals
+        if proposal.status == "pending" and (wanted is None or proposal.id in wanted)
+    )
+    if not selected:
+        raise error("no_proposals", empty_selection)
+
+    ops: list[FileOp] = []
+    resolutions: list[str] = []
+    for proposal in selected:
+        override = (overrides or {}).get(proposal.id) or {}
+        if not isinstance(override, dict):
+            raise error("invalid_override", f"Override for {proposal.id} must be an object.", affected=(proposal.id,))
+        proposal_ops, resolution = build_ops(proposal, override)
+        ops.extend(proposal_ops)
+        resolutions.append(resolution)
+
+    selected_ids = {proposal.id for proposal in selected}
+    updated = tuple(
+        replace(proposal, status="applied", reviewer=reviewer, reason=reason, decided_at=now())
+        if proposal.id in selected_ids
+        else proposal
+        for proposal in manifest.proposals
+    )
+    ops.append(store.manifest_op(manifest.with_proposals(updated), expected=manifest_hash))
+
+    if dry_run:
+        return ApplyResult(
+            committed=False,
+            journal=Path(),
+            changes=tuple(op_dict(op) for op in ops),
+            applied=tuple(proposal.id for proposal in selected),
+        )
+
+    changeset = ChangeSet(
+        verb(tuple(resolutions)), tuple(ops), reviewer=str(reviewer).strip(), reason=str(reason).strip()
+    )
+    result: CommitResult = commit(changeset, write_zones(vault_root, store.runtime_root), confirmed=confirmed)
+    return ApplyResult(
+        committed=result.committed,
+        journal=result.journal,
+        changes=result.changes,
+        applied=tuple(proposal.id for proposal in selected),
+    )

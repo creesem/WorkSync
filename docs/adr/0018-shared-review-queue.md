@@ -31,6 +31,14 @@ across rescans of the same paths but not across a rename or move**: a moved note
 new id and a new proposal, and the prior decision is not carried forward. That limitation
 is recorded here deliberately rather than presented as stronger identity.
 
+The clarification `keep` resolution records its review in the note body's schema-defined
+`## Updates` section as one deterministic dated bullet, written inside the same
+`ChangeSet`; because a clarification item's basis covers only the material frontmatter
+fields, that body append never voids a decision. A `waiting-on` reclassify requires a
+*current team owner* — a person entity with `status: active` whose `team` field is set.
+The platform carries no separate team registry in 0.1, so team membership lives on the
+person's own `team` field.
+
 **Status:** accepted
 
 **Considered options:** keep a per-concern queue and ledger (rejected: three copies of

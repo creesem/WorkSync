@@ -141,11 +141,16 @@ no `context` or `html` (see [ADR-0018](adr/0018-shared-review-queue.md)).
    primitive's manifest-update operation, and calls `safety.gateway.commit` once. A merge
    or archive is a destructive verb and requires confirmation. A mid-batch failure rolls
    back in reverse order and leaves the vault byte-identical. The manifest is the decision
-   ledger; there is no separate rejection or decision file.
+   ledger; there is no separate rejection or decision file. A clarification `keep` also
+   appends one deterministic bullet to the note's `## Updates` section in the same
+   transaction; a `waiting-on` reclassify requires a current team owner (an active person
+   with a `team` field set).
 
 The GUI exposes both pipelines through the existing write seam
 (`duplicates-scan`/`duplicates-apply`/`duplicates-dismiss` and
-`clarification-scan`/`clarification-apply`), and the CLI mirrors every action.
+`clarification-scan`/`clarification-apply`), and the CLI mirrors every action. The shared
+queue screen carries the `Review` nav label; the pre-existing project board is labelled
+`Board` so the two are not confused.
 
 ## Source mapping
 

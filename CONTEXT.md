@@ -183,6 +183,14 @@ _Avoid_: source hash, checksum
 A remembered decision whose basis no longer matches, returned to `pending` with a decision-history entry rather than silently dropped, so a changed record forces fresh review.
 _Avoid_: expired decision, stale decision
 
+**Current team owner**:
+A person entity with `status: active` whose `team` field is set — the platform's membership test for "the team" when a clarification item is reclassified to `waiting-on`. There is no separate team registry in 0.1.
+_Avoid_: assignee, current active person
+
+**Updates history**:
+The schema-defined `## Updates` body section holding one deterministic, dated bullet (`date · reviewer · reason`) per review action; the domain layer appends it inside the same canonical transaction, and it is excluded from a decision basis so recording a review never voids a decision.
+_Avoid_: audit log, changelog
+
 ### Mutation
 
 **Write zone**:

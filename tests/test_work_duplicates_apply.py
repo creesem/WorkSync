@@ -98,6 +98,53 @@ def test_apply_override_flips_the_canonical_side(vault: Path, write_note: Callab
     assert "## Merged context" in (vault / proposal.source_path).read_text(encoding="utf-8")
 
 
+def test_apply_canonical_override_must_name_a_pair_side(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(vault, write_note)
+    third = _action(write_note, vault, "C", "Unrelated dashboard task")
+    runtime = tmp_path / "var"
+    proposal = scan(vault, runtime, today=TODAY).proposals[0]
+    before = _vault_state(vault)
+
+    with pytest.raises(DuplicatesError) as excinfo:
+        apply(
+            vault,
+            runtime,
+            reviewer="Myles",
+            reason="Third canonical",
+            confirmed=True,
+            today=TODAY,
+            overrides={proposal.id: {"canonical": third.relative_to(vault).as_posix()}},
+        )
+
+    assert excinfo.value.code == "invalid_target"
+    assert _vault_state(vault) == before
+
+
+def test_apply_canonical_override_rejects_an_ambiguous_path(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(vault, write_note)
+    runtime = tmp_path / "var"
+    proposal = scan(vault, runtime, today=TODAY).proposals[0]
+    before = _vault_state(vault)
+
+    with pytest.raises(DuplicatesError) as excinfo:
+        apply(
+            vault,
+            runtime,
+            reviewer="Myles",
+            reason="Ambiguous canonical",
+            confirmed=True,
+            today=TODAY,
+            overrides={proposal.id: {"canonical": "7. Task Notes/Active/NotThere.md"}},
+        )
+
+    assert excinfo.value.code == "invalid_target"
+    assert _vault_state(vault) == before
+
+
 def test_apply_requires_confirmation(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
     _seed(vault, write_note)
     runtime = tmp_path / "var"

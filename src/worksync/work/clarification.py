@@ -11,20 +11,27 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import date
 from pathlib import Path
 
 from worksync.core.paths import PathSafetyError, ensure_under
 from worksync.inventory.parse import edit_frontmatter_fields, parse_note
 from worksync.safety.files import sha256_file
-from worksync.safety.gateway import commit
-from worksync.safety.models import ChangeSet, CommitResult, FileOp
-from worksync.safety.zones import write_zones
-from worksync.work.consolidate import merged_content, redirect_content, revision
+from worksync.safety.models import FileOp
+from worksync.work.consolidate import append_update_entry, archive_content, merged_content, redirect_content, revision
 from worksync.work.dates import parse_iso_date
 from worksync.work.models import EntityType
-from worksync.work.queue import Manifest, Proposal, QueueStore, merge_manifest
+from worksync.work.notes import Note, load_action_note
+from worksync.work.queue import (
+    ApplyResult,
+    Manifest,
+    Proposal,
+    QueueError,
+    QueueStore,
+    apply_proposals,
+    content_scan_token,
+    scan_manifest,
+)
 from worksync.work.repository import WorkIndex
 from worksync.work.schema import ACTIVE_ACTION_STATUSES, detect_type, link_target
 from worksync.work.similarity import score
@@ -40,23 +47,8 @@ MATCH_FLOOR = 0.3
 LAST_ACTION_LIMIT = 240
 
 
-class ClarificationError(ValueError):
+class ClarificationError(QueueError):
     """Raised when a clarification-queue review action cannot be applied."""
-
-    def __init__(self, code: str, message: str, *, affected: tuple[str, ...] = ()) -> None:
-        super().__init__(message)
-        self.code = code
-        self.affected = tuple(affected)
-
-
-@dataclass(frozen=True)
-class ApplyResult:
-    """The visible outcome of applying a reviewed clarification batch."""
-
-    committed: bool
-    journal: Path
-    changes: tuple[dict, ...]
-    applied: tuple[str, ...]
 
 
 def discover_clarifications(vault: str | Path, index: WorkIndex, *, today: date) -> tuple[Proposal, ...]:
@@ -65,7 +57,7 @@ def discover_clarifications(vault: str | Path, index: WorkIndex, *, today: date)
     actions = _active_actions(index)
     proposals: list[Proposal] = []
     for entity in actions:
-        reasons = _reasons(entity, index, today)
+        reasons = _reasons(entity, today)
         if not reasons:
             continue
         proposals.append(
@@ -88,46 +80,19 @@ def scan(vault: str | Path, runtime: str | Path, *, today: date | None = None, d
     when = today or date.today()
     index = WorkIndex.from_vault(vault)
     fresh = discover_clarifications(vault, index, today=when)
-    store = QueueStore(runtime, MANIFEST_REL)
-    loaded = store.load_with_hash()
-    previous = loaded[0] if loaded is not None else None
-    manifest = merge_manifest(previous, fresh, token=_scan_token(vault, index))
-    if not dry_run:
-        store.save(
-            manifest,
-            expected=loaded[1] if loaded is not None else None,
-            expected_absent=loaded is None,
-        )
-    return manifest
+    return scan_manifest(QueueStore(runtime, MANIFEST_REL), fresh, token=_scan_token(vault, index), dry_run=dry_run)
 
 
 def dismiss(runtime: str | Path, proposal_id: str, *, reviewer: str, reason: str, dry_run: bool = False) -> Manifest:
     """Mark one clarification item dismissed with a named reviewer and reason."""
-    if not str(reviewer).strip():
-        raise ClarificationError("missing_reviewer", "A dismissal requires a named reviewer.")
-    if not str(reason).strip():
-        raise ClarificationError("missing_reason", "A dismissal requires a human-readable reason.")
-    store = QueueStore(runtime, MANIFEST_REL)
-    loaded = store.load_with_hash()
-    if loaded is None:
-        raise ClarificationError("no_manifest", "No clarification manifest; run 'worksync clarification scan' first.")
-    manifest, expected = loaded
-
-    found = False
-    updated: list[Proposal] = []
-    for proposal in manifest.proposals:
-        if proposal.id == proposal_id:
-            updated.append(replace(proposal, status="dismissed", reviewer=reviewer, reason=reason, decided_at=_now()))
-            found = True
-        else:
-            updated.append(proposal)
-    if not found:
-        raise ClarificationError("unknown_proposal", f"No proposal with id: {proposal_id}", affected=(proposal_id,))
-
-    new_manifest = manifest.with_proposals(tuple(updated))
-    if not dry_run:
-        store.save(new_manifest, expected=expected, expected_absent=False)
-    return new_manifest
+    return QueueStore(runtime, MANIFEST_REL).dismiss(
+        proposal_id,
+        reviewer=reviewer,
+        reason=reason,
+        error=ClarificationError,
+        no_manifest="No clarification manifest; run 'worksync clarification scan' first.",
+        dry_run=dry_run,
+    )
 
 
 def load_manifest(runtime: str | Path) -> Manifest | None:
@@ -153,65 +118,30 @@ def apply(
     dry_run: bool = False,
 ) -> ApplyResult:
     """Apply the selected pending clarifications as one transaction through the gateway."""
-    if not str(reviewer).strip():
-        raise ClarificationError("missing_reviewer", "An apply requires a named reviewer.")
-    if not str(reason).strip():
-        raise ClarificationError("missing_reason", "An apply requires a human-readable reason.")
-    store = QueueStore(runtime, MANIFEST_REL)
-    loaded = store.load_with_hash()
-    if loaded is None:
-        raise ClarificationError("no_manifest", "No clarification manifest; run 'worksync clarification scan' first.")
-    manifest, manifest_hash = loaded
-    wanted = set(ids) if ids is not None else None
-    selected = tuple(
-        proposal
-        for proposal in manifest.proposals
-        if proposal.status == "pending" and (wanted is None or proposal.id in wanted)
-    )
-    if not selected:
-        raise ClarificationError("no_proposals", "No pending clarifications were selected.")
-
     when = today or date.today()
     vault_root = Path(vault).expanduser().resolve()
-    index = WorkIndex.from_vault(vault)
-    ops: list[FileOp] = []
-    resolutions: list[str] = []
-    for proposal in selected:
-        override = (overrides or {}).get(proposal.id) or {}
-        if not isinstance(override, dict):
-            raise ClarificationError(
-                "invalid_override", f"Override for {proposal.id} must be an object.", affected=(proposal.id,)
-            )
-        item_ops, resolution = _item_ops(
-            vault_root, index, proposal, override, when=when, reviewer=reviewer, reason=reason
-        )
-        ops.extend(item_ops)
-        resolutions.append(resolution)
+    index: WorkIndex | None = None
 
-    selected_ids = {proposal.id for proposal in selected}
-    updated = tuple(
-        replace(proposal, status="applied", reviewer=reviewer, reason=reason, decided_at=_now())
-        if proposal.id in selected_ids
-        else proposal
-        for proposal in manifest.proposals
-    )
-    ops.append(store.manifest_op(manifest.with_proposals(updated), expected=manifest_hash))
+    def build_ops(proposal: Proposal, override: dict) -> tuple[list[FileOp], str]:
+        nonlocal index
+        if index is None:
+            index = WorkIndex.from_vault(vault)
+        return _item_ops(vault_root, index, proposal, override, when=when, reviewer=reviewer, reason=reason)
 
-    if dry_run:
-        return ApplyResult(
-            committed=False,
-            journal=Path(),
-            changes=tuple(_op_dict(op) for op in ops),
-            applied=tuple(proposal.id for proposal in selected),
-        )
-
-    changeset = ChangeSet(_verb(resolutions), tuple(ops), reviewer=str(reviewer).strip(), reason=str(reason).strip())
-    result: CommitResult = commit(changeset, write_zones(vault_root, runtime), confirmed=confirmed)
-    return ApplyResult(
-        committed=result.committed,
-        journal=result.journal,
-        changes=result.changes,
-        applied=tuple(proposal.id for proposal in selected),
+    return apply_proposals(
+        QueueStore(runtime, MANIFEST_REL),
+        vault_root=vault_root,
+        reviewer=reviewer,
+        reason=reason,
+        ids=ids,
+        overrides=overrides,
+        confirmed=confirmed,
+        dry_run=dry_run,
+        error=ClarificationError,
+        no_manifest="No clarification manifest; run 'worksync clarification scan' first.",
+        empty_selection="No pending clarifications were selected.",
+        build_ops=build_ops,
+        verb=_batch_verb,
     )
 
 
@@ -235,7 +165,8 @@ def _item_ops(
             expected=note.sha,
             today=when,
         )
-        return [FileOp("update", Path(plan.path), "trusted", content=plan.content, expected=plan.expected)], resolution
+        content = append_update_entry(plan.content, when=when.isoformat(), reviewer=reviewer, reason=reason)
+        return [FileOp("update", Path(plan.path), "trusted", content=content, expected=plan.expected)], resolution
 
     if resolution == "archive":
         return [
@@ -243,7 +174,7 @@ def _item_ops(
                 "update",
                 Path(note.relative),
                 "trusted",
-                content=redirect_content(
+                content=archive_content(
                     note.content, note.frontmatter, note.title, when=when.isoformat(), reviewer=reviewer, reason=reason
                 ),
                 expected=note.sha,
@@ -305,9 +236,7 @@ def _title_of(vault_root: Path, relative: str) -> str:
     return parse_note(vault_root / relative, vault_root).title
 
 
-def _reclassify_content(
-    index: WorkIndex, note: _Note, override: dict, *, when: date, reviewer: str, reason: str
-) -> str:
+def _reclassify_content(index: WorkIndex, note: Note, override: dict, *, when: date, reviewer: str, reason: str) -> str:
     project = str(override.get("project") or "").strip()
     owner = str(override.get("owner") or "").strip()
     dependency = str(override.get("dependency") or "").strip()
@@ -334,6 +263,8 @@ def _reclassify_content(
     owner_entity = index.get("person", owner)
     if owner_entity is None or getattr(owner_entity, "status", "") != "active":
         raise ClarificationError("unknown_owner", f"Owner is not a current active person: {owner}", affected=(owner,))
+    if not str(getattr(owner_entity, "team", "") or "").strip():
+        raise ClarificationError("unknown_owner", f"Owner is not a current team member: {owner}", affected=(owner,))
     existing_owners = _owner_targets(note.frontmatter)
     if existing_owners and link_target(owner) not in existing_owners:
         raise ClarificationError(
@@ -358,13 +289,10 @@ def _reclassify_content(
     return edit_frontmatter_fields(note.content, set_fields=fields)
 
 
-def _reasons(entity, index: WorkIndex, today: date) -> list[str]:
+def _reasons(entity, today: date) -> list[str]:
     reasons: list[str] = []
-    project = link_target(getattr(entity, "project", "") or "")
-    if not project:
+    if not link_target(getattr(entity, "project", "") or ""):
         reasons.append("missing project")
-    elif index.get("project", project) is None:
-        reasons.append(f"unknown project: {project}")
     if not getattr(entity, "owners", ()):
         reasons.append("missing owner")
     priority = getattr(entity, "priority", None)
@@ -404,61 +332,26 @@ def _material_basis(entity) -> str:
 
 
 def _scan_token(vault: str | Path, index: WorkIndex) -> str:
-    vault_root = Path(vault).expanduser().resolve()
-    payload = sorted((entity.path, sha256_file(vault_root / entity.path)) for entity in _active_actions(index))
-    return hashlib.sha256("|".join(f"{path}:{digest}" for path, digest in payload).encode("utf-8")).hexdigest()
+    return content_scan_token(vault, _active_actions(index))
 
 
 def _active_actions(index: WorkIndex) -> list:
     return [entity for entity in index.list_type(EntityType.ACTION.value) if entity.status in ACTIVE_ACTION_STATUSES]
 
 
-@dataclass(frozen=True)
-class _Note:
-    relative: str
-    content: str
-    title: str
-    frontmatter: dict
-    sha: str
-
-
-def _load(vault_root: Path, relative: str, expected: str | None, proposal_id: str) -> _Note:
-    if not relative:
-        raise ClarificationError("missing_target", f"Item is missing a path: {proposal_id}", affected=(proposal_id,))
-    try:
-        target = ensure_under(vault_root, vault_root / relative)
-    except PathSafetyError as exc:
-        raise ClarificationError("invalid_source", str(exc), affected=(relative,)) from exc
-    if not target.is_file():
-        raise ClarificationError("missing_source", f"Note not found: {relative}", affected=(relative,))
-    current = sha256_file(target)
-    if expected and current != expected:
-        raise ClarificationError("stale_source", f"Note changed since the scan: {relative}", affected=(relative,))
-    record = parse_note(target, vault_root)
-    if detect_type(record.frontmatter.get("type")) != EntityType.ACTION.value:
-        raise ClarificationError("not_action", f"Target is not an action note: {relative}", affected=(relative,))
-    return _Note(
-        relative=relative, content=record.content, title=record.title, frontmatter=record.frontmatter, sha=current
+def _load(vault_root: Path, relative: str, expected: str | None, proposal_id: str) -> Note:
+    return load_action_note(
+        vault_root,
+        relative,
+        expected,
+        proposal_id=proposal_id,
+        error=ClarificationError,
+        missing_message=f"Item is missing a path: {proposal_id}",
     )
 
 
-def _verb(resolutions: list[str]) -> str:
+def _batch_verb(resolutions: tuple[str, ...]) -> str:
     for verb in ("merge", "archive", "reclassify"):
         if verb in resolutions:
             return verb
     return "keep"
-
-
-def _op_dict(op: FileOp) -> dict:
-    return {
-        "kind": op.kind,
-        "zone": op.zone,
-        "path": str(op.path),
-        "destination": str(op.destination) if op.destination else None,
-        "before": None,
-        "after": None,
-    }
-
-
-def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
