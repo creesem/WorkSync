@@ -27,12 +27,17 @@ from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit
 from worksync.safety.models import ChangeSet, CommitResult, FileOp
 from worksync.safety.zones import write_zones
-from worksync.work.queue import QueueStore
+from worksync.work.queue import QueueStore, op_dict
 from worksync.work.schema import canonical_action_status, canonical_priority
 
 DEFAULT_ACTIVE = "7. Task Notes/Active"
 DEFAULT_DROPPED = "7. Task Notes/Dropped"
+DEFAULT_MEETINGS = "10. Meetings"
+DEFAULT_KRISP_INBOX = "krisp/inbox"
+PROCESSED_DIRNAME = "Processed"
 OVERLAY_FIELDS = frozenset({"title", "status", "priority", "owners", "project", "due"})
+MEETING_OVERLAY_FIELDS = frozenset({"title", "date", "status", "attendees", "projects", "meeting_type"})
+MEETING_STATUSES = ("scheduled", "held", "cancelled")
 
 
 @dataclass(frozen=True)
@@ -56,7 +61,10 @@ def apply(
     today: date | None = None,
     active_path: str | None = None,
     dropped_path: str | None = None,
+    meetings_path: str | None = None,
+    krisp_inbox_path: str | Path | None = None,
     overrides: dict[str, dict] | None = None,
+    dry_run: bool = False,
 ) -> ApplyResult:
     """Apply the selected pending proposals as one transaction."""
     if not str(reviewer).strip():
@@ -73,14 +81,37 @@ def apply(
 
     when = today or date.today()
     vault_root = Path(vault).expanduser().resolve()
+    runtime_root = Path(runtime).expanduser().resolve()
     active_root = _contained_root(vault_root, active_path or DEFAULT_ACTIVE)
     dropped_root = _contained_root(vault_root, dropped_path or DEFAULT_DROPPED)
+    meetings_root = _contained_root(vault_root, meetings_path or DEFAULT_MEETINGS)
+    inbox_root = (
+        Path(krisp_inbox_path).expanduser().resolve()
+        if krisp_inbox_path is not None
+        else runtime_root / DEFAULT_KRISP_INBOX
+    )
 
     ops: list[FileOp] = []
     for proposal in selected:
-        ops.extend(
-            _proposal_ops(vault_root, active_root, dropped_root, proposal, today=when, reviewer=reviewer, reason=reason)
-        )
+        if proposal.action == "meeting":
+            ops.extend(
+                _meeting_ops(
+                    vault_root,
+                    runtime_root,
+                    meetings_root,
+                    inbox_root,
+                    proposal,
+                    today=when,
+                    reviewer=reviewer,
+                    reason=reason,
+                )
+            )
+        else:
+            ops.extend(
+                _proposal_ops(
+                    vault_root, active_root, dropped_root, proposal, today=when, reviewer=reviewer, reason=reason
+                )
+            )
 
     selected_by_id = {proposal.id: proposal for proposal in selected}
     updated = tuple(
@@ -91,6 +122,14 @@ def apply(
     )
     new_manifest = manifest.with_proposals(updated)
     ops.append(QueueStore(runtime, MANIFEST_REL).manifest_op(new_manifest, expected=manifest_hash))
+
+    if dry_run:
+        return ApplyResult(
+            committed=False,
+            journal=Path(),
+            changes=tuple(op_dict(op) for op in ops),
+            applied=tuple(proposal.id for proposal in selected),
+        )
 
     changeset = ChangeSet(_verb(selected), tuple(ops), reviewer=reviewer, reason=str(reason).strip())
     result: CommitResult = commit(changeset, write_zones(vault_root, runtime), confirmed=confirmed)
@@ -152,15 +191,18 @@ def _apply_overrides(selected: tuple[Proposal, ...], overrides: dict[str, dict] 
                 "invalid_override", f"Override for {proposal.id} must be an object.", affected=(proposal.id,)
             )
         clean: dict = {}
+        allowed = MEETING_OVERLAY_FIELDS if proposal.action == "meeting" else OVERLAY_FIELDS
         for key, value in override.items():
-            if key not in OVERLAY_FIELDS:
+            if key not in allowed:
                 raise IngestError("invalid_override", f"Unknown override field: {key}", affected=(proposal.id,))
-            clean[key] = _normalize_override(key, value, proposal.id)
+            clean[key] = _normalize_override(key, value, proposal.id, action=proposal.action)
         updated.append(replace(proposal, fields={**proposal.fields, **clean}) if clean else proposal)
     return tuple(updated)
 
 
-def _normalize_override(key: str, value: object, proposal_id: str) -> object:
+def _normalize_override(key: str, value: object, proposal_id: str, *, action: str = "") -> object:
+    if action == "meeting":
+        return _normalize_meeting_override(key, value, proposal_id)
     if key == "owners":
         return _override_owners(value, proposal_id)
     if key == "project":
@@ -171,6 +213,24 @@ def _normalize_override(key: str, value: object, proposal_id: str) -> object:
         if not mappable or canonical is None:
             raise IngestError("invalid_override", f"Unknown priority: {value!r}", affected=(proposal_id,))
         return canonical
+    return _override_text(value, proposal_id)
+
+
+def _normalize_meeting_override(key: str, value: object, proposal_id: str) -> object:
+    if key in ("attendees", "projects"):
+        return _override_owners(value, proposal_id)
+    if key == "date":
+        text = _override_text(value, proposal_id)
+        try:
+            date.fromisoformat(text)
+        except ValueError as exc:
+            raise IngestError("invalid_override", f"Unknown date: {value!r}", affected=(proposal_id,)) from exc
+        return text
+    if key == "status":
+        text = _override_text(value, proposal_id).casefold()
+        if text not in MEETING_STATUSES:
+            raise IngestError("invalid_override", f"Unknown meeting status: {value!r}", affected=(proposal_id,))
+        return text
     return _override_text(value, proposal_id)
 
 
@@ -307,6 +367,108 @@ def _action_content(fields: dict, body: str, *, today: date, reviewer: str, reas
 
 def _scalar(value: object) -> str:
     return json.dumps(str(value))
+
+
+def _meeting_ops(
+    vault_root: Path,
+    runtime_root: Path,
+    meetings_root: Path,
+    inbox_root: Path,
+    proposal: Proposal,
+    *,
+    today: date,
+    reviewer: str,
+    reason: str,
+) -> list[FileOp]:
+    transcript = _resolve_krisp_source(inbox_root, proposal.source_path, proposal.source_sha256, proposal.id)
+    sidecar = transcript.with_suffix(".krisp.json")
+    if not sidecar.is_file():
+        raise IngestError("missing_source", f"Sidecar not found: {sidecar}", affected=(proposal.source_path,))
+    title = str(proposal.fields.get("title") or "meeting").strip() or "meeting"
+    target = unique_target(meetings_root, f"Meeting - {safe_name(title, fallback='meeting')}.md")
+    content = render_meeting_note(proposal.fields)
+    processed = inbox_root / PROCESSED_DIRNAME / today.isoformat()
+    transcript_dest = unique_target(processed, transcript.name)
+    sidecar_dest = unique_target(processed, sidecar.name)
+    return [
+        FileOp("create", _relative(vault_root, target), "trusted", content=content),
+        FileOp(
+            "move",
+            _relative(runtime_root, transcript),
+            "runtime",
+            destination=_relative(runtime_root, transcript_dest),
+            expected=proposal.source_sha256,
+        ),
+        FileOp(
+            "move",
+            _relative(runtime_root, sidecar),
+            "runtime",
+            destination=_relative(runtime_root, sidecar_dest),
+            expected=sha256_file(sidecar),
+        ),
+    ]
+
+
+def _resolve_krisp_source(inbox_root: Path, relative: str, expected_sha: str, proposal_id: str) -> Path:
+    if not relative:
+        raise IngestError("missing_source", f"Proposal has no transcript: {proposal_id}", affected=(proposal_id,))
+    try:
+        resolved = ensure_under(inbox_root, inbox_root / relative)
+    except PathSafetyError as exc:
+        raise IngestError("invalid_source", str(exc), affected=(relative,)) from exc
+    if not resolved.is_file():
+        raise IngestError("missing_source", f"Transcript not found: {relative}", affected=(relative,))
+    if expected_sha and sha256_file(resolved) != expected_sha:
+        raise IngestError("stale_source", f"Transcript changed since the scan: {relative}", affected=(relative,))
+    return resolved
+
+
+def render_meeting_note(fields: dict) -> str:
+    """Render a meeting note using only the current ``meeting`` schema."""
+    status = str(fields.get("status") or "held").strip().casefold()
+    if status not in MEETING_STATUSES:
+        status = "held"
+    date_value = str(fields.get("date") or "").strip()
+    lines = ["---", "type: meeting", f"status: {status}", f"date: {date_value}"]
+    if fields.get("date_status"):
+        lines.append(f"date_status: {_scalar(fields['date_status'])}")
+    attendees = fields.get("attendees") or []
+    if attendees:
+        lines.append("attendees:")
+        lines.extend(f"  - {_scalar(item)}" for item in attendees)
+    projects = fields.get("projects") or []
+    if projects:
+        lines.append("projects:")
+        lines.extend(f"  - {_scalar(item)}" for item in projects)
+    if fields.get("meeting_type"):
+        lines.append(f"meeting_type: {_scalar(fields['meeting_type'])}")
+    if fields.get("source_system"):
+        lines.append(f"source_system: {_scalar(fields['source_system'])}")
+    if fields.get("external_id"):
+        lines.append(f"external_id: {_scalar(fields['external_id'])}")
+    lines.append("---")
+    return "\n".join(lines) + "\n\n" + _meeting_body(fields) + "\n"
+
+
+def _meeting_body(fields: dict) -> str:
+    notes_text = str(fields.get("notes_text") or "").strip()
+    notes = notes_text or "\n".join(f"- {point}" for point in fields.get("key_points") or [])
+    sections = ["## Notes\n\n" + notes if notes else "## Notes"]
+
+    action_lines: list[str] = []
+    for item in fields.get("action_items") or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        assignee = str(item.get("assignee") or "").strip()
+        action_lines.append(f"- {assignee}: {text}" if assignee else f"- {text}")
+    sections.append("## Actions\n\n" + "\n".join(action_lines) if action_lines else "## Actions")
+
+    sections.append("## Decisions")
+    sections.append("## Risks / Blockers")
+    return "\n\n".join(sections)
 
 
 def _resolve_source(vault_root: Path, relative: str, proposal_id: str) -> Path:

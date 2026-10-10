@@ -304,6 +304,7 @@ def _ingest_apply(service: WriteContext, payload: dict, *, confirmed: bool, toda
         ids=tuple(str(item) for item in ids) if ids else None,
         confirmed=confirmed,
         today=today,
+        krisp_inbox_path=getattr(service, "krisp_inbox_path", None),
         overrides=overrides,
     )
     return {

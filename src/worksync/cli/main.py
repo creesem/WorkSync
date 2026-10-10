@@ -247,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_apply.add_argument("--reason", required=True, help="Human-readable reason for the batch.")
     ingest_apply.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
     ingest_apply.add_argument("--confirm", action="store_true", help="Confirm a merge/drop batch.")
+    ingest_apply.add_argument("--dry-run", action="store_true", help="Show the planned changes without writing.")
     ingest_apply.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
     ingest_apply.add_argument("--json", action="store_true", help="Emit JSON.")
     ingest_apply.set_defaults(handler=_ingest_apply)
@@ -1129,7 +1130,9 @@ def _ingest_apply(args: argparse.Namespace) -> int:
             ids=tuple(args.ids) if args.ids else None,
             confirmed=args.confirm,
             today=_resolve_today(args.today),
+            krisp_inbox_path=_configured_krisp_inbox(),
             overrides=_parse_sets(args.sets),
+            dry_run=args.dry_run,
         )
         if result.committed:
             _rebuild_derived(vault, runtime)
