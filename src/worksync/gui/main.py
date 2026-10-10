@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         model=model,
         inbox_path=inbox,
         rough_notes_path=rough,
-        krisp_inbox_path=config.krisp_inbox_path,
+        krisp_inbox_path=config.krisp_inbox_for(runtime),
         krisp_since_days=config.krisp_since_days,
         krisp_api_key=krisp_api_key,
     )

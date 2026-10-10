@@ -70,6 +70,22 @@ class WorksyncConfig:
     krisp_since_days: int = DEFAULT_KRISP_SINCE_DAYS
     krisp_inbox_path: Path = DEFAULT_KRISP_INBOX
 
+    def krisp_inbox_for(self, runtime: str | Path | None = None) -> Path:
+        """Return the Krisp inbox rebased onto *runtime* (defaults to the configured runtime).
+
+        The inbox is runtime-relative, so a ``--runtime`` override must move it with the
+        runtime rather than leaving it under the configured one.
+        """
+        if runtime is None:
+            return self.krisp_inbox_path
+        runtime_root = Path(runtime).expanduser().resolve()
+        if runtime_root == self.runtime_root:
+            return self.krisp_inbox_path
+        try:
+            return runtime_root / self.krisp_inbox_path.relative_to(self.runtime_root)
+        except ValueError:
+            return self.krisp_inbox_path
+
 
 def _config_base(path: Path) -> Path:
     return path.parent.parent if path.parent.name == CONFIG_DIRNAME else path.parent

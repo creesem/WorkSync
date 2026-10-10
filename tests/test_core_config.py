@@ -135,3 +135,12 @@ def test_relative_krisp_inbox_cannot_escape_the_runtime_root(tmp_path: Path) -> 
     _write_config(tmp_path, krisp_inbox_path="../elsewhere")
     with pytest.raises(ConfigError):
         load_config(root=tmp_path)
+
+
+def test_krisp_inbox_rebases_onto_an_override_runtime(tmp_path: Path) -> None:
+    _write_config(tmp_path, krisp_inbox_path="custom-krisp")
+    config = load_config(root=tmp_path)
+    override = tmp_path / "other-runtime"
+    assert config.krisp_inbox_for(override) == (override / "custom-krisp").resolve()
+    assert config.krisp_inbox_for() == config.krisp_inbox_path
+    assert config.krisp_inbox_for(config.runtime_root) == config.krisp_inbox_path

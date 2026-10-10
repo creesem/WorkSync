@@ -1015,12 +1015,12 @@ def _configured_ingest_roots() -> tuple[str | None, str | None]:
     return inbox, rough
 
 
-def _configured_krisp_inbox() -> Path | None:
+def _configured_krisp_inbox(runtime: str | Path | None = None) -> Path | None:
     try:
         config = load_config()
     except (ConfigError, OSError):
         return None
-    return config.krisp_inbox_path
+    return config.krisp_inbox_for(runtime)
 
 
 def _configured_model() -> LocalModel:
@@ -1042,7 +1042,7 @@ def _ingest_scan(args: argparse.Namespace) -> int:
             today=today,
             inbox_path=args.inbox or configured_inbox,
             rough_notes_path=args.rough_notes or configured_rough,
-            krisp_inbox_path=_configured_krisp_inbox(),
+            krisp_inbox_path=_configured_krisp_inbox(runtime),
             model=_configured_model() if args.model else None,
         )
     except (ConfigError, IngestError, OSError, ValueError) as exc:
@@ -1080,7 +1080,7 @@ def _krisp_pull(args: argparse.Namespace) -> int:
     try:
         config = load_config()
         runtime = Path(args.runtime) if args.runtime is not None else config.runtime_root
-        inbox = Path(args.inbox) if args.inbox else config.krisp_inbox_path
+        inbox = Path(args.inbox) if args.inbox else config.krisp_inbox_for(runtime)
         since = args.since_days if args.since_days is not None else config.krisp_since_days
         api_key = resolve_krisp_api_key(explicit=args.api_key, config_path=config.source_path)
         if not api_key:
@@ -1136,7 +1136,7 @@ def _ingest_apply(args: argparse.Namespace) -> int:
             ids=tuple(args.ids) if args.ids else None,
             confirmed=args.confirm,
             today=_resolve_today(args.today),
-            krisp_inbox_path=_configured_krisp_inbox(),
+            krisp_inbox_path=_configured_krisp_inbox(runtime),
             overrides=_parse_sets(args.sets),
             dry_run=args.dry_run,
         )
