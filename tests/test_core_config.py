@@ -123,3 +123,15 @@ def test_krisp_inbox_path_is_configurable(tmp_path: Path) -> None:
     _write_config(tmp_path, krisp_inbox_path="custom-krisp")
     config = load_config(root=tmp_path)
     assert config.krisp_inbox_path == (tmp_path / "var" / "custom-krisp").resolve()
+
+
+def test_absolute_out_of_root_krisp_inbox_fails_closed(tmp_path: Path) -> None:
+    _write_config(tmp_path, krisp_inbox_path=str(tmp_path / "elsewhere"))
+    with pytest.raises(ConfigError):
+        load_config(root=tmp_path)
+
+
+def test_relative_krisp_inbox_cannot_escape_the_runtime_root(tmp_path: Path) -> None:
+    _write_config(tmp_path, krisp_inbox_path="../elsewhere")
+    with pytest.raises(ConfigError):
+        load_config(root=tmp_path)

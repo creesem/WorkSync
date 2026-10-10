@@ -12,6 +12,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from worksync.core.paths import PathSafetyError, ensure_under
+
 CONFIG_ENV = "WORKSYNC_CONFIG"
 CONFIG_DIRNAME = "config"
 CONFIG_FILENAME = "worksync.json"
@@ -123,6 +125,10 @@ def load_config(config_path: str | Path | None = None, *, root: str | Path | Non
     if not inbox.is_absolute():
         inbox = runtime / inbox
     inbox = inbox.resolve()
+    try:
+        inbox = ensure_under(runtime, inbox)
+    except PathSafetyError as exc:
+        raise ConfigError(f"krisp_inbox_path must resolve inside the runtime root: {inbox}") from exc
 
     return WorksyncConfig(
         vault_path=vault,

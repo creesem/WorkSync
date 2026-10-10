@@ -236,3 +236,25 @@ def test_invalid_meeting_draft_fails_before_any_write(
     loaded = load_manifest(runtime)
     assert loaded is not None
     assert all(proposal.status == "pending" for proposal in loaded.proposals)
+
+
+def test_promote_refuses_an_inbox_outside_the_runtime_root(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    runtime, inbox = _seed(vault, write_note, tmp_path)
+    scan(vault, runtime, krisp_inbox_path=inbox, today=TODAY)
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    with pytest.raises(IngestError) as excinfo:
+        apply(
+            vault,
+            runtime,
+            reviewer="myles",
+            reason="Promote the meeting",
+            ids=(PROPOSAL_ID,),
+            today=TODAY,
+            krisp_inbox_path=outside,
+        )
+    assert excinfo.value.code == "invalid_root"
+    assert not (vault / "10. Meetings" / "Meeting - Q3 Sync.md").exists()
+    assert (inbox / TRANSCRIPT_NAME).is_file()

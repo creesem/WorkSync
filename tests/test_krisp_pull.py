@@ -134,6 +134,15 @@ def test_sync_status_records_last_success(tmp_path: Path) -> None:
     assert sync["failed"] == []
 
 
+def test_pull_refuses_an_inbox_outside_the_runtime_root(tmp_path: Path) -> None:
+    runtime = tmp_path / "var"
+    outside = tmp_path / "elsewhere"
+    with pytest.raises(IngestError) as excinfo:
+        pull(runtime, client=FakeKrispClient((_meeting(),)), since_days=14, inbox=outside)
+    assert excinfo.value.code == "invalid_root"
+    assert not (outside / "2026-10-07 - Q3 Sync [a1b2c3d4].txt").exists()
+
+
 def test_write_sidecar_refuses_missing_transcript(tmp_path: Path) -> None:
     inbox = tmp_path / "inbox"
     inbox.mkdir()

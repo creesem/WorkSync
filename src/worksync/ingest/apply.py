@@ -90,6 +90,10 @@ def apply(
         if krisp_inbox_path is not None
         else runtime_root / DEFAULT_KRISP_INBOX
     )
+    try:
+        inbox_root = ensure_under(runtime_root, inbox_root)
+    except PathSafetyError as exc:
+        raise IngestError("invalid_root", f"Krisp inbox must be inside the runtime root: {inbox_root}") from exc
 
     ops: list[FileOp] = []
     for proposal in selected:
