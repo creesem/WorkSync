@@ -22,6 +22,12 @@ UNDATED_PLACEHOLDER = "1970-01-01"
 PROCESSED_DIRNAME = "processed"
 MAX_PROJECTS = 5
 PROVENANCE_CAP = 40
+MODEL_INPUT_LIMIT = 1200
+_NOTES_SCHEMA = {
+    "type": "object",
+    "properties": {"notes": {"type": "string"}},
+    "required": ["notes"],
+}
 
 
 def discover_krisp(
@@ -110,7 +116,7 @@ def _fields(
         f"date <- recording ({date_iso})" if not date_status else "date <- undated placeholder",
         f"attendees resolved {len(attendees)} of {len(sidecar.get('speakers') or ())}",
         f"projects matched {len(projects)}",
-        "notes <- Krisp key points",
+        "notes draft <- deterministic",
         "actions <- Krisp action items",
     ]
     if unmatched:
@@ -191,10 +197,36 @@ def _children(notes: Any, block_type: str) -> list[dict[str, Any]]:
 
 
 def _apply_model(fields: dict[str, Any], provenance: list[str], model: object) -> tuple[dict[str, Any], list[str]]:
+    """Optionally draft the ``## Notes`` prose from a bounded, cited input.
+
+    The model is suggestion-only: a missing method, a raised error, or an unusable
+    response falls back to the deterministic bullets, and the model never changes the
+    proposal's existence, status, or promotion.
+    """
     suggest = getattr(model, "suggest", None)
     if not callable(suggest):
         return fields, provenance
-    return fields, provenance
+    try:
+        suggestion = suggest(_notes_prompt(fields), _NOTES_SCHEMA)
+    except Exception:  # noqa: BLE001 - a model failure must never break the pipeline
+        return fields, provenance
+    if not isinstance(suggestion, dict):
+        return fields, provenance
+    prose = str(suggestion.get("notes") or "").strip()
+    if not prose:
+        return fields, provenance
+    return {**fields, "notes_text": prose}, [*provenance, "notes draft <- local model (suggestion)"]
+
+
+def _notes_prompt(fields: dict[str, Any]) -> str:
+    points = "\n".join(f"- {point}" for point in fields.get("key_points") or ())
+    actions = "\n".join(f"- {item.get('text', '')}" for item in fields.get("action_items") or ())
+    content = f"Key points:\n{points}\n\nAction items:\n{actions}".strip()[:MODEL_INPUT_LIMIT]
+    return (
+        "Rewrite these meeting notes as a short, plain Markdown summary for an Obsidian "
+        "meeting note. Use only the given content and do not invent facts. Respond as JSON "
+        "with one key 'notes'.\n\n" + content
+    )
 
 
 def _confidence(fields: dict[str, Any]) -> float:
