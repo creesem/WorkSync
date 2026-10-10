@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
@@ -14,6 +15,8 @@ from worksync.ingest.apply import render_meeting_note
 from worksync.ingest.discover import IngestError
 from worksync.ingest.krisp import write_sidecar
 from worksync.ingest.manifest import load_manifest_with_hash
+from worksync.safety import gateway
+from worksync.safety.models import MutationError
 
 TODAY = date(2026, 10, 7)
 PERSON = "---\ntype: person\nstatus: active\n---\n# Myles Creese\n"
@@ -258,3 +261,49 @@ def test_promote_refuses_an_inbox_outside_the_runtime_root(
     assert excinfo.value.code == "invalid_root"
     assert not (vault / "10. Meetings" / "Meeting - Q3 Sync.md").exists()
     assert (inbox / TRANSCRIPT_NAME).is_file()
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    return {path.relative_to(root).as_posix(): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
+def test_meeting_promote_mid_batch_failure_restores_the_vault_and_inbox(
+    monkeypatch: pytest.MonkeyPatch, vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    runtime, inbox = _seed(vault, write_note, tmp_path)
+    scan(vault, runtime, krisp_inbox_path=inbox, today=TODAY)
+    vault_before = _snapshot(vault)
+    inbox_before = _snapshot(inbox)
+    real_write = gateway.atomic_write_text
+
+    def flaky(path: Path, text: str, **kwargs: object) -> None:
+        if Path(path).name == "manifest.json":
+            raise OSError("disk full")
+        real_write(path, text, **kwargs)
+
+    monkeypatch.setattr(gateway, "atomic_write_text", flaky)
+    with pytest.raises(MutationError) as excinfo:
+        apply(
+            vault,
+            runtime,
+            reviewer="myles",
+            reason="Promote the meeting",
+            ids=(PROPOSAL_ID,),
+            today=TODAY,
+            krisp_inbox_path=inbox,
+        )
+    assert excinfo.value.code == "rolled_back"
+    assert _snapshot(vault) == vault_before
+    assert _snapshot(inbox) == inbox_before
+    assert (inbox / TRANSCRIPT_NAME).is_file()
+    assert (inbox / TRANSCRIPT_NAME).with_suffix(".krisp.json").is_file()
+    assert not (vault / "10. Meetings" / "Meeting - Q3 Sync.md").exists()
+    loaded = load_manifest(runtime)
+    assert loaded is not None
+    assert all(proposal.status == "pending" for proposal in loaded.proposals)
+
+    journals = list((runtime / "journal").glob("*.json"))
+    assert len(journals) == 1
+    record = json.loads(journals[0].read_text(encoding="utf-8"))
+    assert record["rolled_back"] is True
+    assert any(op["kind"] == "create" for op in record["ops"])
