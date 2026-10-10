@@ -3,7 +3,7 @@
 const TOKEN = window.__GUI_TOKEN__ || "";
 const TOKEN_HEADER = "X-Gui-Token";
 
-const state = { triage: [], queueTab: "triage", duplicates: [], clarification: [] };
+const state = { triage: [], queueTab: "triage", duplicates: [], clarification: [], krisp: [] };
 
 const view = document.getElementById("view");
 const equivalent = document.getElementById("equivalent");
@@ -227,6 +227,7 @@ const queueTabs = [
   { id: "triage", label: "Triage" },
   { id: "duplicates", label: "Duplicates" },
   { id: "clarification", label: "Clarification" },
+  { id: "krisp", label: "Krisp" },
 ];
 
 function queueBar() {
@@ -248,6 +249,10 @@ async function renderQueue() {
   }
   if (state.queueTab === "clarification") {
     await renderClarificationTab(bar);
+    return;
+  }
+  if (state.queueTab === "krisp") {
+    await renderKrispTab(bar);
     return;
   }
   await renderTriageTab(bar);
@@ -435,6 +440,142 @@ async function renderClarificationTab(bar) {
     `<div class="triage-actions"><button type="button" id="apply-clarification">Apply selected</button></div>` +
     (rows || empty("Nothing needs clarification."));
   document.getElementById("apply-clarification").addEventListener("click", applyClarification);
+}
+
+function krispCard(proposal) {
+  const fields = proposal.fields || {};
+  const confidence = typeof proposal.confidence === "number" ? proposal.confidence : 0;
+  const checked = proposal.status === "pending" ? "checked" : "";
+  const provenance = (proposal.provenance || []).map(escapeHtml).join(" · ");
+  const attendees = (fields.attendees || []).map(bareName).join(", ");
+  const projects = (fields.projects || []).map(bareName).join(", ");
+  const field = (key, label, value) =>
+    `<label class="field"><span>${escapeHtml(label)}</span>
+      <input data-field="${key}" value="${escapeHtml(value || "")}" /></label>`;
+  return `<div class="proposal row" data-id="${escapeHtml(proposal.id)}" data-action="meeting">
+    <label class="pick"><input type="checkbox" class="pick-box" ${checked} /></label>
+    <div class="proposal-body">
+      <div class="proposal-head">
+        <span class="tag">meeting</span>
+        <span class="conf">${escapeHtml(confidence.toFixed(2))}</span>
+        <span class="path">${escapeHtml(proposal.source_path)}</span>
+      </div>
+      <div class="proposal-fields">
+        ${field("title", "Title", fields.title)}
+        ${field("date", "Date", fields.date)}
+        ${field("attendees", "Attendees", attendees)}
+        ${field("projects", "Projects", projects)}
+      </div>
+      <div class="provenance">${provenance}</div>
+      <button type="button" class="dismiss" data-dismiss-krisp="${escapeHtml(proposal.id)}">Dismiss</button>
+    </div>
+  </div>`;
+}
+
+function collectKrispSelection() {
+  const ids = [];
+  const overrides = {};
+  for (const node of document.querySelectorAll(".proposal[data-action='meeting']")) {
+    const box = node.querySelector(".pick-box");
+    if (!box || !box.checked) continue;
+    const id = node.dataset.id;
+    ids.push(id);
+    const fields = {};
+    for (const input of node.querySelectorAll("input[data-field]")) {
+      const value = input.value.trim();
+      if (value) fields[input.dataset.field] = value;
+    }
+    overrides[id] = fields;
+  }
+  return { ids, overrides };
+}
+
+function showKrispSummary(result) {
+  const summary = result.summary || {};
+  writeResult.innerHTML = `<div class="write-ok">
+    <p>Pulled ${(summary.pulled || []).length}, skipped ${(summary.skipped || []).length}, failed ${
+      (summary.failed || []).length
+    }</p>
+    ${result.equivalent_cli ? `<code>${escapeHtml(result.equivalent_cli)}</code>` : ""}
+  </div>`;
+}
+
+async function pullKrisp() {
+  const button = document.getElementById("krisp-pull");
+  if (button) button.disabled = true;
+  try {
+    const result = await postAction("krisp-pull", {});
+    showKrispSummary(result);
+    await renderKrispTab(queueBar());
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+    if (button) button.disabled = false;
+  }
+}
+
+async function applyKrisp() {
+  const selected = collectKrispSelection();
+  if (!selected.ids.length) {
+    showWriteResult({ error: "Select at least one meeting." }, true);
+    return;
+  }
+  const reason = window.prompt("Reason for promoting these meetings?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  try {
+    const result = await postAction("ingest-apply", {
+      reason: reason.trim(),
+      ids: selected.ids,
+      overrides: selected.overrides,
+    });
+    showWriteResult(result, false);
+    await renderKrispTab(queueBar());
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
+async function dismissKrisp(id) {
+  const reason = window.prompt("Reason for dismissing this meeting?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  try {
+    const result = await postAction("ingest-dismiss", { id, reason: reason.trim() });
+    showWriteResult(result, false);
+    await renderKrispTab(queueBar());
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
+async function renderKrispTab(bar) {
+  const status = await postAction("krisp-status", {});
+  const scan = await postAction("ingest-scan", {});
+  equivalent.textContent = scan.equivalent_cli;
+  state.krisp = (scan.proposals || []).filter((proposal) => proposal.action === "meeting");
+  const rows = state.krisp.map(krispCard).join("");
+  const sync = status.sync || {};
+  const failed = (sync.failed || []).length;
+  const last = sync.last_success_at ? `last pull ${sync.last_success_at}` : "never pulled";
+  view.innerHTML =
+    heading("Review", "Krisp meetings") +
+    bar +
+    `<div class="krisp-bar">
+      <span class="muted">${escapeHtml(last)} · window ${escapeHtml(String(status.since_days))} days${
+        failed ? ` · ${failed} failed` : ""
+      }</span>
+      <button type="button" id="krisp-pull">Pull transcripts</button>
+    </div>` +
+    `<div class="triage-actions"><button type="button" id="apply-krisp">Apply selected</button></div>` +
+    (rows || empty("No meeting candidates."));
+  document.getElementById("krisp-pull").addEventListener("click", pullKrisp);
+  document.getElementById("apply-krisp").addEventListener("click", applyKrisp);
 }
 
 async function completeAction(path, title) {
@@ -695,6 +836,11 @@ view.addEventListener("click", (event) => {
   const dismissClarify = event.target.closest("[data-dismiss-clarification]");
   if (dismissClarify) {
     dismissClarification(dismissClarify.dataset.dismissClarification);
+    return;
+  }
+  const dismissKrispNode = event.target.closest("[data-dismiss-krisp]");
+  if (dismissKrispNode) {
+    dismissKrisp(dismissKrispNode.dataset.dismissKrisp);
     return;
   }
   const complete = event.target.closest("[data-complete]");

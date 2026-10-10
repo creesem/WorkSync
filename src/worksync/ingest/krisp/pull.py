@@ -164,5 +164,10 @@ def _load_sync(runtime_root: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def sync_status(runtime: str | Path) -> dict[str, Any]:
+    """Return the recorded Krisp sync status, or an empty mapping when none exists."""
+    return _load_sync(Path(runtime).expanduser().resolve())
+
+
 def _save_sync(runtime_root: Path, payload: dict[str, Any]) -> None:
     derived.write_json(runtime_root, SYNC_REL, payload)

@@ -28,6 +28,9 @@ class GuiService:
     model: object | None = None
     inbox_path: str | None = None
     rough_notes_path: str | None = None
+    krisp_inbox_path: Path | None = None
+    krisp_since_days: int = 14
+    krisp_api_key: str | None = None
 
     def today(self, today: date) -> dict:
         """The Today ledger: the vault-wide attention queue."""

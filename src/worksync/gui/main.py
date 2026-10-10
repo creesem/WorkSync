@@ -10,6 +10,7 @@ from pathlib import Path
 
 from worksync.core.config import ConfigError, load_config
 from worksync.core.model import LocalModel, ModelConfig
+from worksync.core.secrets import resolve_krisp_api_key
 from worksync.gui.controller import GuiService
 from worksync.gui.server import GuiHttpServer, create_server
 from worksync.inventory.index import index_path
@@ -28,6 +29,9 @@ def build_service(
     model: object | None = None,
     inbox_path: str | None = None,
     rough_notes_path: str | None = None,
+    krisp_inbox_path: Path | None = None,
+    krisp_since_days: int = 14,
+    krisp_api_key: str | None = None,
 ) -> GuiService:
     """Pin the vault, index, reviewer, model, and ingest roots the server reads through."""
     return GuiService(
@@ -40,6 +44,9 @@ def build_service(
         model=model,
         inbox_path=inbox_path,
         rough_notes_path=rough_notes_path,
+        krisp_inbox_path=krisp_inbox_path,
+        krisp_since_days=krisp_since_days,
+        krisp_api_key=krisp_api_key,
     )
 
 
@@ -81,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     model = LocalModel(ModelConfig.from_raw(config.raw)) if ModelConfig.configured(config.raw) else None
     inbox = str(config.raw.get("inbox_path") or "").strip() or None
     rough = str(config.raw.get("rough_notes_path") or "").strip() or None
+    krisp_api_key = resolve_krisp_api_key(config_path=config.source_path)
     service = build_service(
         vault=vault,
         runtime=runtime,
@@ -90,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
         model=model,
         inbox_path=inbox,
         rough_notes_path=rough,
+        krisp_inbox_path=config.krisp_inbox_path,
+        krisp_since_days=config.krisp_since_days,
+        krisp_api_key=krisp_api_key,
     )
     try:
         server = bind(service, token, host=args.host, port=port)

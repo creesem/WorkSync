@@ -19,6 +19,8 @@ from worksync.ingest import IngestError
 from worksync.ingest import apply as ingest_apply
 from worksync.ingest import dismiss as ingest_dismiss
 from worksync.ingest import scan as ingest_scan
+from worksync.ingest.krisp import KrispAPIError, build_krisp_client, sync_status
+from worksync.ingest.krisp import pull as run_krisp_pull
 from worksync.safety.models import MutationError
 from worksync.work import clarification as clarification_service
 from worksync.work import duplicates as duplicates_service
@@ -49,6 +51,9 @@ class WriteContext(Protocol):
     model: object | None
     inbox_path: str | None
     rough_notes_path: str | None
+    krisp_inbox_path: Path | None
+    krisp_since_days: int
+    krisp_api_key: str | None
 
 
 _STATUS_BY_CODE = {
@@ -89,6 +94,12 @@ _STATUS_BY_CODE = {
     "already_done": 422,
     "rolled_back": 500,
     "rollback_failed": 500,
+    "missing_key": 400,
+    "unauthorized": 409,
+    "rate_limited": 429,
+    "network": 502,
+    "http_error": 502,
+    "bad_response": 502,
 }
 
 
@@ -119,7 +130,15 @@ def dispatch_action(
         raise ActionError("unknown_action", f"Unknown action: {name}", 404)
     try:
         return handler(service, payload, confirmed=bool(payload.get("confirmed")), today=today)
-    except (ActionWriteError, ReviewerError, MutationError, IngestError, DuplicatesError, ClarificationError) as exc:
+    except (
+        ActionWriteError,
+        ReviewerError,
+        MutationError,
+        IngestError,
+        DuplicatesError,
+        ClarificationError,
+        KrispAPIError,
+    ) as exc:
         raise _as_action_error(exc) from exc
 
 
@@ -335,6 +354,34 @@ def _ingest_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, to
     }
 
 
+def _krisp_pull(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    api_key = getattr(service, "krisp_api_key", None)
+    if not str(api_key or "").strip():
+        raise ActionError("missing_key", "No Krisp API key is configured.", 400)
+    inbox = getattr(service, "krisp_inbox_path", None)
+    since = int(getattr(service, "krisp_since_days", 14) or 14)
+    client = build_krisp_client(api_key)
+    result = run_krisp_pull(service.runtime_root, client=client, since_days=since, inbox=inbox, today=today)
+    return {
+        "state": "ok",
+        "action": "krisp-pull",
+        "committed": False,
+        "summary": result.to_dict(),
+        "equivalent_cli": _krisp_pull_cli(since),
+    }
+
+
+def _krisp_status(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    return {
+        "state": "ok",
+        "action": "krisp-status",
+        "committed": False,
+        "sync": sync_status(service.runtime_root),
+        "since_days": int(getattr(service, "krisp_since_days", 14) or 14),
+        "equivalent_cli": None,
+    }
+
+
 def _duplicates_scan(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
     manifest = duplicates_service.scan(service.vault, service.runtime_root, today=today)
     return {
@@ -461,6 +508,8 @@ ACTIONS: dict[str, ActionHandler] = {
     "ingest-scan": _ingest_scan,
     "ingest-apply": _ingest_apply,
     "ingest-dismiss": _ingest_dismiss,
+    "krisp-pull": _krisp_pull,
+    "krisp-status": _krisp_status,
     "duplicates-scan": _duplicates_scan,
     "duplicates-dismiss": _duplicates_dismiss,
     "duplicates-apply": _duplicates_apply,
@@ -544,6 +593,10 @@ def _today_scan_cli(command: str, today: date | None) -> str:
     if today is not None:
         parts += ["--today", today.isoformat()]
     return " ".join(parts)
+
+
+def _krisp_pull_cli(since_days: int) -> str:
+    return " ".join(["worksync", "krisp", "pull", "--since-days", str(since_days)])
 
 
 def _apply_cli(command: str, reason: str, reviewer: str, ids: object, confirmed: bool, overrides: object) -> str:

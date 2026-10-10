@@ -16,7 +16,7 @@ from worksync.ingest.krisp.client import (
     MeetingStub,
     build_client,
 )
-from worksync.ingest.krisp.pull import PullResult, pull
+from worksync.ingest.krisp.pull import PullResult, pull, sync_status
 from worksync.ingest.krisp.sidecar import (
     format_transcript,
     read_sidecar,
@@ -43,6 +43,7 @@ __all__ = [
     "read_sidecar",
     "sidecar_path",
     "sidecar_payload",
+    "sync_status",
     "transcript_filename",
     "write_sidecar",
 ]
