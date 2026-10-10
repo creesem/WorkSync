@@ -131,14 +131,20 @@ Krisp is a discovery source on the same `ingest` pipeline, not a second review s
    missing source fails closed.
 2. **Propose** — `ingest.krisp.discovery` reads the inbox (skipping a `Processed/`
    subtree), builds a deterministic `meeting` proposal from the sidecar, and merges it into
-   the same `ingest` manifest. Attendees and projects are linked only when they resolve to
-   a canonical Person or Project; unmatched names stay in provenance. The optional local
-   model may draft the `## Notes` prose from a bounded input; the deterministic draft is
-   always the default.
+   the same `ingest` manifest. Attendees are linked only when a speaker resolves to a
+   canonical Person; unmatched and ambiguous speaker names stay in provenance. Project
+   references are index-driven (a canonical project `title`/`project_id` mention), so there
+   is no unmatched-project set; an ambiguous project title is recorded and never linked.
+   The optional local model may draft the `## Notes` prose from a bounded input; the
+   deterministic draft is always the default.
 3. **Promote** — `ingest.apply` handles the `meeting` kind: it creates the canonical
    meeting note in `10. Meetings` and moves the transcript and sidecar into
    `Processed/<date>/` inside the inbox, both in one `ChangeSet` with the manifest update.
    The batch verb is `promote` (not a confirmation verb); a source is never unlinked.
+
+`krisp-status` is an accepted thin read: it returns the recorded sync status
+(`runtime/krisp/sync-status.json`) and the configured pull window, holds no domain logic,
+and performs no write. The GUI Krisp tab uses it for last-pull/sync health.
 
 Krisp imports no `context` and no `html`, and reaches `safety` for every write.
 

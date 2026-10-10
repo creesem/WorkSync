@@ -20,6 +20,26 @@ from worksync.ingest.krisp.client import KrispMeeting
 from worksync.safety import derived
 
 SIDECAR_SUFFIX = ".krisp.json"
+PROCESSED_DIRNAME = "Processed"
+
+
+def parse_iso_prefix(value: object) -> str | None:
+    """Return the ISO date in the first ten characters of *value*, or ``None``."""
+    text = str(value or "").strip()
+    if len(text) >= 10:
+        try:
+            return date.fromisoformat(text[:10]).isoformat()
+        except ValueError:
+            pass
+    return None
+
+
+def load_json(path: str | Path) -> Any:
+    """Read a UTF-8 (BOM-tolerant) JSON file, or ``None`` when it is absent or invalid."""
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
 
 
 def format_transcript(segments: tuple[dict[str, Any], ...]) -> str:
@@ -64,7 +84,7 @@ def sidecar_payload(meeting: KrispMeeting) -> dict[str, Any]:
 
 def write_sidecar(inbox: str | Path, transcript_path: str | Path, payload: dict[str, Any]) -> Path:
     """Write a sidecar beside an existing transcript, refusing a missing/foreign source."""
-    resolved = _require_transcript(inbox, transcript_path)
+    resolved = require_transcript(inbox, transcript_path)
     sidecar = sidecar_path(resolved)
     content = json.dumps(payload, indent=2, ensure_ascii=False, default=str) + "\n"
     return derived.write_text(_inbox_root(inbox), sidecar, content, expected_absent=True)
@@ -72,14 +92,8 @@ def write_sidecar(inbox: str | Path, transcript_path: str | Path, payload: dict[
 
 def read_sidecar(inbox: str | Path, transcript_path: str | Path) -> dict[str, Any] | None:
     """Read the sidecar beside an existing transcript, or ``None`` when it is absent."""
-    resolved = _require_transcript(inbox, transcript_path)
-    sidecar = sidecar_path(resolved)
-    if not sidecar.is_file():
-        return None
-    try:
-        data = json.loads(sidecar.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        return None
+    resolved = require_transcript(inbox, transcript_path)
+    data = load_json(sidecar_path(resolved))
     return data if isinstance(data, dict) else None
 
 
@@ -87,7 +101,8 @@ def _inbox_root(inbox: str | Path) -> Path:
     return Path(inbox).expanduser().resolve()
 
 
-def _require_transcript(inbox: str | Path, transcript_path: str | Path) -> Path:
+def require_transcript(inbox: str | Path, transcript_path: str | Path) -> Path:
+    """Resolve a transcript inside *inbox*, requiring the exact file to exist."""
     root = _inbox_root(inbox)
     candidate = Path(transcript_path)
     if not candidate.is_absolute():
@@ -102,13 +117,7 @@ def _require_transcript(inbox: str | Path, transcript_path: str | Path) -> Path:
 
 
 def _date_part(started_at: str, *, today: date | None) -> str:
-    text = str(started_at or "").strip()
-    if len(text) >= 10:
-        try:
-            return date.fromisoformat(text[:10]).isoformat()
-        except ValueError:
-            pass
-    return (today or date.today()).isoformat()
+    return parse_iso_prefix(started_at) or (today or date.today()).isoformat()
 
 
 def _id8(meeting_id: str) -> str:

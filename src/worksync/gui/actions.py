@@ -19,7 +19,7 @@ from worksync.ingest import IngestError
 from worksync.ingest import apply as ingest_apply
 from worksync.ingest import dismiss as ingest_dismiss
 from worksync.ingest import scan as ingest_scan
-from worksync.ingest.krisp import KrispAPIError, build_krisp_client, sync_status
+from worksync.ingest.krisp import KrispAPIError, build_client, sync_status
 from worksync.ingest.krisp import pull as run_krisp_pull
 from worksync.safety.models import MutationError
 from worksync.work import clarification as clarification_service
@@ -287,16 +287,14 @@ def _apply_batch(service: WriteContext, payload: dict, *, confirmed: bool, today
 
 
 def _ingest_scan(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
-    inbox = getattr(service, "inbox_path", None)
-    rough = getattr(service, "rough_notes_path", None)
     manifest = ingest_scan(
         service.vault,
         service.runtime_root,
-        inbox_path=inbox,
-        rough_notes_path=rough,
-        krisp_inbox_path=getattr(service, "krisp_inbox_path", None),
+        inbox_path=service.inbox_path,
+        rough_notes_path=service.rough_notes_path,
+        krisp_inbox_path=service.krisp_inbox_path,
         today=today,
-        model=getattr(service, "model", None),
+        model=service.model,
     )
     return {
         "state": "ok",
@@ -304,7 +302,7 @@ def _ingest_scan(service: WriteContext, payload: dict, *, confirmed: bool, today
         "committed": False,
         "scan_token": manifest.scan_token,
         "proposals": [proposal.to_dict() for proposal in manifest.proposals],
-        "equivalent_cli": _scan_cli(inbox, rough, today),
+        "equivalent_cli": _scan_cli(service.inbox_path, service.rough_notes_path, today),
     }
 
 
@@ -325,7 +323,7 @@ def _ingest_apply(service: WriteContext, payload: dict, *, confirmed: bool, toda
         ids=tuple(str(item) for item in ids) if ids else None,
         confirmed=confirmed,
         today=today,
-        krisp_inbox_path=getattr(service, "krisp_inbox_path", None),
+        krisp_inbox_path=service.krisp_inbox_path,
         overrides=overrides,
     )
     return {
@@ -357,13 +355,14 @@ def _ingest_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, to
 
 
 def _krisp_pull(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
-    api_key = getattr(service, "krisp_api_key", None)
+    api_key = service.krisp_api_key
     if not str(api_key or "").strip():
         raise ActionError("missing_key", "No Krisp API key is configured.", 400)
-    inbox = getattr(service, "krisp_inbox_path", None)
-    since = int(getattr(service, "krisp_since_days", 14) or 14)
-    client = build_krisp_client(api_key)
-    result = run_krisp_pull(service.runtime_root, client=client, since_days=since, inbox=inbox, today=today)
+    since = service.krisp_since_days
+    client = build_client(api_key)
+    result = run_krisp_pull(
+        service.runtime_root, client=client, since_days=since, inbox=service.krisp_inbox_path, today=today
+    )
     return {
         "state": "ok",
         "action": "krisp-pull",
@@ -379,7 +378,7 @@ def _krisp_status(service: WriteContext, payload: dict, *, confirmed: bool, toda
         "action": "krisp-status",
         "committed": False,
         "sync": sync_status(service.runtime_root),
-        "since_days": int(getattr(service, "krisp_since_days", 14) or 14),
+        "since_days": service.krisp_since_days,
         "equivalent_cli": None,
     }
 

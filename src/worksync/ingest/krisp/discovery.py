@@ -20,14 +20,13 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from worksync.ingest.krisp.sidecar import read_sidecar
+from worksync.ingest.krisp.sidecar import PROCESSED_DIRNAME, parse_iso_prefix, read_sidecar
 from worksync.ingest.proposal import Proposal
 from worksync.safety.files import sha256_file
 from worksync.work.repository import WorkIndex
 from worksync.work.schema import link_target
 
 UNDATED_PLACEHOLDER = "1970-01-01"
-PROCESSED_DIRNAME = "processed"
 MAX_PROJECTS = 5
 PROVENANCE_CAP = 40
 MODEL_INPUT_LIMIT = 1200
@@ -264,7 +263,7 @@ def _transcripts(root: Path) -> list[Path]:
 
 
 def _in_processed(path: Path, root: Path) -> bool:
-    return any(part.casefold() == PROCESSED_DIRNAME for part in path.relative_to(root).parts[:-1])
+    return any(part.casefold() == PROCESSED_DIRNAME.casefold() for part in path.relative_to(root).parts[:-1])
 
 
 def _read_text(path: Path) -> str:
@@ -282,10 +281,5 @@ def _speaker_name(speaker: Any) -> str:
 
 
 def _date(started_at: Any, *, today: date) -> tuple[str, str | None]:
-    text = str(started_at or "").strip()
-    if len(text) >= 10:
-        try:
-            return date.fromisoformat(text[:10]).isoformat(), None
-        except ValueError:
-            pass
-    return UNDATED_PLACEHOLDER, "undated"
+    iso = parse_iso_prefix(started_at)
+    return (iso, None) if iso else (UNDATED_PLACEHOLDER, "undated")

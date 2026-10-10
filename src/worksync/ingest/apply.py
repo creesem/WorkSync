@@ -12,9 +12,11 @@ from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
+from worksync.core.config import DEFAULT_KRISP_INBOX
 from worksync.core.names import safe_name
 from worksync.core.paths import PathSafetyError, ensure_under, unique_target
 from worksync.ingest.discover import IngestError
+from worksync.ingest.krisp.sidecar import PROCESSED_DIRNAME, require_transcript
 from worksync.ingest.manifest import (
     MANIFEST_REL,
     Manifest,
@@ -33,8 +35,6 @@ from worksync.work.schema import canonical_action_status, canonical_priority
 DEFAULT_ACTIVE = "7. Task Notes/Active"
 DEFAULT_DROPPED = "7. Task Notes/Dropped"
 DEFAULT_MEETINGS = "10. Meetings"
-DEFAULT_KRISP_INBOX = "krisp/inbox"
-PROCESSED_DIRNAME = "Processed"
 OVERLAY_FIELDS = frozenset({"title", "status", "priority", "owners", "project", "due"})
 MEETING_OVERLAY_FIELDS = frozenset({"title", "date", "status", "attendees", "projects", "meeting_type"})
 MEETING_STATUSES = ("scheduled", "held", "cancelled")
@@ -90,10 +90,11 @@ def apply(
         if krisp_inbox_path is not None
         else runtime_root / DEFAULT_KRISP_INBOX
     )
-    try:
-        inbox_root = ensure_under(runtime_root, inbox_root)
-    except PathSafetyError as exc:
-        raise IngestError("invalid_root", f"Krisp inbox must be inside the runtime root: {inbox_root}") from exc
+    if any(proposal.action == "meeting" for proposal in selected):
+        try:
+            inbox_root = ensure_under(runtime_root, inbox_root)
+        except PathSafetyError as exc:
+            raise IngestError("invalid_root", f"Krisp inbox must be inside the runtime root: {inbox_root}") from exc
 
     ops: list[FileOp] = []
     for proposal in selected:
@@ -416,12 +417,7 @@ def _meeting_ops(
 def _resolve_krisp_source(inbox_root: Path, relative: str, expected_sha: str, proposal_id: str) -> Path:
     if not relative:
         raise IngestError("missing_source", f"Proposal has no transcript: {proposal_id}", affected=(proposal_id,))
-    try:
-        resolved = ensure_under(inbox_root, inbox_root / relative)
-    except PathSafetyError as exc:
-        raise IngestError("invalid_source", str(exc), affected=(relative,)) from exc
-    if not resolved.is_file():
-        raise IngestError("missing_source", f"Transcript not found: {relative}", affected=(relative,))
+    resolved = require_transcript(inbox_root, relative)
     if expected_sha and sha256_file(resolved) != expected_sha:
         raise IngestError("stale_source", f"Transcript changed since the scan: {relative}", affected=(relative,))
     return resolved

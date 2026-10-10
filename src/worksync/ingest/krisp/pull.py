@@ -7,17 +7,18 @@ not a decision ledger: the review manifest remains the single decision record.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+from worksync.core.config import DEFAULT_KRISP_INBOX
 from worksync.core.paths import PathSafetyError, ensure_under, unique_target
 from worksync.ingest.discover import IngestError
 from worksync.ingest.krisp.client import KrispClient
 from worksync.ingest.krisp.sidecar import (
     format_transcript,
+    load_json,
     sidecar_payload,
     transcript_filename,
     write_sidecar,
@@ -27,7 +28,6 @@ from worksync.safety.files import sha256_bytes
 
 LEDGER_REL = Path("krisp") / "pull-ledger.json"
 SYNC_REL = Path("krisp") / "sync-status.json"
-DEFAULT_INBOX_REL = Path("krisp") / "inbox"
 LEDGER_VERSION = 1
 
 
@@ -67,7 +67,7 @@ def pull(
 ) -> PullResult:
     """Fetch recent meetings and write new transcripts + sidecars into the inbox."""
     runtime_root = Path(runtime).expanduser().resolve()
-    inbox_root = Path(inbox).expanduser().resolve() if inbox is not None else (runtime_root / DEFAULT_INBOX_REL)
+    inbox_root = Path(inbox).expanduser().resolve() if inbox is not None else (runtime_root / DEFAULT_KRISP_INBOX)
     try:
         inbox_root = ensure_under(runtime_root, inbox_root)
     except PathSafetyError as exc:
@@ -146,11 +146,7 @@ def _has_notes(notes: dict[str, Any]) -> bool:
 
 
 def _load_ledger(runtime_root: Path) -> dict[str, Any]:
-    path = runtime_root / LEDGER_REL
-    try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        return {"version": LEDGER_VERSION, "meetings": {}}
+    data = load_json(runtime_root / LEDGER_REL)
     if not isinstance(data, dict) or not isinstance(data.get("meetings"), dict):
         return {"version": LEDGER_VERSION, "meetings": {}}
     return {"version": int(data.get("version") or LEDGER_VERSION), "meetings": dict(data["meetings"])}
@@ -161,11 +157,7 @@ def _save_ledger(runtime_root: Path, ledger: dict[str, Any]) -> None:
 
 
 def _load_sync(runtime_root: Path) -> dict[str, Any]:
-    path = runtime_root / SYNC_REL
-    try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        return {}
+    data = load_json(runtime_root / SYNC_REL)
     return data if isinstance(data, dict) else {}
 
 

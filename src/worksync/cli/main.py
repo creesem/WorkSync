@@ -34,7 +34,7 @@ from worksync.ingest import apply as run_ingest_apply
 from worksync.ingest import dismiss as run_ingest_dismiss
 from worksync.ingest import import_note as run_ingest_import
 from worksync.ingest import scan as run_ingest_scan
-from worksync.ingest.krisp import KrispAPIError, build_krisp_client
+from worksync.ingest.krisp import KrispAPIError, build_client
 from worksync.ingest.krisp import pull as run_krisp_pull
 from worksync.inventory.index import index_path, index_vault
 from worksync.migrate import schema as schema_migration
@@ -1086,7 +1086,7 @@ def _krisp_pull(args: argparse.Namespace) -> int:
         if not api_key:
             print("worksync: no Krisp API key; pass --api-key or set KRISP_API_KEY.", file=sys.stderr)
             return 2
-        client = build_krisp_client(api_key)
+        client = build_client(api_key)
         if args.connection_test:
             client.list_meetings(since_days=1, limit=1)
             print("krisp: connection ok")

@@ -112,7 +112,7 @@ def test_pull_reports_a_summary(vault: Path, write_note: Callable[..., Path], tm
     runtime = tmp_path / "var"
     inbox = runtime / "krisp" / "inbox"
     service = _service(vault, runtime, inbox)
-    monkeypatch.setattr("worksync.gui.actions.build_krisp_client", lambda key, **kw: FakeKrispClient(_meeting()))
+    monkeypatch.setattr("worksync.gui.actions.build_client", lambda key, **kw: FakeKrispClient(_meeting()))
     result = dispatch_action(service, "krisp-pull", {}, today=TODAY)
     assert result["action"] == "krisp-pull"
     assert result["summary"]["pulled"] == ["a1b2c3d4e5f6"]

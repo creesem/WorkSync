@@ -26,8 +26,6 @@ from worksync.ingest.krisp.sidecar import (
     write_sidecar,
 )
 
-build_krisp_client = build_client
-
 __all__ = [
     "DEFAULT_BASE",
     "HttpKrispClient",
@@ -37,7 +35,6 @@ __all__ = [
     "MeetingStub",
     "PullResult",
     "build_client",
-    "build_krisp_client",
     "format_transcript",
     "pull",
     "read_sidecar",

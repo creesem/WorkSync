@@ -239,7 +239,10 @@ reason.
   control with last-pull/sync health, and the pre-filled/editable card; pull dispatches a
   new `krisp-pull` action through the write seam, and promote/dismiss reuse `ingest-apply`/
   `ingest-dismiss`. The GUI holds no domain logic and never sets `force`. The write context
-  gains the Krisp inbox path and client so the adapter can call the service.
+  gains the Krisp inbox path and client so the adapter can call the service. A
+  `krisp-status` action is an accepted thin read (recorded sync status + window; no write,
+  no domain logic) that backs the tab's sync health; it is documented in
+  `docs/architecture.md`.
 - **Documentation.** ADR-0018 is amended (path-independent Krisp id, transcript basis, the
   `meeting` kind sharing the queue); `docs/architecture.md` (ingest pipeline / review
   queues / source mapping) and `CONTEXT.md` gain the Krisp terms.
