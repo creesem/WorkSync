@@ -16,6 +16,7 @@ from worksync.context.registry import list_projects, resolve_project
 from worksync.core.config import ConfigError, load_config
 from worksync.core.model import LocalModel, ModelConfig
 from worksync.core.paths import PathSafetyError
+from worksync.core.secrets import resolve_krisp_api_key
 from worksync.html.generator import (
     AttentionRef,
     DetailSection,
@@ -33,6 +34,8 @@ from worksync.ingest import apply as run_ingest_apply
 from worksync.ingest import dismiss as run_ingest_dismiss
 from worksync.ingest import import_note as run_ingest_import
 from worksync.ingest import scan as run_ingest_scan
+from worksync.ingest.krisp import KrispAPIError, build_krisp_client
+from worksync.ingest.krisp import pull as run_krisp_pull
 from worksync.inventory.index import index_path, index_vault
 from worksync.migrate import schema as schema_migration
 from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
@@ -268,6 +271,17 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_import.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
     ingest_import.add_argument("--json", action="store_true", help="Emit JSON.")
     ingest_import.set_defaults(handler=_ingest_import)
+
+    krisp = sub.add_parser("krisp", help="Pull Krisp meeting transcripts into the runtime inbox.")
+    krisp_sub = krisp.add_subparsers(dest="krisp_command")
+    krisp_pull = krisp_sub.add_parser("pull", help="Fetch recent Krisp meetings.")
+    krisp_pull.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    krisp_pull.add_argument("--inbox", default=None, help="Override the Krisp inbox path.")
+    krisp_pull.add_argument("--since-days", type=int, default=None, help="Pull window in days (default: configured).")
+    krisp_pull.add_argument("--api-key", default=None, help="Override the Krisp API key.")
+    krisp_pull.add_argument("--connection-test", action="store_true", help="Verify the API key and exit.")
+    krisp_pull.add_argument("--json", action="store_true", help="Emit JSON.")
+    krisp_pull.set_defaults(handler=_krisp_pull)
 
     duplicates = sub.add_parser("duplicates", help="Detect and review duplicate action pairs.")
     duplicates_sub = duplicates.add_subparsers(dest="duplicates_command")
@@ -1044,6 +1058,38 @@ def _print_manifest(manifest, as_json: bool) -> None:
     for proposal in manifest.proposals:
         target = f" -> {proposal.target_path}" if proposal.target_path else ""
         print(f"  [{proposal.status}] {proposal.action} {proposal.source_path}{target} ({proposal.confidence:.2f})")
+
+
+def _krisp_pull(args: argparse.Namespace) -> int:
+    try:
+        config = load_config()
+        runtime = Path(args.runtime) if args.runtime is not None else config.runtime_root
+        inbox = Path(args.inbox) if args.inbox else config.krisp_inbox_path
+        since = args.since_days if args.since_days is not None else config.krisp_since_days
+        api_key = resolve_krisp_api_key(explicit=args.api_key, config_path=config.source_path)
+        if not api_key:
+            print("worksync: no Krisp API key; pass --api-key or set KRISP_API_KEY.", file=sys.stderr)
+            return 2
+        client = build_krisp_client(api_key)
+        if args.connection_test:
+            client.list_meetings(since_days=1, limit=1)
+            print("krisp: connection ok")
+            return 0
+        result = run_krisp_pull(runtime, client=client, since_days=since, inbox=inbox)
+    except (ConfigError, IngestError, KrispAPIError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    _print_pull(result, args.json)
+    return 1 if result.failed else 0
+
+
+def _print_pull(result, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+        return
+    print(f"krisp: {len(result.pulled)} pulled, {len(result.skipped)} skipped, {len(result.failed)} failed")
+    for item in result.failed:
+        print(f"  failed {item['meeting_id']}: {item['error']}")
 
 
 def _parse_sets(values: list[str] | None) -> dict[str, dict] | None:
