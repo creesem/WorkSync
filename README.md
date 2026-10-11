@@ -41,6 +41,50 @@ This is a merged third repository assembled from two sources (wayfinder ticket 0
 
 The source repositories are left untouched as rollback copies.
 
+## Run on another machine
+
+The vault is **not** in this repository and is never moved by it: it must already exist at
+the vault path you configure.
+
+Prerequisites: Windows, Python 3.11+ available as `py -3`, and network access for the
+first bootstrap (it fetches the build backend and `PyYAML`).
+
+1. **Clone and bootstrap.** Builds the wheel into `wheels\`, creates `.venv\`, installs it:
+
+   ```powershell
+   git clone https://github.com/creesem/WorkSync.git
+   cd WorkSync
+   Bootstrap.cmd
+   ```
+
+2. **Configure the machine.** Either seed from an existing `WorkSync-Control-Center`
+   install, which takes the shared vault path, a distinct UI port, and the Krisp secret:
+
+   ```powershell
+   .\.venv\Scripts\python scripts\seed_config.py --legacy ..\WorkSync-Control-Center --target . --port 8766
+   ```
+
+   or copy `config\worksync.example.json` to `config\worksync.json` and set `vault_path`,
+   `runtime_root`, and `ui_port` by hand.
+
+3. **Run.** `Start-WorkSync.cmd` opens the read-only workspace; `worksync.cmd --help` is the
+   CLI. `.\.venv\Scripts\worksync config show` prints what actually resolved, including
+   whether the index has been built yet (it is created on demand, not at startup).
+
+`scripts\install-desktop-shortcut.ps1` points a desktop shortcut at `Start-WorkSync.cmd`
+with the icon in `assets\worksync.ico`, which `py -3 scripts\make_icon.py` regenerates from
+`assets\worksync-icon.png`. The entry-point switch and its rollback are in
+[`docs/cutover.md`](docs/cutover.md).
+
+Machine state stays out of the repository on purpose:
+
+| Not committed | Why |
+| --- | --- |
+| `config\worksync.json` | Per-machine paths; `scripts\seed_config.py` writes it. |
+| `config\secrets.json` | The Krisp API key. Also read from the `KRISP_API_KEY` environment variable. |
+| `var\` | The runtime root — index, journal, backups, activity. Rebuilt from the vault. |
+| `.venv\`, `wheels\` | `Bootstrap.cmd` recreates both. |
+
 ## Develop
 
 Python 3.11+ (developed on 3.13).
