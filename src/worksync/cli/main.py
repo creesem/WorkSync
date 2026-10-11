@@ -1730,9 +1730,10 @@ def _migrate_runtime(args: argparse.Namespace) -> int:
             Path(args.legacy_runtime), runtime, vault=vault, when=date.today(), dry_run=args.dry_run
         )
         if not args.dry_run:
-            _rebuild_derived(vault, runtime)
+            index_associations(index_path(runtime), vault)
     except runtime_migration.RuntimeMigrationError as exc:
-        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        affected = f" ({', '.join(exc.affected)})" if exc.affected else ""
+        print(f"worksync: {exc.code}: {exc}{affected}", file=sys.stderr)
         return 1
     except MutationError as exc:
         print(f"worksync: {exc.code}: {exc}", file=sys.stderr)

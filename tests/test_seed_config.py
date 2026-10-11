@@ -81,6 +81,18 @@ def test_missing_legacy_config_fails_closed(tmp_path: Path) -> None:
     assert not (tmp_path / "repo" / "config").exists()
 
 
+def test_carries_legacy_vault_roots_from_the_legacy_config(tmp_path: Path) -> None:
+    legacy = _legacy(tmp_path)
+    data = json.loads((legacy / "config" / "worksync.json").read_text(encoding="utf-8"))
+    data["legacy_vault_roots"] = ["C:\\Old\\OneDrive\\WorkSync"]
+    (legacy / "config" / "worksync.json").write_text(json.dumps(data), encoding="utf-8")
+    target = tmp_path / "repo"
+    (target / "config").mkdir(parents=True)
+    seed_config.seed(legacy, target)
+    config = json.loads((target / "config" / "worksync.json").read_text(encoding="utf-8"))
+    assert config["legacy_vault_roots"] == ["C:\\Old\\OneDrive\\WorkSync"]
+
+
 def test_missing_secret_is_reported_not_invented(tmp_path: Path) -> None:
     legacy = _legacy(tmp_path)
     (legacy / "config" / "secrets.json").unlink()

@@ -24,6 +24,7 @@ from worksync.safety.derived import write_json
 from worksync.safety.files import sha256_file
 from worksync.work.lifecycle.migrate_legacy import migrate_legacy
 from worksync.work.repository import WorkIndex
+from worksync.work.workday import PLAN_FILENAME
 from worksync.work.workday import import_legacy as import_workday
 
 REVIEWER = "worksync-migration"
@@ -121,8 +122,10 @@ def _classify(rel: str) -> str | None:
         return IMPORT_KRISP_LEDGER
     if rel == LEGACY_KRISP_SYNC:
         return IMPORT_KRISP_SYNC
-    if rel in (LEGACY_INDEX, LEGACY_HEALTH):
+    if rel == LEGACY_INDEX:
         return REGENERATE
+    if rel == LEGACY_HEALTH:
+        return DISCARD
     if rel == "data/ollama-startup-status.json":
         return DISCARD
     if top == "logs":
@@ -134,22 +137,47 @@ def _classify(rel: str) -> str | None:
     return None
 
 
-def detect(legacy_runtime: str | Path, *, new_runtime: str | Path | None = None) -> MigrationPlan:
+def detect(legacy_runtime: str | Path) -> MigrationPlan:
     """Classify every file in the legacy runtime root; never writes."""
     legacy = Path(legacy_runtime).expanduser().resolve()
     if not legacy.is_dir():
         raise RuntimeMigrationError(
             "missing_legacy_runtime", f"Legacy runtime root not found: {legacy}", affected=(str(legacy),)
         )
-    items = tuple(
-        Artifact(
-            path.relative_to(legacy).as_posix(),
-            _classify(path.relative_to(legacy).as_posix()) or UNCLASSIFIED,
-            sha256_file(path),
-        )
-        for path in sorted(path for path in legacy.rglob("*") if path.is_file())
-    )
-    return MigrationPlan(str(legacy), items)
+    items = []
+    for path in sorted(candidate for candidate in legacy.rglob("*") if candidate.is_file()):
+        rel = path.relative_to(legacy).as_posix()
+        items.append(Artifact(rel, _classify(rel) or UNCLASSIFIED, sha256_file(path)))
+    return MigrationPlan(str(legacy), tuple(items))
+
+
+class _Rollback:
+    """Track writes made during a migration so a late failure restores prior state."""
+
+    def __init__(self) -> None:
+        self._dirs: list[Path] = []
+        self._files: list[tuple[Path, bool, bytes | None]] = []
+
+    def track_dir(self, path: Path) -> None:
+        self._dirs.append(path)
+
+    def track_file(self, path: Path) -> None:
+        if any(tracked == path for tracked, _, _ in self._files):
+            return
+        existed = path.is_file()
+        self._files.append((path, existed, path.read_bytes() if existed else None))
+
+    def restore(self) -> None:
+        for path, existed, prior in reversed(self._files):
+            try:
+                if existed and prior is not None:
+                    path.write_bytes(prior)
+                elif path.exists():
+                    path.unlink()
+            except OSError:
+                pass
+        for path in reversed(self._dirs):
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def apply(
@@ -184,9 +212,14 @@ def apply(
     if vault_path is None or not vault_path.is_dir():
         raise RuntimeMigrationError("missing_vault", f"Vault root not found: {vault}", affected=(str(vault),))
 
-    archive_dir, archived = _archive(legacy, new, plan, stamp=stamp or _stamp())
-    imported = _import_all(legacy, new, vault_path, when=when)
-    _regenerate(new, vault_path)
+    rollback = _Rollback()
+    try:
+        archive_dir, archived = _archive(legacy, new, plan, stamp=stamp or _stamp(), rollback=rollback)
+        imported = _import_all(legacy, new, vault_path, when=when, rollback=rollback)
+        _regenerate(new, vault_path)
+    except BaseException:
+        rollback.restore()
+        raise
     return MigrationResult(
         True, False, str(archive_dir) if archive_dir else None, archived, imported, regenerated, discarded
     )
@@ -196,7 +229,9 @@ def _stamp() -> str:
     return datetime.now(UTC).strftime("%Y%m%d-%H%M%S-%f")
 
 
-def _archive(legacy: Path, new: Path, plan: MigrationPlan, *, stamp: str) -> tuple[Path | None, tuple[str, ...]]:
+def _archive(
+    legacy: Path, new: Path, plan: MigrationPlan, *, stamp: str, rollback: _Rollback
+) -> tuple[Path | None, tuple[str, ...]]:
     entries = [item for item in plan.items if item.disposition == ARCHIVE]
     if not entries:
         return None, ()
@@ -210,6 +245,9 @@ def _archive(legacy: Path, new: Path, plan: MigrationPlan, *, stamp: str) -> tup
                 "stale_hash", f"Legacy artifact changed since detection: {item.path}", affected=(item.path,)
             )
     target = archive_root / stamp
+    rollback.track_dir(target)
+    if not archive_root.exists():
+        rollback.track_dir(archive_root)
     for item in entries:
         destination = ensure_under(new, target / item.path)
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -242,15 +280,15 @@ def _matching_archive(archive_root: Path, source_root: str, entries: list[Artifa
     return None
 
 
-def _import_all(legacy: Path, new: Path, vault: Path, *, when: date) -> dict[str, str]:
+def _import_all(legacy: Path, new: Path, vault: Path, *, when: date, rollback: _Rollback) -> dict[str, str]:
     imported: dict[str, str] = {}
-    workday = _import_workday(legacy, new, vault, when=when)
+    workday = _import_workday(legacy, new, vault, when=when, rollback=rollback)
     if workday:
         imported["workday-plan"] = workday
-    ledger = _import_krisp_ledger(legacy, new)
+    ledger = _import_krisp_ledger(legacy, new, rollback=rollback)
     if ledger:
         imported["krisp-pull-ledger"] = ledger
-    sync = _import_krisp_sync(legacy, new)
+    sync = _import_krisp_sync(legacy, new, rollback=rollback)
     if sync:
         imported["krisp-sync-status"] = sync
     for project_id, legacy_dir in _discover_lifecycle(vault):
@@ -259,20 +297,25 @@ def _import_all(legacy: Path, new: Path, vault: Path, *, when: date) -> dict[str
     return imported
 
 
-def _import_workday(legacy: Path, new: Path, vault: Path, *, when: date) -> str | None:
+def _import_workday(legacy: Path, new: Path, vault: Path, *, when: date, rollback: _Rollback) -> str | None:
     source = legacy / LEGACY_WORKDAY
     if not source.is_file():
         return None
+    target = new / PLAN_FILENAME
+    if target.is_file():
+        return "exists"
+    rollback.track_file(target)
     import_workday(WorkIndex.from_vault(vault), new, source, today=when)
     return "imported"
 
 
-def _import_krisp_ledger(legacy: Path, new: Path) -> str | None:
+def _import_krisp_ledger(legacy: Path, new: Path, *, rollback: _Rollback) -> str | None:
     source = legacy / LEGACY_KRISP_LEDGER
     if not source.is_file():
         return None
     if (new / KRISP_LEDGER_REL).is_file():
         return "exists"
+    rollback.track_file(new / KRISP_LEDGER_REL)
     data = _read_json(source)
     meetings = data.get("meetings")
     if not isinstance(meetings, dict):
@@ -296,12 +339,13 @@ def _import_krisp_ledger(legacy: Path, new: Path) -> str | None:
     return "imported"
 
 
-def _import_krisp_sync(legacy: Path, new: Path) -> str | None:
+def _import_krisp_sync(legacy: Path, new: Path, *, rollback: _Rollback) -> str | None:
     source = legacy / LEGACY_KRISP_SYNC
     if not source.is_file():
         return None
     if (new / KRISP_SYNC_REL).is_file():
         return "exists"
+    rollback.track_file(new / KRISP_SYNC_REL)
     data = _read_json(source)
     payload = {key: data[key] for key in ("last_attempt_at", "last_success_at", "failed") if key in data}
     write_json(new, KRISP_SYNC_REL, payload)

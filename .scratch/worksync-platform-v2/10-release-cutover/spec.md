@@ -146,7 +146,8 @@ the derived index, discard logs and caches, and never delete the legacy source.*
   platform's `krisp/` ledgers; the vault lifecycle sidecars import through
   `work.lifecycle.migrate_legacy`. No new target schema is invented.
 - **Regenerate and discard.** The derived index is rebuilt for the new runtime; the
-  legacy health report is regenerated; logs, caches, and transient probes are discarded.
+  legacy health report, logs, caches, and transient probes are discarded (health is
+  reported on demand by `worksync health`, and logs/caches are not carried over).
 - **Fail closed, idempotent, recoverable.** A missing source, a changed hash, or an
   ambiguous match aborts with a non-zero status and no writes; a second run is a no-op;
   a failed live import restores its touched files from its own backups.

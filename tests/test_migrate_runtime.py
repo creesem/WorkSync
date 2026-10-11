@@ -79,7 +79,7 @@ def _make_vault(tmp_path: Path) -> Path:
 def test_detect_classifies_without_writing(tmp_path: Path) -> None:
     legacy = _legacy_runtime(tmp_path)
     new = tmp_path / "var"
-    plan = detect(legacy, new_runtime=new)
+    plan = detect(legacy)
     by_rel = {item.path: item.disposition for item in plan.items}
     assert by_rel["data/workday-plan.json"] == "import-workday"
     assert by_rel["data/krisp-pull-ledger.json"] == "import-krisp-ledger"
@@ -272,6 +272,22 @@ def test_failed_lifecycle_import_restores_prior_state(tmp_path: Path, write_note
         apply(legacy, new, vault=vault, when=WHEN, stamp=STAMP)
     assert registry.read_bytes() == prior
     assert sidecar.read_bytes() == sidecar_before
+    # A failed import restores the whole run: no archive, no earlier imports.
+    assert not (new / ARCHIVE_DIRNAME).exists()
+    assert not (new / "krisp" / "pull-ledger.json").exists()
+    assert not (new / "workday-plan.json").exists()
+
+
+def test_second_run_does_not_overwrite_the_workday_plan(tmp_path: Path) -> None:
+    legacy = _legacy_runtime(tmp_path)
+    new = tmp_path / "var"
+    vault = _make_vault(tmp_path)
+    apply(legacy, new, vault=vault, when=WHEN, stamp=STAMP)
+    plan = new / "workday-plan.json"
+    plan.write_text('{"version": 1, "date": "2026-10-11", "selections": {}, "steering": {}}', encoding="utf-8")
+    before = plan.read_bytes()
+    apply(legacy, new, vault=vault, when=WHEN, stamp="20990101-000000-000000")
+    assert plan.read_bytes() == before
 
 
 def test_cli_apply_reports_summary(tmp_path: Path, capsys) -> None:  # noqa: ANN001

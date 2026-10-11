@@ -70,7 +70,9 @@ def seed(
             "vault_name": str(legacy_data.get("vault_name") or base.get("vault_name") or "WorkSync"),
             "runtime_root": str(base.get("runtime_root") or DEFAULT_RUNTIME),
             "ui_port": int(port if port is not None else legacy_data.get("ui_port", DEFAULT_PORT)),
-            "legacy_vault_roots": list(legacy_roots or base.get("legacy_vault_roots") or []),
+            "legacy_vault_roots": list(
+                legacy_roots or legacy_data.get("legacy_vault_roots") or base.get("legacy_vault_roots") or []
+            ),
         }
     )
     target_config.parent.mkdir(parents=True, exist_ok=True)
