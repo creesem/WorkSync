@@ -12,15 +12,15 @@ HEAD.
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A maintained harness compares legacy and new reads over a vault and prints a
+- [x] A maintained harness compares legacy and new reads over a vault and prints a
       PASS/FAIL result plus a machine-readable payload.
-- [ ] The comparison gates on resolve/list/search-authority/authoritative
+- [x] The comparison gates on resolve/list/search-authority/authoritative
       membership/staleness and passes on candidate-tier differences.
-- [ ] The harness is read-only: both indexes are built outside the vault and it writes
+- [x] The harness is read-only: both indexes are built outside the vault and it writes
       nothing inside the vault.
-- [ ] Tests run the comparison against a temp vault fixture: it passes when reads match
+- [x] Tests run the comparison against a temp vault fixture: it passes when reads match
       and fails on an injected truth-safety difference.
-- [ ] A real-vault evidence report is generated at the current HEAD and recorded for the
-      cutover go/no-go.
+- [x] A real-vault evidence report is generated at the current HEAD and recorded for the
+      cutover go/no-go (`parity-report.md`, PASS, malformed carve-out now 0).

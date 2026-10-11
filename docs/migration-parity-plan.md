@@ -68,7 +68,9 @@ Cutover requires all of:
 - **Determinism:** repeated runs produce identical output for a fixed reference
   date.
 - **Old-vs-new comparison:** the same vault produces matching results between
-  `WorkSync-Control-Center` and the new platform for the read capabilities.
+  `WorkSync-Control-Center` and the new platform for the read capabilities. The harness
+  is `scripts/parity.py`; it writes nothing inside the vault and records its PASS/FAIL
+  report as cutover evidence.
 
 ## Cutover and rollback
 

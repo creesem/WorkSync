@@ -1,0 +1,994 @@
+{
+  "legacy": {
+    "side": "legacy",
+    "resolve": [
+      {
+        "hint": {
+          "project_id": "eleos-automation-service"
+        },
+        "result": {
+          "status": "resolved",
+          "project_id": "eleos-automation-service"
+        }
+      },
+      {
+        "hint": {
+          "project_id": "eleos-compliance-odbc"
+        },
+        "result": {
+          "status": "resolved",
+          "project_id": "eleos-compliance-odbc"
+        }
+      },
+      {
+        "hint": {
+          "project_id": "not-a-real-id"
+        },
+        "result": {
+          "status": "not_found"
+        }
+      },
+      {
+        "hint": {
+          "name": "Eleos Automation Service Implementation"
+        },
+        "result": {
+          "status": "resolved",
+          "project_id": "eleos-automation-service"
+        }
+      },
+      {
+        "hint": {
+          "alias": "Eleos Automation"
+        },
+        "result": {
+          "status": "resolved",
+          "project_id": "eleos-automation-service"
+        }
+      },
+      {
+        "hint": {
+          "name": "Nonexistent Project"
+        },
+        "result": {
+          "status": "not_found"
+        }
+      }
+    ],
+    "search": [
+      {
+        "spec": {
+          "label": "compliance/global",
+          "query": "compliance",
+          "project_id": null
+        },
+        "truncated": true,
+        "results": [
+          {
+            "path": "Eleos Compliance KnowledgeBase.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos Compliance KnowledgeBase.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "9. Project/Eleos/Eleos Compliance Dashboard Validation and Readiness.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Compliance Dashboard Validation and Readiness.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "9. Project/Enhanced PRTF/02 Requirements Review/REQ 3 Solution Delivery/3.2.3 Call Logs Without Signatures.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm Canopy owns all internal work.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "9. Project/Eleos/Implementation/Eleos IT Implementation Tracker.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos IT Implementation Tracker.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "0. System/Team Command Center.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "9. Project/Eleos/Eleos IT Implementation Tracker.md",
+            "authority": null,
+            "tier": null
+          }
+        ]
+      },
+      {
+        "spec": {
+          "label": "PRTF/global",
+          "query": "PRTF",
+          "project_id": null
+        },
+        "truncated": true,
+        "results": [
+          {
+            "path": "7. Task Notes/Active/Task - Send Enhanced PRTF testing status email to Frances.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Send Enhanced PRTF medication issue validation email to Tracy and Kim.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Create an ownership matrix covering Qualifacts, Brian, the internal Applications team, and business owners.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Send Enhanced PRTF report completion handoff request to Carlos.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Send Tina report testing follow-up to Tracy and Carlos.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Myles Creese — Locate the Enhanced PRTF iPad order, tracking information, and current delivery owner.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Myles Creese — Locate the Enhanced PRTF iPad order, tracking information, and current delivery owner-Rose.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "7. Task Notes/Dropped/Inbox - Applications Team Tasks - 46 - Enhanced PRTF.md",
+            "authority": null,
+            "tier": null
+          },
+          {
+            "path": "9. Project/Enhanced PRTF/00 START HERE - Enhanced PRTF.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "10. Meetings/Meeting - MidWeek PRTF Check-In - 2026-08-26.md",
+            "authority": "candidate",
+            "tier": "B"
+          }
+        ]
+      },
+      {
+        "spec": {
+          "label": "compliance@eleos-automation-service",
+          "query": "compliance",
+          "project_id": "eleos-automation-service"
+        },
+        "truncated": true,
+        "results": [
+          {
+            "path": "Eleos Compliance KnowledgeBase.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos Compliance KnowledgeBase.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm Canopy owns all internal work.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "0. System/Team Command Center.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "9. Project/Eleos/Shared Processing Engine - Responsibility Boundary.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Shared Processing Engine - Responsibility Boundary.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Get Eleos milestone schedule review decisions approved.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Select Windows Worker Service as hosting approach.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm Combiner as transformation baseline.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "10. Meetings/Meeting – Audit & Documentation Software (Ellio Business Case).md",
+            "authority": "candidate",
+            "tier": "B"
+          }
+        ]
+      }
+    ],
+    "staleness": [
+      {
+        "target": {
+          "project_id": "eleos-automation-service"
+        },
+        "result": {
+          "project_id": "eleos-automation-service",
+          "fresh": false,
+          "reasons": [
+            "source_hash_changed",
+            "newer_authoritative_evidence"
+          ]
+        }
+      },
+      {
+        "target": {
+          "project_id": "eleos-compliance-odbc"
+        },
+        "result": {
+          "project_id": "eleos-compliance-odbc",
+          "fresh": false,
+          "reasons": [
+            "no_repo"
+          ]
+        }
+      },
+      {
+        "target": {
+          "project_id": "not-a-real-id"
+        },
+        "result": {
+          "error": "ProjectResolutionError: No project matches project_id 'not-a-real-id'."
+        }
+      }
+    ],
+    "authoritative": {
+      "eleos-automation-service": [
+        "10. Meetings/Meeting Prep - Eleos Automation Service Server Spec Review - 2026-08-27.md",
+        "7. Task Notes/Active/Task - Build CsvTestEngine for Eleos automation.md",
+        "7. Task Notes/Active/Task - Build installer skeleton for Eleos automation.md",
+        "7. Task Notes/Active/Task - Create application-level configuration for Eleos automation.md",
+        "7. Task Notes/Active/Task - Create engine framework for Eleos automation.md",
+        "7. Task Notes/Active/Task - Create query contracts for Eleos automation.md",
+        "7. Task Notes/Active/Task - Create run orchestration model for Eleos automation.md",
+        "7. Task Notes/Active/Task - Establish canonical data model for Eleos automation.md",
+        "7. Task Notes/Active/Task - Extract shared Eleos processing engine from Combiner.md",
+        "7. Task Notes/Active/Task - Get Eleos milestone schedule review decisions approved.md",
+        "7. Task Notes/Active/Task - Refactor solution structure for Eleos automation service.md",
+        "7. Task Notes/Active/Task - Remove filesystem dependency from production pipeline.md",
+        "7. Task Notes/Active/Task - Review decision - Approve D0 and T0 definitions.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm Canopy owns all internal work.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm Combiner as transformation baseline.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm Eleos validation turnaround and acceptance owner.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm five-week planning window.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm infrastructure and security provisioning lead times.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm production run frequency and stabilization criterion.md",
+        "7. Task Notes/Active/Task - Review decision - Identify the go-no-go approver.md",
+        "7. Task Notes/Active/Task - Review decision - Select Windows Worker Service as hosting approach.md",
+        "7. Task Notes/Active/Task - Send Carlos Eleos treatment plan data clarification email.md",
+        "7. Task Notes/Active/Task - Send Eleos implementation worksheet and documentation request.md",
+        "9. Project/Eleos/Eleos Automation Service Action Plan.md",
+        "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Automation Service Action Plan.md",
+        "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/03 - Meetings & Preps/Meeting Prep - Eleos Automation Service Server Spec Review - 2026-08-27.md"
+      ],
+      "eleos-compliance-odbc": [
+        "10. Meetings/Meeting - 09_30 AM - ms-teams meeting July 31.md",
+        "7. Task Notes/Active/Task - Build the schedule as milestone based timing from the date the ODBC Connector becomes operational.md",
+        "7. Task Notes/Active/Task - Define the timeline for Combiner automation or Windows service deployment.md",
+        "7. Task Notes/Active/Task - Define the timeline for Eleos file validation and ingestion testing.md",
+        "7. Task Notes/Active/Task - Define the timeline for ODBC access and connection validation.md",
+        "7. Task Notes/Active/Task - Define the timeline for SFTP delivery configuration.md",
+        "7. Task Notes/Active/Task - Define the timeline for Snowflake query conversion and testing.md",
+        "7. Task Notes/Active/Task - Define the timeline for data extraction and transformation workflow development.md",
+        "7. Task Notes/Active/Task - Document assumptions where vendor completion dates are not confirmed.md",
+        "7. Task Notes/Active/Task - Follow up with Antonio-Nate on the Eleos-iCentrix internal meeting outcome and decision timeline.md",
+        "7. Task Notes/Active/Task - Identify dependencies on Qualifacts, Eleos, iCentrix, and internal infrastructure.md",
+        "7. Task Notes/Active/Task - Provide Caitlin with a projected timeline for Canopy work after Qualifacts completes the ODBC Connector setup.md",
+        "9. Project/Eleos Compliance ODBC - Internal Aggregator and Service Timeline - Review Draft.md",
+        "9. Project/Eleos Compliance ODBC Milestone Schedule - Review Draft.md",
+        "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Compliance ODBC - Internal Aggregator and Service Timeline - Review Draft.md",
+        "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Compliance ODBC Milestone Schedule - Review Draft.md"
+      ]
+    },
+    "list": [
+      {
+        "project_id": "eleos-automation-service",
+        "name": "Eleos Automation Service Implementation",
+        "aliases": [
+          "Eleos Automation",
+          "Eleos Automation Service"
+        ],
+        "status": "active",
+        "registered_repo": "C:/GitProjects/EleosAutomation",
+        "context_available": true,
+        "context_stale": true
+      },
+      {
+        "project_id": "eleos-compliance-odbc",
+        "name": "Eleos Compliance ODBC Post Setup Timeline",
+        "aliases": [
+          "Eleos Compliance ODBC",
+          "Eleos Compliance"
+        ],
+        "status": "active",
+        "registered_repo": null,
+        "context_available": false,
+        "context_stale": null
+      }
+    ]
+  },
+  "new": {
+    "side": "new",
+    "resolve": [
+      {
+        "hint": {
+          "project_id": "eleos-automation-service"
+        },
+        "result": {
+          "status": "resolved",
+          "project_id": "eleos-automation-service"
+        }
+      },
+      {
+        "hint": {
+          "project_id": "eleos-compliance-odbc"
+        },
+        "result": {
+          "status": "resolved",
+          "project_id": "eleos-compliance-odbc"
+        }
+      },
+      {
+        "hint": {
+          "project_id": "not-a-real-id"
+        },
+        "result": {
+          "status": "not_found"
+        }
+      },
+      {
+        "hint": {
+          "name": "Eleos Automation Service Implementation"
+        },
+        "result": {
+          "status": "resolved",
+          "project_id": "eleos-automation-service"
+        }
+      },
+      {
+        "hint": {
+          "alias": "Eleos Automation"
+        },
+        "result": {
+          "status": "resolved",
+          "project_id": "eleos-automation-service"
+        }
+      },
+      {
+        "hint": {
+          "name": "Nonexistent Project"
+        },
+        "result": {
+          "status": "not_found"
+        }
+      }
+    ],
+    "search": [
+      {
+        "spec": {
+          "label": "compliance/global",
+          "query": "compliance",
+          "project_id": null
+        },
+        "truncated": true,
+        "results": [
+          {
+            "path": "Eleos Compliance KnowledgeBase.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos Compliance KnowledgeBase.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "9. Project/Eleos/Eleos Compliance Dashboard Validation and Readiness.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Compliance Dashboard Validation and Readiness.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "9. Project/Enhanced PRTF/02 Requirements Review/REQ 3 Solution Delivery/3.2.3 Call Logs Without Signatures.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm Canopy owns all internal work.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "9. Project/Eleos/Implementation/Eleos IT Implementation Tracker.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos IT Implementation Tracker.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "0. System/Team Command Center.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "9. Project/Eleos/Eleos IT Implementation Tracker.md",
+            "authority": "candidate",
+            "tier": "B"
+          }
+        ]
+      },
+      {
+        "spec": {
+          "label": "PRTF/global",
+          "query": "PRTF",
+          "project_id": null
+        },
+        "truncated": true,
+        "results": [
+          {
+            "path": "7. Task Notes/Active/Task - Send Enhanced PRTF testing status email to Frances.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Send Enhanced PRTF medication issue validation email to Tracy and Kim.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Create an ownership matrix covering Qualifacts, Brian, the internal Applications team, and business owners.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Send Enhanced PRTF report completion handoff request to Carlos.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Send Tina report testing follow-up to Tracy and Carlos.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Myles Creese — Locate the Enhanced PRTF iPad order, tracking information, and current delivery owner.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Myles Creese — Locate the Enhanced PRTF iPad order, tracking information, and current delivery owner-Rose.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Dropped/Inbox - Applications Team Tasks - 46 - Enhanced PRTF.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "9. Project/Enhanced PRTF/00 START HERE - Enhanced PRTF.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "10. Meetings/Meeting - MidWeek PRTF Check-In - 2026-08-26.md",
+            "authority": "candidate",
+            "tier": "B"
+          }
+        ]
+      },
+      {
+        "spec": {
+          "label": "compliance@eleos-automation-service",
+          "query": "compliance",
+          "project_id": "eleos-automation-service"
+        },
+        "truncated": true,
+        "results": [
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm Canopy owns all internal work.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Get Eleos milestone schedule review decisions approved.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Select Windows Worker Service as hosting approach.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm Combiner as transformation baseline.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Create engine-level configuration for Eleos automation.md",
+            "authority": "candidate",
+            "tier": "B"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Create application-level configuration for Eleos automation.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm five-week planning window.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Identify the go-no-go approver.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm production run frequency and stabilization criterion.md",
+            "authority": "authoritative",
+            "tier": "A"
+          },
+          {
+            "path": "7. Task Notes/Active/Task - Review decision - Confirm Eleos validation turnaround and acceptance owner.md",
+            "authority": "authoritative",
+            "tier": "A"
+          }
+        ]
+      }
+    ],
+    "staleness": [
+      {
+        "target": {
+          "project_id": "eleos-automation-service"
+        },
+        "result": {
+          "project_id": "eleos-automation-service",
+          "fresh": false,
+          "reasons": [
+            "source_hash_changed",
+            "newer_authoritative_evidence"
+          ]
+        }
+      },
+      {
+        "target": {
+          "project_id": "eleos-compliance-odbc"
+        },
+        "result": {
+          "project_id": "eleos-compliance-odbc",
+          "fresh": false,
+          "reasons": [
+            "no_repo"
+          ]
+        }
+      },
+      {
+        "target": {
+          "project_id": "not-a-real-id"
+        },
+        "result": {
+          "project_id": "not-a-real-id",
+          "fresh": false,
+          "reasons": [
+            "not_found"
+          ]
+        }
+      }
+    ],
+    "authoritative": {
+      "eleos-automation-service": [
+        "10. Meetings/Meeting Prep - Eleos Automation Service Server Spec Review - 2026-08-27.md",
+        "7. Task Notes/Active/Task - Build CsvTestEngine for Eleos automation.md",
+        "7. Task Notes/Active/Task - Build installer skeleton for Eleos automation.md",
+        "7. Task Notes/Active/Task - Create application-level configuration for Eleos automation.md",
+        "7. Task Notes/Active/Task - Create engine framework for Eleos automation.md",
+        "7. Task Notes/Active/Task - Create query contracts for Eleos automation.md",
+        "7. Task Notes/Active/Task - Create run orchestration model for Eleos automation.md",
+        "7. Task Notes/Active/Task - Establish canonical data model for Eleos automation.md",
+        "7. Task Notes/Active/Task - Extract shared Eleos processing engine from Combiner.md",
+        "7. Task Notes/Active/Task - Get Eleos milestone schedule review decisions approved.md",
+        "7. Task Notes/Active/Task - Refactor solution structure for Eleos automation service.md",
+        "7. Task Notes/Active/Task - Remove filesystem dependency from production pipeline.md",
+        "7. Task Notes/Active/Task - Review decision - Approve D0 and T0 definitions.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm Canopy owns all internal work.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm Combiner as transformation baseline.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm Eleos validation turnaround and acceptance owner.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm five-week planning window.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm infrastructure and security provisioning lead times.md",
+        "7. Task Notes/Active/Task - Review decision - Confirm production run frequency and stabilization criterion.md",
+        "7. Task Notes/Active/Task - Review decision - Identify the go-no-go approver.md",
+        "7. Task Notes/Active/Task - Review decision - Select Windows Worker Service as hosting approach.md",
+        "7. Task Notes/Active/Task - Send Carlos Eleos treatment plan data clarification email.md",
+        "7. Task Notes/Active/Task - Send Eleos implementation worksheet and documentation request.md",
+        "9. Project/Eleos/Eleos Automation Service Action Plan.md",
+        "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Automation Service Action Plan.md",
+        "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/03 - Meetings & Preps/Meeting Prep - Eleos Automation Service Server Spec Review - 2026-08-27.md"
+      ],
+      "eleos-compliance-odbc": [
+        "10. Meetings/Meeting - 09_30 AM - ms-teams meeting July 31.md",
+        "7. Task Notes/Active/Task - Build the schedule as milestone based timing from the date the ODBC Connector becomes operational.md",
+        "7. Task Notes/Active/Task - Define the timeline for Combiner automation or Windows service deployment.md",
+        "7. Task Notes/Active/Task - Define the timeline for Eleos file validation and ingestion testing.md",
+        "7. Task Notes/Active/Task - Define the timeline for ODBC access and connection validation.md",
+        "7. Task Notes/Active/Task - Define the timeline for SFTP delivery configuration.md",
+        "7. Task Notes/Active/Task - Define the timeline for Snowflake query conversion and testing.md",
+        "7. Task Notes/Active/Task - Define the timeline for data extraction and transformation workflow development.md",
+        "7. Task Notes/Active/Task - Document assumptions where vendor completion dates are not confirmed.md",
+        "7. Task Notes/Active/Task - Follow up with Antonio-Nate on the Eleos-iCentrix internal meeting outcome and decision timeline.md",
+        "7. Task Notes/Active/Task - Identify dependencies on Qualifacts, Eleos, iCentrix, and internal infrastructure.md",
+        "7. Task Notes/Active/Task - Provide Caitlin with a projected timeline for Canopy work after Qualifacts completes the ODBC Connector setup.md",
+        "9. Project/Eleos Compliance ODBC - Internal Aggregator and Service Timeline - Review Draft.md",
+        "9. Project/Eleos Compliance ODBC Milestone Schedule - Review Draft.md",
+        "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Compliance ODBC - Internal Aggregator and Service Timeline - Review Draft.md",
+        "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Compliance ODBC Milestone Schedule - Review Draft.md"
+      ]
+    },
+    "malformed": [],
+    "list": [
+      {
+        "project_id": "eleos-automation-service",
+        "name": "Eleos Automation Service Implementation",
+        "title": "Eleos Automation Service Implementation",
+        "aliases": [
+          "Eleos Automation",
+          "Eleos Automation Service"
+        ],
+        "status": "active",
+        "registered_repo": "C:/GitProjects/EleosAutomation",
+        "context_available": true,
+        "context_stale": true,
+        "path": "9. Project/Project - Eleos Automation Service Implementation.md"
+      },
+      {
+        "project_id": "eleos-compliance-odbc",
+        "name": "Eleos Compliance ODBC Post Setup Timeline",
+        "title": "Eleos Compliance ODBC Post Setup Timeline",
+        "aliases": [
+          "Eleos Compliance ODBC",
+          "Eleos Compliance"
+        ],
+        "status": "active",
+        "registered_repo": null,
+        "context_available": false,
+        "context_stale": null,
+        "path": "9. Project/Project - Eleos Compliance ODBC Post Setup Timeline.md"
+      }
+    ]
+  },
+  "report": {
+    "resolve": [
+      {
+        "hint": {
+          "project_id": "eleos-automation-service"
+        },
+        "legacy": [
+          "resolved",
+          "eleos-automation-service"
+        ],
+        "new": [
+          "resolved",
+          "eleos-automation-service"
+        ],
+        "match": true
+      },
+      {
+        "hint": {
+          "project_id": "eleos-compliance-odbc"
+        },
+        "legacy": [
+          "resolved",
+          "eleos-compliance-odbc"
+        ],
+        "new": [
+          "resolved",
+          "eleos-compliance-odbc"
+        ],
+        "match": true
+      },
+      {
+        "hint": {
+          "project_id": "not-a-real-id"
+        },
+        "legacy": [
+          "not_found",
+          null
+        ],
+        "new": [
+          "not_found",
+          null
+        ],
+        "match": true
+      },
+      {
+        "hint": {
+          "name": "Eleos Automation Service Implementation"
+        },
+        "legacy": [
+          "resolved",
+          "eleos-automation-service"
+        ],
+        "new": [
+          "resolved",
+          "eleos-automation-service"
+        ],
+        "match": true
+      },
+      {
+        "hint": {
+          "alias": "Eleos Automation"
+        },
+        "legacy": [
+          "resolved",
+          "eleos-automation-service"
+        ],
+        "new": [
+          "resolved",
+          "eleos-automation-service"
+        ],
+        "match": true
+      },
+      {
+        "hint": {
+          "name": "Nonexistent Project"
+        },
+        "legacy": [
+          "not_found",
+          null
+        ],
+        "new": [
+          "not_found",
+          null
+        ],
+        "match": true
+      }
+    ],
+    "list": {
+      "legacy_count": 2,
+      "new_count": 2,
+      "legacy_named": [
+        [
+          "eleos-automation-service",
+          "Eleos Automation Service Implementation",
+          "active"
+        ],
+        [
+          "eleos-compliance-odbc",
+          "Eleos Compliance ODBC Post Setup Timeline",
+          "active"
+        ]
+      ],
+      "new_named": [
+        [
+          "eleos-automation-service",
+          "Eleos Automation Service Implementation",
+          "active"
+        ],
+        [
+          "eleos-compliance-odbc",
+          "Eleos Compliance ODBC Post Setup Timeline",
+          "active"
+        ]
+      ],
+      "named_match": true,
+      "legacy_duplicate_ids": {},
+      "new_duplicate_ids": {}
+    },
+    "search": [
+      {
+        "spec": {
+          "label": "compliance/global",
+          "query": "compliance",
+          "project_id": null
+        },
+        "scoped": false,
+        "detail": {
+          "legacy_paths": [
+            "Eleos Compliance KnowledgeBase.md",
+            "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos Compliance KnowledgeBase.md",
+            "9. Project/Eleos/Eleos Compliance Dashboard Validation and Readiness.md",
+            "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Compliance Dashboard Validation and Readiness.md",
+            "9. Project/Enhanced PRTF/02 Requirements Review/REQ 3 Solution Delivery/3.2.3 Call Logs Without Signatures.md",
+            "7. Task Notes/Active/Task - Review decision - Confirm Canopy owns all internal work.md",
+            "9. Project/Eleos/Implementation/Eleos IT Implementation Tracker.md",
+            "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos IT Implementation Tracker.md",
+            "0. System/Team Command Center.md",
+            "9. Project/Eleos/Eleos IT Implementation Tracker.md"
+          ],
+          "new_paths": [
+            "Eleos Compliance KnowledgeBase.md",
+            "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos Compliance KnowledgeBase.md",
+            "9. Project/Eleos/Eleos Compliance Dashboard Validation and Readiness.md",
+            "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/02 - Eleos Compliance & ODBC Automation/Eleos Compliance Dashboard Validation and Readiness.md",
+            "9. Project/Enhanced PRTF/02 Requirements Review/REQ 3 Solution Delivery/3.2.3 Call Logs Without Signatures.md",
+            "7. Task Notes/Active/Task - Review decision - Confirm Canopy owns all internal work.md",
+            "9. Project/Eleos/Implementation/Eleos IT Implementation Tracker.md",
+            "Exports/Eleos-PM-Catchup-Tina-2026-09-23/Eleos-PM-Catchup-Tina-2026-09-23/01 - Eleos Platform Rollout/Eleos IT Implementation Tracker.md",
+            "0. System/Team Command Center.md",
+            "9. Project/Eleos/Eleos IT Implementation Tracker.md"
+          ]
+        },
+        "match": true
+      },
+      {
+        "spec": {
+          "label": "PRTF/global",
+          "query": "PRTF",
+          "project_id": null
+        },
+        "scoped": false,
+        "detail": {
+          "legacy_paths": [
+            "7. Task Notes/Active/Task - Send Enhanced PRTF testing status email to Frances.md",
+            "7. Task Notes/Active/Task - Send Enhanced PRTF medication issue validation email to Tracy and Kim.md",
+            "7. Task Notes/Active/Task - Create an ownership matrix covering Qualifacts, Brian, the internal Applications team, and business owners.md",
+            "7. Task Notes/Active/Task - Send Enhanced PRTF report completion handoff request to Carlos.md",
+            "7. Task Notes/Active/Task - Send Tina report testing follow-up to Tracy and Carlos.md",
+            "7. Task Notes/Active/Task - Myles Creese — Locate the Enhanced PRTF iPad order, tracking information, and current delivery owner.md",
+            "7. Task Notes/Active/Task - Myles Creese — Locate the Enhanced PRTF iPad order, tracking information, and current delivery owner-Rose.md",
+            "7. Task Notes/Dropped/Inbox - Applications Team Tasks - 46 - Enhanced PRTF.md",
+            "9. Project/Enhanced PRTF/00 START HERE - Enhanced PRTF.md",
+            "10. Meetings/Meeting - MidWeek PRTF Check-In - 2026-08-26.md"
+          ],
+          "new_paths": [
+            "7. Task Notes/Active/Task - Send Enhanced PRTF testing status email to Frances.md",
+            "7. Task Notes/Active/Task - Send Enhanced PRTF medication issue validation email to Tracy and Kim.md",
+            "7. Task Notes/Active/Task - Create an ownership matrix covering Qualifacts, Brian, the internal Applications team, and business owners.md",
+            "7. Task Notes/Active/Task - Send Enhanced PRTF report completion handoff request to Carlos.md",
+            "7. Task Notes/Active/Task - Send Tina report testing follow-up to Tracy and Carlos.md",
+            "7. Task Notes/Active/Task - Myles Creese — Locate the Enhanced PRTF iPad order, tracking information, and current delivery owner.md",
+            "7. Task Notes/Active/Task - Myles Creese — Locate the Enhanced PRTF iPad order, tracking information, and current delivery owner-Rose.md",
+            "7. Task Notes/Dropped/Inbox - Applications Team Tasks - 46 - Enhanced PRTF.md",
+            "9. Project/Enhanced PRTF/00 START HERE - Enhanced PRTF.md",
+            "10. Meetings/Meeting - MidWeek PRTF Check-In - 2026-08-26.md"
+          ]
+        },
+        "match": true
+      },
+      {
+        "spec": {
+          "label": "compliance@eleos-automation-service",
+          "query": "compliance",
+          "project_id": "eleos-automation-service"
+        },
+        "scoped": true,
+        "detail": {
+          "false_truth": []
+        },
+        "match": true
+      }
+    ],
+    "authoritative": [
+      {
+        "project_id": "eleos-automation-service",
+        "legacy_count": 26,
+        "new_count": 26,
+        "carve_out": [],
+        "legacy_only": [],
+        "new_only": [],
+        "match": true
+      },
+      {
+        "project_id": "eleos-compliance-odbc",
+        "legacy_count": 16,
+        "new_count": 16,
+        "carve_out": [],
+        "legacy_only": [],
+        "new_only": [],
+        "match": true
+      }
+    ],
+    "staleness": [
+      {
+        "target": {
+          "project_id": "eleos-automation-service"
+        },
+        "legacy": {
+          "project_id": "eleos-automation-service",
+          "fresh": false,
+          "reasons": [
+            "source_hash_changed",
+            "newer_authoritative_evidence"
+          ]
+        },
+        "new": {
+          "project_id": "eleos-automation-service",
+          "fresh": false,
+          "reasons": [
+            "source_hash_changed",
+            "newer_authoritative_evidence"
+          ]
+        },
+        "match": true
+      },
+      {
+        "target": {
+          "project_id": "eleos-compliance-odbc"
+        },
+        "legacy": {
+          "project_id": "eleos-compliance-odbc",
+          "fresh": false,
+          "reasons": [
+            "no_repo"
+          ]
+        },
+        "new": {
+          "project_id": "eleos-compliance-odbc",
+          "fresh": false,
+          "reasons": [
+            "no_repo"
+          ]
+        },
+        "match": true
+      },
+      {
+        "target": {
+          "project_id": "not-a-real-id"
+        },
+        "legacy": {
+          "error": "ProjectResolutionError: No project matches project_id 'not-a-real-id'."
+        },
+        "new": {
+          "project_id": "not-a-real-id",
+          "fresh": false,
+          "reasons": [
+            "not_found"
+          ]
+        },
+        "match": true
+      }
+    ],
+    "parity_pass": true
+  },
+  "meta": {
+    "vault": "C:\\Users\\macre\\Documents\\WorkSync"
+  }
+}
