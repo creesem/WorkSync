@@ -57,6 +57,54 @@ _Avoid_: rag, status
 A grouping of Projects (for example `strategic-projects`).
 _Avoid_: category
 
+### Project delivery
+
+**Reported issue**:
+A claim that something is wrong, tracked separately from a confirmed defect and
+carrying its reporter, source, observed vs expected behaviour, environment/role,
+impact, owner, and disposition.
+_Avoid_: bug, defect
+
+**Confirmed defect**:
+A reported issue that a named reviewer has confirmed as a real defect; never inferred
+from the report alone.
+_Avoid_: bug, reported issue
+
+**Delivery state**:
+The acceptance position of a report or deliverable — build complete, ready for testing,
+testing, defect found, fix reported, retest pending, accepted, or accepted exception.
+_Avoid_: status, phase
+
+**Accepted exception**:
+An explicit, reasoned decision to accept a deliverable without a passing test, recorded
+with the accepter and rationale.
+_Avoid_: waiver, pass
+
+**Date gap**:
+A project date whose state is not confirmed — conditional, internal-working,
+stale-missed, or needs-date — tracked as coordination state, not a commitment.
+_Avoid_: due date, deadline
+
+**Waiting-on**:
+A project dependency classified by kind (teammate, vendor, tester, business acceptance,
+user decision, external dependency) with an owner and a next review.
+_Avoid_: blocked, pending
+
+**Update-review lane**:
+The controlled review queue where classified evidence is mapped by a reviewer to an
+exact canonical record, field, and value before any acceptance.
+_Avoid_: triage, inbox
+
+**Walkthrough**:
+The generated weekly project packet — team updates, prior action items, waiting-on, and
+action items/deadlines; reproducible and never hand-edited.
+_Avoid_: report, agenda
+
+**Control center**:
+The read-only project coordination view that preserves links to the authoritative
+records and leads with unresolved outcomes and the next decision.
+_Avoid_: dashboard, status page
+
 ### Evidence and retrieval
 
 **Vault**:

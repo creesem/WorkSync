@@ -1,51 +1,55 @@
-# Next-session prompt — WorkSync 0.1: Spec 8 review fixes (milestone 0.1d)
+# Next-session prompt — WorkSync 0.1: Spec 9 project lifecycle (milestone 0.1e)
 
 ## Situation
 
 - Repo `C:\GitProjects\WorkSync`, branch `main`.
-- **Spec 8 (Krisp pipeline, milestone 0.1d) is implemented and complete.** Full suite green
-  (**561 passed**), `ruff check` / `ruff format --check`, and `pre-commit --all-files` clean.
-  Feature commits: `36fec3e`, `99d8309`, `b429756`, `4ab8df4`, `b3e7763`, `963f79d`,
-  `1b0347c` (plus `1edeae1` docs).
-- A two-axis review (`Standards` + `Spec`) of `e693d79...HEAD` produced a follow-up set,
-  ready to work: `.scratch/worksync-platform-v2/08-krisp-pipeline/review-fixes/`
-  (`index.md` + `issues/01..07`). Read `index.md` first.
+- **Spec 8 (Krisp pipeline, 0.1d) is closed**, including its review fixes and a
+  follow-up runtime-rebase fix. Full suite green (**582 passed**), `ruff check` /
+  `ruff format --check` and `pre-commit --all-files` clean.
+- **Spec 9 (project lifecycle + control center, 0.1e) is decided and ready to build.**
+  The spec, the accepted ADRs (0019–0021), and the tickets exist under
+  `.scratch/worksync-platform-v2/09-project-lifecycle/`. The Q1–Q10 decisions are
+  locked in the spec's "Decisions" section; every ticket is `ready-for-agent`.
 
 ## Do this first
 
-1. Read `.scratch/worksync-platform-v2/08-krisp-pipeline/review-fixes/index.md` (the
-   findings) and the spec of record
-   `.scratch/worksync-platform-v2/08-krisp-pipeline/spec.md`.
-2. Work the tickets **blockers-first** with `test-driven-development`:
-   - `01` fail-closed meeting-note validation
-   - `02` ambiguous references surfaced, never linked
-   - `03` contain the Krisp inbox under the runtime root
-   - `04` reconcile project provenance with the spec
-   - `05` `--vault` parity for `krisp pull`
-   - `06` regression: mid-batch rollback for a meeting promote
-   - `07` dedup Krisp defaults/helpers and document `krisp-status` — **blocked by 01–05**
-3. `01`–`06` can start immediately; do `07` last.
+1. Read `.scratch/worksync-platform-v2/09-project-lifecycle/spec.md` (decisions locked
+   in the "Decisions" section) and ADRs `0019`/`0020`/`0021`.
+2. Implement the tickets `09-project-lifecycle/issues/01..11` blockers-first with
+   `test-driven-development`:
+   - `01` lifecycle record model + registry home
+   - `02` issue lifecycle machine
+   - `03` report/deliverable acceptance machine
+   - `04` date-gap machine
+   - `05` waiting-on taxonomy
+   - `06` control-center read aggregation
+   - `07` update-review lane on `work.queue`
+   - `08` lifecycle transition writes + surfaces
+   - `09` weekly walkthrough (generated)
+   - `10` legacy lifecycle-state migration
+   - `11` boundary proof and docs
+3. One focused commit per ticket; full suite + ruff + pre-commit before each.
 
 ## Then close out
 
-- Run `code-review` over the fix diff (fixed point: the HEAD at the start of the session).
-- Commit each ticket to `main` once checks pass; keep unrelated changes out.
+- `test-driven-development` per ticket; full suite + ruff + pre-commit per commit.
+- `code-review` over the Spec 9 diff before declaring done.
 
 ## Constraints (unchanged)
 
-- One scanner, one write seam (`safety.commit`), one review primitive (`work.queue`); fail
-  closed on stale/changed/missing/ambiguous/non-action targets; never unlink; no auto-write
-  on confidence alone; never weaken validation or tests to make a hook pass.
-- `ingest`/`ingest.krisp` import no `context` and no `html`; writes go through `safety`.
-- Krisp secrets live only in `core`; `config/secrets.json` stays gitignored.
+- One scanner, one write seam (`safety.commit`), one review primitive (`work.queue`);
+  fail closed on stale/changed/missing/ambiguous/non-action targets; never unlink; no
+  auto-write on confidence alone; never weaken validation or tests to make a hook pass.
+- `work` lifecycle modules import no `context` and no `html`; writes go through
+  `safety`; the GUI never sets `force`.
+- Reported issues and confirmed defects are never interchangeable; acceptance requires
+  the named tester's result or an explicit accepted exception.
+- Derived transition history lives in the runtime zone, never in a vault note.
 
 ## Deliberately left (do not re-open)
 
-- Name-plus-fingerprint moved-source recovery: deferred; the containment + `is_file()` guard
-  is the recorded 0.1d limitation (see `review-fixes/index.md` "Out of scope").
-- The legacy Krisp improvement passes (`--review`, `--large-review`, `--refresh-krisp-notes`),
-  merge-into-existing meeting, progress files, and the regex decisions/risks extractor remain
-  out of scope for 0.1d.
+- Email intake and prepared communications; the task/local-AI workbench.
+- External-system synchronization.
 
 ## Checks (do not claim green unless actually run)
 
@@ -61,6 +65,4 @@ Python 3.13 is `py`; the venv is the correct interpreter for tests/ruff.
 
 ## Skills
 
-- `implement` (entry point; one focused change per commit), `test-driven-development` for
-  each ticket, `code-review` before finishing. Planning flow if the scope grows:
-  `ask-matt` → `grill-with-docs` → `to-spec` → `to-tickets`.
+- `implement` + `test-driven-development` per ticket; `code-review` before finishing.
