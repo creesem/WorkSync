@@ -8,6 +8,7 @@ without error. The retired legacy ``task`` type reads as ``action``.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -40,6 +41,7 @@ MONITORING_ACTION_STATUSES = frozenset({"waiting", "watch", "parked"})
 PROJECT_STATUS_VALUES = frozenset({"active", "paused", "blocked", "done", "archived"})
 PROJECT_STATUS_ALIASES: dict[str, str] = {"complete": "done"}
 PERSON_STATUS_VALUES = frozenset({"active", "inactive"})
+PERSON_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MEETING_STATUS_VALUES = frozenset({"scheduled", "held", "cancelled"})
 UNDATED_DATE = "1970-01-01"
 DATE_STATUS_UNDATED = "undated"
@@ -56,6 +58,17 @@ def detect_type(value: object) -> str | None:
     text = value.strip().strip("\"'").casefold()
     text = LEGACY_TYPE_ALIASES.get(text, text)
     return text if text in OPERATOR_TYPE_VALUES else None
+
+
+def is_valid_person_id(value: str) -> bool:
+    """Return True when *value* is a kebab-case person identifier."""
+    return bool(PERSON_ID_RE.fullmatch(value))
+
+
+def person_id_slug(title: str) -> str:
+    """Derive a kebab-case person identifier from a display name."""
+    ascii_text = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "-", ascii_text.casefold()).strip("-")
 
 
 def _priority_mapping(value: object) -> tuple[bool, str | None]:
@@ -371,6 +384,7 @@ def entity_from_record(record: IndexRecord) -> EntityBase | None:
             team=_as_str(frontmatter.get("team")),
             manager=_as_str(frontmatter.get("manager")),
             email=_as_str(frontmatter.get("email")),
+            person_id=_as_str(frontmatter.get("person_id")),
         )
     if entity_type == EntityType.TICKET.value:
         return Ticket(

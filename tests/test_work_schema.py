@@ -6,8 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from worksync.inventory.parse import parse_note
-from worksync.work.models import Action, EntityType, Project
-from worksync.work.schema import detect_type, entity_from_record, normalize_priority
+from worksync.work.models import Action, EntityType, Person, Project
+from worksync.work.schema import detect_type, entity_from_record, normalize_priority, person_id_slug
 
 
 def _record(vault: Path, write_note: Callable[..., Path], relative: str, text: str):
@@ -83,3 +83,28 @@ def test_meeting_attendees_accept_legacy_people(vault: Path, write_note: Callabl
 def test_non_entity_type_is_skipped(vault: Path, write_note: Callable[..., Path]) -> None:
     record = _record(vault, write_note, "r.md", "---\ntype: reference\n---\n# Ref\n")
     assert entity_from_record(record) is None
+
+
+def test_person_entity_reads_person_id(vault: Path, write_note: Callable[..., Path]) -> None:
+    record = _record(
+        vault,
+        write_note,
+        "p.md",
+        "---\ntype: person\nstatus: active\nperson_id: carlos-barnes\n---\n# Carlos Barnes\n",
+    )
+    entity = entity_from_record(record)
+    assert isinstance(entity, Person)
+    assert entity.person_id == "carlos-barnes"
+
+
+def test_person_without_person_id_has_none(vault: Path, write_note: Callable[..., Path]) -> None:
+    record = _record(vault, write_note, "p.md", "---\ntype: person\nstatus: active\n---\n# Venkat\n")
+    entity = entity_from_record(record)
+    assert isinstance(entity, Person)
+    assert entity.person_id is None
+
+
+def test_person_id_slug_is_kebab_case() -> None:
+    assert person_id_slug("Carlos Barnes") == "carlos-barnes"
+    assert person_id_slug("Tracy O'Brien") == "tracy-o-brien"
+    assert person_id_slug("  Venkat  ") == "venkat"

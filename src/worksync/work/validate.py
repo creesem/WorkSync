@@ -19,7 +19,7 @@ from worksync.work.models import (
     EntityBase,
     EntityType,
 )
-from worksync.work.schema import DATE_STATUS_UNDATED, link_targets
+from worksync.work.schema import DATE_STATUS_UNDATED, is_valid_person_id, link_targets
 
 REQUIRED_BY_TYPE: dict[str, tuple[str, ...]] = {
     EntityType.PROJECT.value: ("owners",),
@@ -59,6 +59,8 @@ def validate_entity(entity: EntityBase) -> list[ValidationIssue]:
     issues.extend(_validate_required(entity))
     issues.extend(_validate_conditionals(entity))
     issues.extend(_validate_date_order(entity))
+    if entity_type == EntityType.PERSON.value:
+        issues.extend(_validate_person_id(entity))
     return issues
 
 
@@ -86,10 +88,12 @@ def validate_relationships(entity: EntityBase, known_targets: set[str]) -> list[
 
 def validate_all(entities: Iterable[EntityBase], known_targets: set[str]) -> list[ValidationIssue]:
     """Validate every entity and return issues in stable order."""
+    ordered = list(entities)
     issues: list[ValidationIssue] = []
-    for entity in entities:
+    for entity in ordered:
         issues.extend(validate_entity(entity))
         issues.extend(validate_relationships(entity, known_targets))
+    issues.extend(_duplicate_person_id_issues(ordered))
     issues.sort(key=_issue_sort)
     return issues
 
@@ -175,6 +179,29 @@ def _field_value(entity: EntityBase, field_name: str) -> object | None:
     if value is not None:
         return value
     return entity.raw.get(field_name)
+
+
+def _validate_person_id(entity: EntityBase) -> list[ValidationIssue]:
+    person_id = getattr(entity, "person_id", None)
+    if person_id and not is_valid_person_id(person_id):
+        return [_issue(entity, f"Invalid person_id '{person_id}'", rule="person_id")]
+    return []
+
+
+def _duplicate_person_id_issues(entities: Iterable[EntityBase]) -> list[ValidationIssue]:
+    """Flag every active person that shares a person_id, so none is trusted (fail closed)."""
+    by_id: dict[str, list[EntityBase]] = {}
+    for entity in entities:
+        if entity.entity_type is not EntityType.PERSON:
+            continue
+        person_id = getattr(entity, "person_id", None)
+        if person_id:
+            by_id.setdefault(person_id, []).append(entity)
+    issues: list[ValidationIssue] = []
+    for person_id, group in by_id.items():
+        if len(group) > 1:
+            issues.extend(_issue(entity, f"Duplicate person_id: {person_id}", rule="person_id") for entity in group)
+    return issues
 
 
 def _issue(entity: EntityBase, message: str, severity: str = "error", rule: str = "") -> ValidationIssue:

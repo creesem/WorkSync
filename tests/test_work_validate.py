@@ -91,3 +91,22 @@ def test_unresolved_link_is_a_warning_not_an_error() -> None:
     unresolved = [issue for issue in issues if issue.rule == "unresolved_link"]
     assert unresolved and unresolved[0].severity == "warning"
     assert not has_errors(unresolved)
+
+
+def test_invalid_person_id_is_error() -> None:
+    issues = validate_entity(Person(path="p.md", title="P", status="active", person_id="Not Valid!"))
+    assert any(issue.rule == "person_id" and issue.severity == "error" for issue in issues)
+
+
+def test_valid_person_id_is_not_an_error() -> None:
+    issues = validate_entity(Person(path="p.md", title="P", status="active", person_id="carlos-barnes"))
+    assert not any(issue.rule == "person_id" for issue in issues)
+
+
+def test_duplicate_person_id_is_error_for_both() -> None:
+    a = Person(path="a.md", title="A", status="active", person_id="dup")
+    b = Person(path="b.md", title="B", status="active", person_id="dup")
+    issues = validate_all([a, b], known_targets={"a", "b"})
+    duplicate = [issue for issue in issues if issue.rule == "person_id"]
+    assert len(duplicate) == 2
+    assert {issue.path for issue in duplicate} == {"a.md", "b.md"}

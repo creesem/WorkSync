@@ -162,6 +162,7 @@ class Person(EntityBase):
     team: str | None = None
     manager: str | None = None
     email: str | None = None
+    person_id: str | None = None
 
 
 @dataclass(frozen=True)
