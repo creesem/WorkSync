@@ -1,7 +1,13 @@
 @echo off
 setlocal
 set "ROOT=%~dp0"
+set "WHEELS=%ROOT%wheels"
 set "PY=%ROOT%.venv\Scripts\python.exe"
+
+if not exist "%WHEELS%\worksync-*.whl" (
+  echo Building the worksync wheel into "%WHEELS%" ...
+  py -3 -m pip wheel "%ROOT%." -w "%WHEELS%" || goto :error
+)
 
 if not exist "%PY%" (
   echo Creating virtual environment at "%ROOT%.venv" ...
@@ -10,13 +16,8 @@ if not exist "%PY%" (
 
 "%PY%" -m pip install --upgrade pip || goto :error
 
-if exist "%ROOT%wheels" (
-  echo Installing from local wheels ...
-  "%PY%" -m pip install --no-index --find-links "%ROOT%wheels" "%ROOT%." || goto :error
-) else (
-  echo Installing from the local checkout ...
-  "%PY%" -m pip install "%ROOT%." || goto :error
-)
+echo Installing from local wheels ...
+"%PY%" -m pip install --no-index --find-links "%WHEELS%" worksync || goto :error
 
 echo.
 echo Installed. Configure then run:

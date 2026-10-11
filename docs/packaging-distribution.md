@@ -10,8 +10,8 @@ Decision: [ADR-0010](adr/0010-packaging-and-portability.md). Vocabulary:
 One `worksync` wheel built from the repository. On any machine:
 
 1. copy or clone the repo (without `.venv`);
-2. run `Bootstrap`, which creates a fresh venv (Python >= 3.11) and installs the
-   wheel from a local `wheels/` directory;
+2. run `Bootstrap`, which builds the wheel into a local `wheels/` directory when it is
+   absent, then creates a fresh venv (Python >= 3.11) and installs the wheel from it;
 3. set the vault path in the machine config.
 
 An editable install (`pip install -e .`) is dev-only. No absolute development path
@@ -49,7 +49,8 @@ launcher set is retired.
 
 ## Portability and the move
 
-- The moveable unit is the repository **minus** `.venv` and the machine config.
+- The moveable unit is the repository **minus** `.venv`, the local `wheels/` directory,
+  and the machine config.
 - Machine-specific settings (`vault_path`, runtime root, port) live in a gitignored
   `config/worksync.json`, seeded from a committed `config/worksync.example.json`.
 - Stored absolute paths in ledgers, backups, and manifests are rebased at read time
