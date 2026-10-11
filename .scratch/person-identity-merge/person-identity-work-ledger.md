@@ -59,9 +59,9 @@ WP-01A and WP-01 may run in parallel (different files: `safety/*` vs `work/model
 
 | Package | State | Session | Commit | Tests | Notes |
 |---|---|---|---|---|---|
-| WP-00 | complete | audit | — | n/a | G0 GO |
-| WP-01A | complete | this session | uncommitted | 585 passed | B2 foundation |
-| WP-01 | pending | — | — | — | person_id |
+| WP-00 | complete | audit | 6ee0ca8 | n/a | G0 GO |
+| WP-01A | complete | prior session | d508b0a | 585 passed | B2 foundation |
+| WP-01 | complete | this session | 67b16b8 | 600 passed | person_id + migration |
 | WP-02 | pending | — | — | — | identity module |
 | WP-03 | pending | — | — | — | redirects |
 | WP-04 | pending | — | — | — | merge |
@@ -96,7 +96,33 @@ Checks run (all green): `pytest -q` → **585 passed**; `ruff check src/ tests/`
 `ruff format --check src/ tests/` → 146 files formatted; `pre_commit run --all-files` → passed.
 
 Files changed: `src/worksync/safety/gateway.py`, `src/worksync/gui/main.py`,
-`tests/test_safety_gateway.py`, `tests/test_gui_main.py`. Not yet committed.
+`tests/test_safety_gateway.py`, `tests/test_gui_main.py`. Committed as `d508b0a`.
+
+## WP-01 outcomes
+
+Delivered `person_id` as the identity foundation, mirroring the `project_id` precedent but
+with the format/uniqueness rigor `project_id` lacks (decision A4):
+
+1. **Model + parse.** `Person.person_id` (`work/models.py`), parsed from frontmatter in
+   `work/schema.py`.
+2. **Format validation (fail closed).** `is_valid_person_id` / `PERSON_ID_RE`
+   (`^[a-z0-9]+(?:-[a-z0-9]+)*$`); a non-kebab id is a validation **error**.
+3. **Uniqueness (fail closed).** `validate_all` flags **every** person sharing a `person_id`,
+   so both are excluded from views rather than one being trusted.
+4. **Slug helper.** `person_id_slug(title)` derives a kebab id from a display name.
+5. **Migration.** `worksync migrate person-ids` (`migrate/person_ids.py`): assigns a unique,
+   deduped id to every person note lacking one, as one gated `safety.commit` transaction;
+   idempotent; a changed source fails closed. Kept separate from `migrate schema` (O4).
+
+New tests: `tests/test_work_schema.py`, `tests/test_work_validate.py`,
+`tests/test_migrate_person_ids.py`.
+
+Checks run (all green): `pytest -q` → **600 passed** (on `main`); Ruff check + format clean;
+pre-commit passed. Committed as `67b16b8`.
+
+Note: the `sync_mode` ticket (`.scratch/worksync-platform-v2/08-krisp-pipeline/issues/08-…`)
+was resolved independently by the operator in commit `263866c` on branch
+`fix/krisp-meeting-note-sync-mode`; the person-identity work is unaffected and stays on `main`.
 
 ## Checks (do not claim green unless run)
 
