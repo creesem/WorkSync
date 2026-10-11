@@ -18,10 +18,9 @@ from worksync.work.lifecycle.records import (
     is_record_kind,
     record_entity_type,
 )
-from worksync.work.lifecycle.registry import (
+from worksync.work.lifecycle.registry_model import (
     LifecycleEntry,
     LifecycleRegistry,
-    LifecycleStore,
     Transition,
     project_registry_dir,
     registry_path,
@@ -35,7 +34,6 @@ __all__ = [
     "LifecycleEntry",
     "LifecycleRecord",
     "LifecycleRegistry",
-    "LifecycleStore",
     "RecordKind",
     "RegistryError",
     "Transition",

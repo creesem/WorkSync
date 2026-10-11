@@ -1,169 +1,50 @@
-"""The derived lifecycle registry, stored only under the runtime project zone.
+"""The stale-safe store for the derived lifecycle registry.
 
-The registry holds each record's current lifecycle state and its transition history
-under ``var/project/<project_id>/lifecycle.json``. It is derived, regenerable state:
-never a vault sidecar (the legacy ``9. Project/<project>/`` location is retired), and
-never a source of truth. Persistence is stale-safe so concurrent tabs cannot clobber
-one another, and the registry update travels in the same ``ChangeSet`` as the
-canonical write it records.
+The pure registry model and path helpers live in
+:mod:`worksync.work.lifecycle.registry_model`; this module adds only the guarded,
+stale-safe persistence and the gateway ``FileOp``. The registry update travels in the
+same ``ChangeSet`` as the canonical write it records.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from worksync.core.paths import PathSafetyError, ensure_under
 from worksync.safety import derived
 from worksync.safety.files import sha256_file
 from worksync.safety.models import FileOp
 from worksync.work.lifecycle.records import RegistryError
+from worksync.work.lifecycle.registry_model import (
+    REGISTRY_FILENAME,
+    REGISTRY_VERSION,
+    RUNTIME_PROJECT_DIR,
+    LifecycleEntry,
+    LifecycleRegistry,
+    Transition,
+    _safe_project_id,
+    now,
+    project_registry_dir,
+    registry_path,
+    render_registry,
+)
 
-REGISTRY_VERSION = 1
-REGISTRY_FILENAME = "lifecycle.json"
-RUNTIME_PROJECT_DIR = "project"
-
-
-def _safe_project_id(project_id: object) -> str:
-    value = str(project_id or "").strip()
-    if not value or value in {".", ".."} or Path(value).name != value:
-        raise RegistryError("invalid_project_id", f"Unsafe project id for a registry path: {project_id!r}")
-    return value
-
-
-def project_registry_dir(runtime_root: str | Path, project_id: str) -> Path:
-    """Return the derived registry directory for one project."""
-    runtime = Path(runtime_root).expanduser().resolve()
-    safe = _safe_project_id(project_id)
-    target = (runtime / RUNTIME_PROJECT_DIR / safe).resolve()
-    try:
-        return ensure_under(runtime, target)
-    except PathSafetyError as exc:
-        raise RegistryError("invalid_project_id", str(exc), affected=(str(project_id),)) from exc
-
-
-def registry_path(runtime_root: str | Path, project_id: str) -> Path:
-    """Return the derived registry file path for one project."""
-    return project_registry_dir(runtime_root, project_id) / REGISTRY_FILENAME
-
-
-def now() -> str:
-    """Return the current UTC timestamp recorded on a registry write."""
-    return datetime.now(UTC).isoformat(timespec="seconds")
-
-
-@dataclass(frozen=True)
-class Transition:
-    """One recorded lifecycle transition: who changed what, why, and from/to where."""
-
-    at: str
-    actor: str
-    reason: str
-    from_state: str
-    to_state: str
-    evidence: str = ""
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "at": self.at,
-            "actor": self.actor,
-            "reason": self.reason,
-            "from_state": self.from_state,
-            "to_state": self.to_state,
-            "evidence": self.evidence,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Transition:
-        return cls(
-            at=str(data.get("at") or ""),
-            actor=str(data.get("actor") or ""),
-            reason=str(data.get("reason") or ""),
-            from_state=str(data.get("from_state") or ""),
-            to_state=str(data.get("to_state") or ""),
-            evidence=str(data.get("evidence") or ""),
-        )
-
-
-@dataclass(frozen=True)
-class LifecycleEntry:
-    """One tracked canonical record: its current state and transition history."""
-
-    record_id: str
-    record_kind: str
-    lifecycle_state: str
-    provenance: tuple[str, ...] = ()
-    transitions: tuple[Transition, ...] = ()
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "record_id": self.record_id,
-            "record_kind": self.record_kind,
-            "lifecycle_state": self.lifecycle_state,
-            "provenance": list(self.provenance),
-            "transitions": [transition.to_dict() for transition in self.transitions],
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LifecycleEntry:
-        provenance = data.get("provenance")
-        transitions = data.get("transitions")
-        return cls(
-            record_id=str(data.get("record_id") or ""),
-            record_kind=str(data.get("record_kind") or ""),
-            lifecycle_state=str(data.get("lifecycle_state") or ""),
-            provenance=tuple(str(item) for item in provenance) if isinstance(provenance, list) else (),
-            transitions=tuple(Transition.from_dict(item) for item in transitions if isinstance(item, dict))
-            if isinstance(transitions, list)
-            else (),
-        )
-
-
-@dataclass(frozen=True)
-class LifecycleRegistry:
-    """The derived registry for one project, keyed by canonical record path."""
-
-    project_id: str
-    records: tuple[LifecycleEntry, ...] = ()
-    version: int = REGISTRY_VERSION
-    updated_at: str = ""
-
-    def entry(self, record_id: str) -> LifecycleEntry | None:
-        """Return the entry for one record id, or ``None`` when it is not tracked."""
-        return next((entry for entry in self.records if entry.record_id == record_id), None)
-
-    def with_records(self, records: tuple[LifecycleEntry, ...]) -> LifecycleRegistry:
-        """Return a new registry carrying *records* and a fresh timestamp."""
-        return replace(self, records=tuple(records), updated_at=now())
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "version": self.version,
-            "project_id": self.project_id,
-            "updated_at": self.updated_at,
-            "records": [entry.to_dict() for entry in self.records],
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LifecycleRegistry:
-        records = data.get("records")
-        return cls(
-            project_id=str(data.get("project_id") or ""),
-            records=tuple(LifecycleEntry.from_dict(item) for item in records if isinstance(item, dict))
-            if isinstance(records, list)
-            else (),
-            version=int(data.get("version") or REGISTRY_VERSION),
-            updated_at=str(data.get("updated_at") or ""),
-        )
-
-
-def render_registry(registry: LifecycleRegistry) -> str:
-    """Return the exact registry bytes as text, shared by save and the gateway op."""
-    return json.dumps(registry.to_dict(), indent=2, ensure_ascii=False, default=str) + "\n"
+__all__ = [
+    "REGISTRY_FILENAME",
+    "REGISTRY_VERSION",
+    "RUNTIME_PROJECT_DIR",
+    "LifecycleEntry",
+    "LifecycleRegistry",
+    "LifecycleStore",
+    "RegistryError",
+    "Transition",
+    "now",
+    "project_registry_dir",
+    "registry_path",
+    "render_registry",
+]
 
 
 @dataclass(frozen=True)

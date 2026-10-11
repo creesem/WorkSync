@@ -28,6 +28,7 @@ from worksync.work import identity as identity_service
 from worksync.work import reviewer as reviewer_store
 from worksync.work.clarification import ClarificationError
 from worksync.work.duplicates import DuplicatesError
+from worksync.work.lifecycle.transitions import apply_lifecycle_transition
 from worksync.work.merge import apply_merge as run_identity_apply
 from worksync.work.reviewer import ReviewerError
 from worksync.work.writer import (
@@ -560,6 +561,70 @@ def _identity_apply(service: WriteContext, payload: dict, *, confirmed: bool, to
     }
 
 
+def _lifecycle_transition(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    project_id = _required(payload, "project_id", "invalid_target")
+    record = _required(payload, "record", "invalid_target")
+    kind = _required(payload, "kind", "invalid_target")
+    action = _required(payload, "action", "invalid_target")
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    evidence = payload.get("evidence") or {}
+    fields = payload.get("fields") or {}
+    if not isinstance(evidence, dict) or not isinstance(fields, dict):
+        raise ActionError("bad_request", "evidence and fields must be JSON objects.", 400)
+    result = apply_lifecycle_transition(
+        service.vault,
+        service.runtime_root,
+        project_id=project_id,
+        record_id=record,
+        kind=kind,
+        action=action,
+        actor=reviewer,
+        reason=reason,
+        today=today or date.today(),
+        target_sha=_expected(payload),
+        evidence=evidence,
+        fields=fields,
+        confirmed=confirmed,
+        dry_run=bool(payload.get("dry_run")),
+    )
+    return {
+        "state": "ok",
+        "action": "lifecycle-transition",
+        "committed": result.committed,
+        "record_id": result.record_id,
+        "kind": result.kind,
+        "from_state": result.from_state,
+        "to_state": result.to_state,
+        "reviewer": reviewer,
+        "reason": reason,
+        "changes": [dict(change) for change in result.changes],
+        "equivalent_cli": _lifecycle_cli(project_id, record, kind, action, reason, reviewer),
+    }
+
+
+def _lifecycle_cli(project_id: str, record: str, kind: str, action: str, reason: str, reviewer: str) -> str:
+    return " ".join(
+        [
+            "worksync",
+            "project",
+            "lifecycle",
+            "--project-id",
+            _quote(project_id),
+            "--record",
+            _quote(record),
+            "--kind",
+            kind,
+            "--action",
+            action,
+            "--reason",
+            _quote(reason),
+            "--actor",
+            _quote(reviewer),
+        ]
+    )
+
+
 def _identity_apply_cli(proposal_id: str, reason: str, reviewer: str, decisions: dict | None, confirmed: bool) -> str:
     parts = [
         "worksync",
@@ -597,6 +662,7 @@ ACTIONS: dict[str, ActionHandler] = {
     "clarification-scan": _clarification_scan,
     "clarification-apply": _clarification_apply,
     "clarification-dismiss": _clarification_dismiss,
+    "lifecycle-transition": _lifecycle_transition,
 }
 
 

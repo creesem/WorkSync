@@ -46,6 +46,7 @@ from worksync.work.clarification import ClarificationError
 from worksync.work.clarification import apply as run_clarification_apply
 from worksync.work.clarification import dismiss as run_clarification_dismiss
 from worksync.work.clarification import scan as run_clarification_scan
+from worksync.work.control_center import build_control_center, render_control_center
 from worksync.work.duplicates import DuplicatesError
 from worksync.work.duplicates import apply as run_duplicates_apply
 from worksync.work.duplicates import dismiss as run_duplicates_dismiss
@@ -54,6 +55,11 @@ from worksync.work.identity import IdentityError
 from worksync.work.identity import dismiss as run_identity_dismiss
 from worksync.work.identity import load_manifest as load_identity_manifest
 from worksync.work.identity import scan as run_identity_scan
+from worksync.work.lifecycle.loader import load_project_records
+from worksync.work.lifecycle.machine import TransitionError
+from worksync.work.lifecycle.records import RegistryError
+from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
+from worksync.work.lifecycle.transitions import apply_lifecycle_transition
 from worksync.work.merge import apply_merge as run_identity_apply
 from worksync.work.relationships import related_to
 from worksync.work.render import (
@@ -150,6 +156,30 @@ def build_parser() -> argparse.ArgumentParser:
     resolve.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
     resolve.add_argument("--json", action="store_true", help="Emit JSON.")
     resolve.set_defaults(handler=_project_resolve)
+
+    lifecycle = entity_subparsers["project"].add_parser("lifecycle", help="Apply a project lifecycle transition.")
+    lifecycle.add_argument("--project-id", dest="project_id", required=True)
+    lifecycle.add_argument("--record", required=True, help="Vault-relative record path.")
+    lifecycle.add_argument("--kind", required=True, choices=("issue", "delivery", "date_gap", "waiting_on", "decision"))
+    lifecycle.add_argument("--action", required=True)
+    lifecycle.add_argument("--reason", required=True, help="Human-readable reason for the transition.")
+    lifecycle.add_argument("--actor", default=None, help="Override the remembered reviewer.")
+    lifecycle.add_argument("--field", action="append", default=[], help="Canonical field edit key=value (repeatable).")
+    lifecycle.add_argument("--evidence", action="append", default=[], help="Evidence key=value (repeatable).")
+    lifecycle.add_argument("--sha", default=None, help="Expected record SHA (stale-safe precondition).")
+    lifecycle.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    lifecycle.add_argument("--dry-run", action="store_true", help="Show the change without writing.")
+    lifecycle.add_argument("--json", action="store_true", help="Emit JSON.")
+    _add_reviewer_paths(lifecycle)
+    lifecycle.set_defaults(handler=_project_lifecycle)
+
+    control = entity_subparsers["project"].add_parser("control", help="Show the read-only project control center.")
+    control.add_argument("--project-id", dest="project_id", required=True)
+    control.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
+    control.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    control.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    control.add_argument("--json", action="store_true", help="Emit JSON.")
+    control.set_defaults(handler=_project_control)
 
     context = sub.add_parser("context", help="Read generated context projections.")
     context_sub = context.add_subparsers(dest="context_command")
@@ -1728,6 +1758,91 @@ def _print_write(payload: dict, as_json: bool) -> None:
     print(f"{verb} {payload['path']}")
     for key, value in payload["fields"].items():
         print(f"  {key}: {value}")
+
+
+def _key_value_pairs(items: list[str]) -> dict[str, str]:
+    pairs: dict[str, str] = {}
+    for item in items:
+        key, sep, value = str(item).partition("=")
+        if not sep or not key.strip():
+            raise ValueError(f"expected key=value, got: {item}")
+        pairs[key.strip()] = value.strip()
+    return pairs
+
+
+def _project_lifecycle(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        actor = _resolve_current_reviewer(runtime, args.actor, remember=not args.dry_run)
+        result = apply_lifecycle_transition(
+            vault,
+            runtime,
+            project_id=args.project_id,
+            record_id=args.record,
+            kind=args.kind,
+            action=args.action,
+            actor=actor,
+            reason=args.reason,
+            today=_resolve_today(args.today),
+            target_sha=args.sha,
+            evidence=_key_value_pairs(args.evidence),
+            fields=_key_value_pairs(args.field),
+            dry_run=args.dry_run,
+        )
+        if result.committed:
+            _rebuild_derived(vault, runtime)
+    except (ReviewerError, MutationError, RegistryError, TransitionError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    payload = {
+        "record_id": result.record_id,
+        "kind": result.kind,
+        "action": result.action,
+        "from_state": result.from_state,
+        "to_state": result.to_state,
+        "committed": result.committed,
+        "dry_run": result.dry_run,
+        "actor": actor,
+        "reason": args.reason,
+        "journal": str(result.journal) if result.journal is not None else None,
+        "changes": [dict(change) for change in result.changes],
+    }
+    if args.dry_run:
+        payload["planned"] = result.planned
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+    else:
+        verb = "would transition" if args.dry_run else "transitioned"
+        print(f"{verb} {result.record_id}: {result.from_state} -> {result.to_state}")
+    return 0
+
+
+def _project_control(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        index = WorkIndex.from_vault(vault)
+        project = next(
+            (entity for entity in index.list_type("project") if getattr(entity, "project_id", None) == args.project_id),
+            None,
+        )
+        if project is None:
+            print(f"worksync: project not found: {args.project_id}", file=sys.stderr)
+            return 1
+        store = read_registry(runtime, args.project_id)
+        registry = store or LifecycleRegistry(project_id=args.project_id)
+        records = load_project_records(index, registry)
+        report = build_control_center(index, project, records, today=_resolve_today(args.today))
+    except (RegistryError, ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(report, indent=2, default=str, ensure_ascii=False))
+    else:
+        print(render_control_center(report))
+    return 0
 
 
 def _task_update(args: argparse.Namespace) -> int:

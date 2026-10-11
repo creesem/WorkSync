@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from worksync.work.lifecycle.records import RegistryError, is_record_kind
-from worksync.work.lifecycle.registry import LifecycleEntry, LifecycleRegistry, Transition
+from worksync.work.lifecycle.registry_model import LifecycleEntry, LifecycleRegistry, Transition
 from worksync.work.models import EntityBase, EntityType
 from worksync.work.relationships import related_to
 from worksync.work.repository import WorkIndex
