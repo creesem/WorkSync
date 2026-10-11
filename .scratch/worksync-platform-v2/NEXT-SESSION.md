@@ -4,8 +4,9 @@
 
 - Repo `C:\GitProjects\WorkSync`, branch `main`.
 - **Spec 8 (Krisp pipeline, 0.1d) is closed**, including its review fixes and a
-  follow-up runtime-rebase fix. Full suite green (**582 passed**), `ruff check` /
-  `ruff format --check` and `pre-commit --all-files` clean.
+  follow-up runtime-rebase fix. A person-identity feature (WP-01..WP-06) has since
+  landed. Full suite green (**645 passed**), `ruff check` / `ruff format --check` and
+  `pre-commit --all-files` clean.
 - **Spec 9 (project lifecycle + control center, 0.1e) is decided and ready to build.**
   The spec, the accepted ADRs (0019–0021), and the tickets exist under
   `.scratch/worksync-platform-v2/09-project-lifecycle/`. The Q1–Q10 decisions are
