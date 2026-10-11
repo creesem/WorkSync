@@ -1,7 +1,7 @@
 # Cutover runbook
 
-How to switch daily work from `WorkSync-Control-Center` to the new platform at
-`C:\GitProjects\WorkSync`, and how to roll back. Decisions:
+How to switch daily work from `WorkSync-Control-Center` to the new platform in this
+repository, and how to roll back. Decisions:
 [ADR-0009](adr/0009-migration-and-cutover.md) (phased cutover),
 [ADR-0010](adr/0010-packaging-and-portability.md) (distribution),
 [ADR-0022](adr/0022-release-cutover-and-rollback-boundary.md) (runtime migration rule and
@@ -33,8 +33,7 @@ outside the vault.
 
 Repoint the operational entry points to the new platform:
 
-1. **Desktop shortcut / Start menu.** Point it at
-   `C:\GitProjects\WorkSync\Start-WorkSync.cmd`.
+1. **Desktop shortcut / Start menu.** Point it at `Start-WorkSync.cmd` in this repository.
 2. **Launcher.** `Start-WorkSync.cmd` opens `worksync-gui`; `worksync.cmd` passes CLI
    calls through.
 3. **Editor MCP wiring.** The editor config already names the new `worksync-mcp`; verify
@@ -58,10 +57,10 @@ now carries the new platform's schema. The schema-normalization migration
 
 ## OS-level checklist
 
-- [x] Repoint the Windows desktop shortcut to
-      `C:\GitProjects\WorkSync\Start-WorkSync.cmd` (done 2026-10-11 with
-      `scripts\install-desktop-shortcut.ps1`; the shortcut carries `assets\worksync.ico`).
-      Add `-StartMenu` to that script to create the Start-menu entry as well.
+- [x] Repoint the Windows desktop shortcut to `Start-WorkSync.cmd` in this repository
+      (done 2026-10-11 with `scripts\install-desktop-shortcut.ps1`; the shortcut carries
+      `assets\worksync.ico`). Add `-StartMenu` to that script to create the Start-menu
+      entry as well.
 - [ ] Stop the legacy launcher process (port `8765`).
 - [ ] Verify the editor MCP server command resolves to `worksync-mcp` (already wired; the
       legacy command was `launchers/mcp-server.cmd`).
