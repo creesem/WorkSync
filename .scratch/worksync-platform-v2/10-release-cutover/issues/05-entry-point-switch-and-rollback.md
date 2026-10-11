@@ -18,7 +18,7 @@ Record the decision as ADR-0022, add the release/cutover terms to `CONTEXT.md`, 
 **Status:** done
 
 - [x] `docs/cutover.md` documents the switch (shortcut, `Start-WorkSync.cmd`, editor MCP
-      repoint) and the rollback, with the wizard/checklist for the OS-level steps.
+      verification) and the rollback, with the wizard/checklist for the OS-level steps.
 - [x] The rollback boundary is stated: valid from the switch until the first new-platform
       canonical vault write; `migrate schema` is explicitly post-cutover.
 - [x] ADR-0022 records the runtime-migration rule and the rollback boundary; `CONTEXT.md`

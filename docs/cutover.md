@@ -37,8 +37,8 @@ Repoint the operational entry points to the new platform:
    `C:\GitProjects\WorkSync\Start-WorkSync.cmd`.
 2. **Launcher.** `Start-WorkSync.cmd` opens `worksync-gui`; `worksync.cmd` passes CLI
    calls through.
-3. **Editor MCP wiring.** Change the MCP server command from the legacy
-   `launchers/mcp-server.cmd` to `worksync-mcp`.
+3. **Editor MCP wiring.** The editor config already names the new `worksync-mcp`; verify
+   it and repoint only if it still names the legacy `launchers/mcp-server.cmd`.
 
 Stop the legacy `Start-WorkSync.cmd` before starting the new one.
 
@@ -61,7 +61,8 @@ now carries the new platform's schema. The schema-normalization migration
 - [ ] Repoint the Windows desktop shortcut / Start-menu entry to
       `C:\GitProjects\WorkSync\Start-WorkSync.cmd`.
 - [ ] Stop the legacy launcher process (port `8765`).
-- [ ] Update the editor MCP server command to `worksync-mcp`.
+- [ ] Verify the editor MCP server command resolves to `worksync-mcp` (already wired; the
+      legacy command was `launchers/mcp-server.cmd`).
 - [ ] Start the new platform and confirm `worksync config show` reports the seeded vault,
       runtime root, and port.
 - [ ] Keep `WorkSync-Control-Center` in place as the rollback fixture.
