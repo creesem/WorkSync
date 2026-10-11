@@ -14,6 +14,8 @@ from worksync.core.secrets import resolve_krisp_api_key
 from worksync.gui.controller import GuiService
 from worksync.gui.server import GuiHttpServer, create_server
 from worksync.inventory.index import index_path
+from worksync.safety import MutationError, recover
+from worksync.safety.zones import write_zones
 from worksync.work.reviewer import ReviewerError, resolve_reviewer
 
 DEFAULT_HOST = "127.0.0.1"
@@ -33,7 +35,13 @@ def build_service(
     krisp_since_days: int = DEFAULT_KRISP_SINCE_DAYS,
     krisp_api_key: str | None = None,
 ) -> GuiService:
-    """Pin the vault, index, reviewer, model, and ingest roots the server reads through."""
+    """Pin the vault, index, reviewer, model, and ingest roots the server reads through.
+
+    Reconciles any incomplete mutation transaction before the server reads, so a crash
+    that left a half-applied write is rolled back at startup rather than being observed by
+    the first request.
+    """
+    recover(write_zones(vault, runtime))
     return GuiService(
         vault=Path(vault),
         db_path=index_path(runtime),
@@ -89,19 +97,23 @@ def main(argv: list[str] | None = None) -> int:
     inbox = str(config.raw.get("inbox_path") or "").strip() or None
     rough = str(config.raw.get("rough_notes_path") or "").strip() or None
     krisp_api_key = resolve_krisp_api_key(config_path=config.source_path)
-    service = build_service(
-        vault=vault,
-        runtime=runtime,
-        vault_name=config.vault_name,
-        reviewer=reviewer,
-        ui_port=port,
-        model=model,
-        inbox_path=inbox,
-        rough_notes_path=rough,
-        krisp_inbox_path=config.krisp_inbox_for(runtime),
-        krisp_since_days=config.krisp_since_days,
-        krisp_api_key=krisp_api_key,
-    )
+    try:
+        service = build_service(
+            vault=vault,
+            runtime=runtime,
+            vault_name=config.vault_name,
+            reviewer=reviewer,
+            ui_port=port,
+            model=model,
+            inbox_path=inbox,
+            rough_notes_path=rough,
+            krisp_inbox_path=config.krisp_inbox_for(runtime),
+            krisp_since_days=config.krisp_since_days,
+            krisp_api_key=krisp_api_key,
+        )
+    except MutationError as exc:
+        print(f"worksync-gui: {exc}", file=sys.stderr)
+        return 2
     try:
         server = bind(service, token, host=args.host, port=port)
     except (OSError, ValueError) as exc:

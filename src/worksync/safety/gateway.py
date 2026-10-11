@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import secrets
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from hashlib import sha1
@@ -272,14 +273,30 @@ def _rollback(planned: list[dict], backup_dir: Path) -> None:
 
 
 def _new_txid(runtime: Path, when: datetime) -> str:
-    base = f"{when:%Y%m%d-%H%M%S-%f}"
+    """Reserve a collision-proof transaction id by atomically creating its journal file.
+
+    A timestamp alone collides when two processes commit within the same microsecond, so
+    the id carries a random suffix and the journal path is created with ``O_EXCL``: the
+    first writer wins the name and the loser retries, so concurrent commits can never share
+    a journal or a backup directory. The reserved file starts as an empty ``{}`` journal so
+    a crash before the real record is written still recovers as a no-op rather than as an
+    unreadable journal.
+    """
     journal_dir = runtime / JOURNAL_DIRNAME
+    journal_dir.mkdir(parents=True, exist_ok=True)
+    base = f"{when:%Y%m%d-%H%M%S-%f}-{secrets.token_hex(3)}"
     candidate = base
     counter = 1
-    while (journal_dir / f"{candidate}.json").exists():
-        candidate = f"{base}-{counter:02d}"
-        counter += 1
-    return candidate
+    while True:
+        try:
+            handle = os.open(journal_dir / f"{candidate}.json", os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            candidate = f"{base}-{counter:02d}"
+            counter += 1
+            continue
+        os.write(handle, b"{}\n")
+        os.close(handle)
+        return candidate
 
 
 def _planned_from_journal(record: dict) -> list[dict]:

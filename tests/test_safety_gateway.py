@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import ast
 import json
+import subprocess
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -417,3 +420,76 @@ def test_precondition_failure_leaves_no_partial_write(zones: dict[str, Path]) ->
     assert _code(excinfo) == "stale_hash"
     assert not (zones["views"] / "first.md").exists()
     assert stale.read_text(encoding="utf-8") == "old"
+
+
+def test_operation_ids_are_unique_and_reserved_for_the_same_timestamp(zones: dict[str, Path]) -> None:
+    when = datetime(2026, 1, 1, tzinfo=UTC)
+    first = gateway._new_txid(zones["runtime"], when)
+    second = gateway._new_txid(zones["runtime"], when)
+    journal_dir = zones["runtime"] / "journal"
+    assert first != second
+    assert (journal_dir / f"{first}.json").is_file()
+    assert (journal_dir / f"{second}.json").is_file()
+
+
+_CRASH_SCRIPT = """
+import os
+import sys
+from pathlib import Path
+
+from worksync.safety import gateway
+from worksync.safety.files import sha256_file
+from worksync.safety.models import ChangeSet, FileOp
+
+vault = Path(sys.argv[1])
+runtime = Path(sys.argv[2])
+zones = {"trusted": vault, "runtime": runtime, "views": runtime / "views", "staging": runtime / "staging"}
+target = vault / "note.md"
+real_update = gateway._update_journal
+
+
+def crash_on_commit(path, **flags):
+    if flags.get("committed"):
+        os._exit(1)
+    return real_update(path, **flags)
+
+
+gateway._update_journal = crash_on_commit
+gateway.commit(
+    ChangeSet(
+        "update_status",
+        (FileOp("update", Path("note.md"), "trusted", content="changed", expected=sha256_file(target)),),
+        reviewer="Myles",
+        reason="simulate a crash after the write, before the commit marker",
+    ),
+    zones,
+)
+"""
+
+_RECOVER_SCRIPT = """
+import sys
+from pathlib import Path
+
+from worksync.safety import recover
+
+recover({"runtime": Path(sys.argv[1])})
+"""
+
+
+def _run(script: str, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([sys.executable, "-c", script, *args], capture_output=True, text=True)
+
+
+def test_recovery_reconciles_after_a_process_restart(zones: dict[str, Path]) -> None:
+    target = _write(zones["trusted"] / "note.md", "original")
+    crashed = _run(_CRASH_SCRIPT, str(zones["trusted"]), str(zones["runtime"]))
+    assert crashed.returncode == 1, crashed.stderr
+    assert target.read_text(encoding="utf-8") == "changed"
+    journals = list((zones["runtime"] / "journal").glob("*.json"))
+    assert len(journals) == 1
+    assert json.loads(journals[0].read_text(encoding="utf-8"))["committed"] is False
+
+    recovered = _run(_RECOVER_SCRIPT, str(zones["runtime"]))
+    assert recovered.returncode == 0, recovered.stderr
+    assert target.read_text(encoding="utf-8") == "original"
+    assert json.loads(journals[0].read_text(encoding="utf-8"))["rolled_back"] is True
