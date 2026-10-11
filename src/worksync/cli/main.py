@@ -38,6 +38,7 @@ from worksync.ingest.krisp import KrispAPIError, build_client
 from worksync.ingest.krisp import pull as run_krisp_pull
 from worksync.inventory.index import index_path, index_vault
 from worksync.migrate import person_ids as person_ids_migration
+from worksync.migrate import runtime as runtime_migration
 from worksync.migrate import schema as schema_migration
 from worksync.migrate.frontmatter import MalformedNote, apply_repairs, detect
 from worksync.safety.activity import list_events
@@ -456,6 +457,16 @@ def build_parser() -> argparse.ArgumentParser:
     person_ids.add_argument("--dry-run", action="store_true", help="List the proposed ids without writing.")
     person_ids.add_argument("--json", action="store_true", help="Emit JSON.")
     person_ids.set_defaults(handler=_migrate_person_ids)
+
+    runtime = migrate_sub.add_parser("runtime", help="Migrate the legacy runtime root into the new runtime.")
+    runtime.add_argument(
+        "--legacy-runtime", type=Path, required=True, help="Path to the legacy WorkSync-Control-Center var/ root."
+    )
+    runtime.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    runtime.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    runtime.add_argument("--dry-run", action="store_true", help="List the proposed actions without writing.")
+    runtime.add_argument("--json", action="store_true", help="Emit JSON.")
+    runtime.set_defaults(handler=_migrate_runtime)
 
     task = sub.add_parser("task", help="Edit or complete a canonical action.")
     task_sub = task.add_subparsers(dest="task_command")
@@ -1710,6 +1721,38 @@ def _migrate_person_ids(args: argparse.Namespace) -> int:
     except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
         print(f"worksync: {exc}", file=sys.stderr)
         return 2
+
+
+def _migrate_runtime(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        result = runtime_migration.apply(
+            Path(args.legacy_runtime), runtime, vault=vault, when=date.today(), dry_run=args.dry_run
+        )
+        if not args.dry_run:
+            _rebuild_derived(vault, runtime)
+    except runtime_migration.RuntimeMigrationError as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except MutationError as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    payload = result.to_dict()
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+    if payload["dry_run"]:
+        print("worksync migrate runtime: dry run")
+    else:
+        print(f"worksync migrate runtime: archived {len(payload['archived'])} file(s) under {payload['archive_dir']}")
+    for name, status in payload["imported"].items():
+        print(f"  import {name}: {status}")
+    for path in payload["discarded"]:
+        print(f"  discard {path}")
+    return 0
 
 
 def _configured_reviewer() -> str | None:
