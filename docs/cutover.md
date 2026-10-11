@@ -56,10 +56,12 @@ lifecycle transition), reverting to the legacy app is no longer a clean revert: 
 now carries the new platform's schema. The schema-normalization migration
 (`worksync migrate schema`) is a separate, later step and is **not** part of the cutover.
 
-## OS-level checklist (agent cannot perform)
+## OS-level checklist
 
-- [ ] Repoint the Windows desktop shortcut / Start-menu entry to
-      `C:\GitProjects\WorkSync\Start-WorkSync.cmd`.
+- [x] Repoint the Windows desktop shortcut to
+      `C:\GitProjects\WorkSync\Start-WorkSync.cmd` (done 2026-10-11 with
+      `scripts\install-desktop-shortcut.ps1`; the shortcut carries `assets\worksync.ico`).
+      Add `-StartMenu` to that script to create the Start-menu entry as well.
 - [ ] Stop the legacy launcher process (port `8765`).
 - [ ] Verify the editor MCP server command resolves to `worksync-mcp` (already wired; the
       legacy command was `launchers/mcp-server.cmd`).
