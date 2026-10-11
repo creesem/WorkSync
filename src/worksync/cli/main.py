@@ -50,6 +50,11 @@ from worksync.work.duplicates import DuplicatesError
 from worksync.work.duplicates import apply as run_duplicates_apply
 from worksync.work.duplicates import dismiss as run_duplicates_dismiss
 from worksync.work.duplicates import scan as run_duplicates_scan
+from worksync.work.identity import IdentityError
+from worksync.work.identity import dismiss as run_identity_dismiss
+from worksync.work.identity import load_manifest as load_identity_manifest
+from worksync.work.identity import scan as run_identity_scan
+from worksync.work.merge import apply_merge as run_identity_apply
 from worksync.work.relationships import related_to
 from worksync.work.render import (
     attention_to_dict,
@@ -323,6 +328,47 @@ def build_parser() -> argparse.ArgumentParser:
     dup_apply.add_argument("--dry-run", dest="dry_run", action="store_true", help="Validate without writing.")
     dup_apply.add_argument("--json", action="store_true", help="Emit JSON.")
     dup_apply.set_defaults(handler=_duplicates_apply)
+
+    identity = sub.add_parser("identity", help="Detect and review duplicate person pairs.")
+    identity_sub = identity.add_subparsers(dest="identity_command")
+    id_scan = identity_sub.add_parser("scan", help="Detect duplicate person pairs into the manifest.")
+    id_scan.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    id_scan.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    id_scan.add_argument("--dry-run", dest="dry_run", action="store_true", help="Detect without writing the manifest.")
+    id_scan.add_argument("--json", action="store_true", help="Emit JSON.")
+    id_scan.set_defaults(handler=_identity_scan)
+    id_show = identity_sub.add_parser("show", help="Show the current identity manifest.")
+    id_show.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    id_show.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    id_show.add_argument("--json", action="store_true", help="Emit JSON.")
+    id_show.set_defaults(handler=_identity_show)
+    id_dismiss = identity_sub.add_parser("dismiss", help="Dismiss a person pair with a reason.")
+    id_dismiss.add_argument("proposal_id", help="The pair id to dismiss.")
+    id_dismiss.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    id_dismiss.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    id_dismiss.add_argument("--reason", required=True, help="Human-readable reason for the dismissal.")
+    id_dismiss.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    id_dismiss.add_argument("--dry-run", dest="dry_run", action="store_true", help="Show the change without writing.")
+    id_dismiss.add_argument("--json", action="store_true", help="Emit JSON.")
+    id_dismiss.set_defaults(handler=_identity_dismiss)
+    id_apply = identity_sub.add_parser("apply", help="Merge one reviewed person pair as one transaction.")
+    id_apply.add_argument("proposal_id", help="The pair id to merge.")
+    id_apply.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    id_apply.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    id_apply.add_argument(
+        "--decision",
+        dest="decisions",
+        action="append",
+        default=None,
+        metavar="FIELD=LEFT|RIGHT",
+        help="Resolve a conflicting field.",
+    )
+    id_apply.add_argument("--reason", required=True, help="Human-readable reason for the merge.")
+    id_apply.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    id_apply.add_argument("--confirm", action="store_true", help="Confirm the merge.")
+    id_apply.add_argument("--dry-run", dest="dry_run", action="store_true", help="Validate without writing.")
+    id_apply.add_argument("--json", action="store_true", help="Emit JSON.")
+    id_apply.set_defaults(handler=_identity_apply)
 
     clarification = sub.add_parser("clarification", help="Surface and resolve actions needing clarification.")
     clarification_sub = clarification.add_subparsers(dest="clarification_command")
@@ -1283,6 +1329,105 @@ def _print_duplicates(manifest, as_json: bool, *, dry_run: bool = False) -> None
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return
     print(f"duplicates: {len(manifest.proposals)} pair(s)")
+    for proposal in manifest.proposals:
+        print(f"  [{proposal.status}] {proposal.source_path} -> {proposal.target_path} ({proposal.confidence:.2f})")
+
+
+def _identity_scan(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        manifest = run_identity_scan(vault, runtime, dry_run=args.dry_run)
+    except (ConfigError, IdentityError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 2
+    _print_identity(manifest, args.json, dry_run=args.dry_run)
+    return 0
+
+
+def _identity_show(args: argparse.Namespace) -> int:
+    try:
+        _vault, runtime = _vault_runtime_paths(args)
+        manifest = load_identity_manifest(runtime)
+    except (ConfigError, OSError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    if manifest is None:
+        print("worksync: no identity manifest; run 'worksync identity scan' first.", file=sys.stderr)
+        return 1
+    _print_identity(manifest, args.json)
+    return 0
+
+
+def _identity_dismiss(args: argparse.Namespace) -> int:
+    try:
+        _vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        manifest = run_identity_dismiss(
+            runtime, args.proposal_id, reviewer=reviewer, reason=args.reason, dry_run=args.dry_run
+        )
+    except (ConfigError, IdentityError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    _print_identity(manifest, args.json, dry_run=args.dry_run)
+    return 0
+
+
+def _identity_apply(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        result = run_identity_apply(
+            vault,
+            runtime,
+            proposal_id=args.proposal_id,
+            reviewer=reviewer,
+            reason=args.reason,
+            field_decisions=_parse_decisions(args.decisions),
+            confirmed=args.confirm,
+            dry_run=args.dry_run,
+        )
+        if result.committed:
+            _rebuild_derived(vault, runtime)
+    except (ConfigError, IdentityError, MutationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "dry_run": args.dry_run,
+        "committed": result.committed,
+        "applied": list(result.applied),
+        "journal": str(result.journal),
+        "changes": [dict(change) for change in result.changes],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+    else:
+        print(f"identity: merged {len(result.applied)} pair(s)")
+        for change in result.changes:
+            print(f"  {change['kind']} {change['path']}")
+    return 0
+
+
+def _parse_decisions(values: list[str] | None) -> dict[str, str]:
+    decisions: dict[str, str] = {}
+    for item in values or ():
+        field, sep, choice = str(item).partition("=")
+        field, choice = field.strip(), choice.strip().casefold()
+        if not sep or not field or choice not in ("left", "right"):
+            raise ValueError(f"invalid --decision (want FIELD=LEFT|RIGHT): {item}")
+        decisions[field] = choice
+    return decisions
+
+
+def _print_identity(manifest, as_json: bool, *, dry_run: bool = False) -> None:
+    if as_json:
+        payload = {
+            "dry_run": dry_run,
+            "scan_token": manifest.scan_token,
+            "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    print(f"identity: {len(manifest.proposals)} pair(s)")
     for proposal in manifest.proposals:
         print(f"  [{proposal.status}] {proposal.source_path} -> {proposal.target_path} ({proposal.confidence:.2f})")
 

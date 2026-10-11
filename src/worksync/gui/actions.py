@@ -24,9 +24,11 @@ from worksync.ingest.krisp import pull as run_krisp_pull
 from worksync.safety.models import MutationError
 from worksync.work import clarification as clarification_service
 from worksync.work import duplicates as duplicates_service
+from worksync.work import identity as identity_service
 from worksync.work import reviewer as reviewer_store
 from worksync.work.clarification import ClarificationError
 from worksync.work.duplicates import DuplicatesError
+from worksync.work.merge import apply_merge as run_identity_apply
 from worksync.work.reviewer import ReviewerError
 from worksync.work.writer import (
     ActionWriteError,
@@ -501,6 +503,81 @@ def _clarification_apply(service: WriteContext, payload: dict, *, confirmed: boo
     }
 
 
+def _identity_scan(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    manifest = identity_service.scan(service.vault, service.runtime_root)
+    return {
+        "state": "ok",
+        "action": "identity-scan",
+        "committed": False,
+        "scan_token": manifest.scan_token,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": "worksync identity scan",
+    }
+
+
+def _identity_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    proposal_id = _required(payload, "id", "invalid_target")
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    manifest = identity_service.dismiss(service.runtime_root, proposal_id, reviewer=reviewer, reason=reason)
+    return {
+        "state": "ok",
+        "action": "identity-dismiss",
+        "committed": False,
+        "reviewer": reviewer,
+        "reason": reason,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": _dismiss_cli("identity", proposal_id, reason, reviewer),
+    }
+
+
+def _identity_apply(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    proposal_id = _required(payload, "id", "invalid_target")
+    reason = _required(payload, "reason", "missing_reason")
+    decisions = payload.get("decisions")
+    if decisions is not None and not isinstance(decisions, dict):
+        raise ActionError("bad_request", "decisions must be a JSON object.", 400)
+    reviewer = _reviewer(service)
+    field_decisions = {str(key): str(value) for key, value in decisions.items()} if decisions else None
+    result = run_identity_apply(
+        service.vault,
+        service.runtime_root,
+        proposal_id=proposal_id,
+        reviewer=reviewer,
+        reason=reason,
+        field_decisions=field_decisions,
+        confirmed=confirmed,
+    )
+    return {
+        "state": "ok",
+        "action": "identity-apply",
+        "committed": result.committed,
+        "reviewer": reviewer,
+        "reason": reason,
+        "applied": list(result.applied),
+        "changes": [dict(change) for change in result.changes],
+        "equivalent_cli": _identity_apply_cli(proposal_id, reason, reviewer, field_decisions, confirmed),
+    }
+
+
+def _identity_apply_cli(proposal_id: str, reason: str, reviewer: str, decisions: dict | None, confirmed: bool) -> str:
+    parts = [
+        "worksync",
+        "identity",
+        "apply",
+        _quote(proposal_id),
+        "--reason",
+        _quote(reason),
+        "--reviewer",
+        _quote(reviewer),
+    ]
+    for field, choice in (decisions or {}).items():
+        parts += ["--decision", _quote(f"{field}={choice}")]
+    if confirmed:
+        parts += ["--confirm"]
+    return " ".join(parts)
+
+
 ACTIONS: dict[str, ActionHandler] = {
     "update-action": _update_action,
     "complete-action": _complete_action,
@@ -514,6 +591,9 @@ ACTIONS: dict[str, ActionHandler] = {
     "duplicates-scan": _duplicates_scan,
     "duplicates-dismiss": _duplicates_dismiss,
     "duplicates-apply": _duplicates_apply,
+    "identity-scan": _identity_scan,
+    "identity-dismiss": _identity_dismiss,
+    "identity-apply": _identity_apply,
     "clarification-scan": _clarification_scan,
     "clarification-apply": _clarification_apply,
     "clarification-dismiss": _clarification_dismiss,

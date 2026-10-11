@@ -3,7 +3,7 @@
 const TOKEN = window.__GUI_TOKEN__ || "";
 const TOKEN_HEADER = "X-Gui-Token";
 
-const state = { triage: [], queueTab: "triage", duplicates: [], clarification: [], krisp: [] };
+const state = { triage: [], queueTab: "triage", duplicates: [], clarification: [], krisp: [], identity: [] };
 
 const view = document.getElementById("view");
 const equivalent = document.getElementById("equivalent");
@@ -228,6 +228,7 @@ const queueTabs = [
   { id: "duplicates", label: "Duplicates" },
   { id: "clarification", label: "Clarification" },
   { id: "krisp", label: "Krisp" },
+  { id: "identity", label: "Identity" },
 ];
 
 function queueBar() {
@@ -255,7 +256,75 @@ async function renderQueue() {
     await renderKrispTab(bar);
     return;
   }
+  if (state.queueTab === "identity") {
+    await renderIdentityTab(bar);
+    return;
+  }
   await renderTriageTab(bar);
+}
+
+async function renderIdentityTab(bar) {
+  const data = await postAction("identity-scan", {});
+  equivalent.textContent = data.equivalent_cli;
+  state.identity = data.proposals || [];
+  const rows = state.identity.map(identityCard).join("");
+  view.innerHTML = heading("Review", "Person identity") + bar + (rows || empty("No duplicate people."));
+  for (const button of document.querySelectorAll("[data-merge-identity]")) {
+    button.addEventListener("click", () => mergeIdentity(button.dataset.mergeIdentity));
+  }
+  for (const button of document.querySelectorAll("[data-dismiss-identity]")) {
+    button.addEventListener("click", () => dismissIdentity(button.dataset.dismissIdentity));
+  }
+}
+
+function identityCard(proposal) {
+  const reasons = (proposal.provenance || []).map(escapeHtml).join(" · ");
+  return `<div class="proposal row" data-id="${escapeHtml(proposal.id)}">
+    <div class="proposal-body">
+      <div class="proposal-head">
+        <span class="tag">${escapeHtml(proposal.status)}</span>
+        <span class="path">${escapeHtml(proposal.source_path)} &rarr; ${escapeHtml(proposal.target_path || "")}</span>
+      </div>
+      <div class="proposal-fields">
+        <div><strong>Why</strong> ${escapeHtml(reasons)}</div>
+      </div>
+      <button type="button" class="apply" data-merge-identity="${escapeHtml(proposal.id)}">Merge</button>
+      <button type="button" class="dismiss" data-dismiss-identity="${escapeHtml(proposal.id)}">Dismiss</button>
+    </div>
+  </div>`;
+}
+
+async function mergeIdentity(id) {
+  const reason = window.prompt("Reason for merging these person records?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  if (!window.confirm("This merges person notes, rewrites references, and cannot be undone. Apply?")) return;
+  try {
+    const result = await postAction("identity-apply", { id, reason: reason.trim(), confirmed: true });
+    showWriteResult(result, false);
+    await renderQueue();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
+async function dismissIdentity(id) {
+  const reason = window.prompt("Reason for dismissing this pair?", "");
+  if (reason === null) return;
+  if (!reason.trim()) {
+    showWriteResult({ error: "A human-readable reason is required." }, true);
+    return;
+  }
+  try {
+    const result = await postAction("identity-dismiss", { id, reason: reason.trim() });
+    showWriteResult(result, false);
+    await renderQueue();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
 }
 
 async function renderTriageTab(bar) {
