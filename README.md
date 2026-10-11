@@ -46,8 +46,9 @@ The source repositories are left untouched as rollback copies.
 The vault is **not** in this repository and is never moved by it: it must already exist at
 the vault path you configure.
 
-Prerequisites: Windows, Python 3.11+ available as `py -3`, and network access for the
-first bootstrap (it fetches the build backend and `PyYAML`).
+Prerequisites: Windows, Python 3.11+ available as `py -3`, and network access for the first
+bootstrap. The build backend comes from PyPI, so a machine that cannot reach it stops at
+`Could not find a version that satisfies the requirement setuptools>=68`.
 
 1. **Clone and bootstrap.** Builds the wheel into `wheels\`, creates `.venv\`, installs it:
 
@@ -64,8 +65,9 @@ first bootstrap (it fetches the build backend and `PyYAML`).
    .\.venv\Scripts\python scripts\seed_config.py --legacy ..\WorkSync-Control-Center --target . --port 8766
    ```
 
-   or copy `config\worksync.example.json` to `config\worksync.json` and set `vault_path`,
-   `runtime_root`, and `ui_port` by hand.
+   or copy `config\worksync.example.json` to `config\worksync.json` and set `vault_path`
+   and `ui_port` by hand. The example ships `ui_port` **8765**, the legacy port — pick a
+   distinct one.
 
 3. **Run.** `Start-WorkSync.cmd` opens the read-only workspace; `worksync.cmd --help` is the
    CLI. `.\.venv\Scripts\worksync config show` prints what actually resolved, including
@@ -84,6 +86,20 @@ Machine state stays out of the repository on purpose:
 | `config\secrets.json` | The Krisp API key. Also read from the `KRISP_API_KEY` environment variable. |
 | `var\` | The runtime root — index, journal, backups, activity. Rebuilt from the vault. |
 | `.venv\`, `wheels\` | `Bootstrap.cmd` recreates both. |
+
+### Updating an existing clone
+
+```powershell
+git pull --ff-only
+Remove-Item wheels\*.whl -Force
+Bootstrap.cmd
+```
+
+The `Remove-Item` is not optional. `Bootstrap.cmd` builds the wheel only when
+`wheels\worksync-*.whl` is absent, so a second run reinstalls whatever wheel is already
+sitting there — pull new code and bootstrap without clearing it, and the old build keeps
+running with no visible sign. To iterate on the code instead, install it editable and skip
+the wheel entirely: `.\.venv\Scripts\python -m pip install -e ".[dev]"`.
 
 ## Develop
 
