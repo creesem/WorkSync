@@ -172,6 +172,10 @@ def _delivery_entries(vault_root: Path, legacy: Path) -> list[LifecycleEntry]:
     for item_id, record in _bucket(registry, "waiting"):
         lane = map_waiting_lane(record.get("lane", ""))
         state = str(record.get("status") or record.get("lifecycle_state") or "open").strip().casefold()
+        if state not in {"open", "resolved"}:
+            raise LegacyMigrationError(
+                "unmappable_state", f"Unmappable legacy waiting status: {state!r}", affected=(state,)
+            )
         entries.append(_entry(vault_root, item_id, "waiting_on", state, lane, record.get("transitions")))
     return entries
 

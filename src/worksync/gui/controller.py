@@ -14,10 +14,6 @@ from pathlib import Path
 
 from worksync.context import service
 from worksync.core.config import DEFAULT_KRISP_SINCE_DAYS
-from worksync.work.control_center import build_control_center
-from worksync.work.lifecycle.loader import load_project_records
-from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
-from worksync.work.repository import WorkIndex
 
 
 @dataclass(frozen=True)
@@ -69,20 +65,10 @@ class GuiService:
     def control_center(self, project_id: str, today: date) -> dict:
         """The read-only lifecycle control center for one project, by project_id."""
         cli = _cli("project", "control", project_id=project_id, today=today)
-        index = WorkIndex.from_vault(self.vault)
-        project = next(
-            (entity for entity in index.list_type("project") if getattr(entity, "project_id", None) == project_id),
-            None,
-        )
-        if project is None:
+        report = service.control_center(self.vault, self.runtime_root, project_id, today)
+        if report is None:
             return {"state": "not_found", "equivalent_cli": cli}
-        registry = read_registry(self.runtime_root, project_id) or LifecycleRegistry(project_id=project_id)
-        records = load_project_records(index, registry)
-        return {
-            "state": "ok",
-            "equivalent_cli": cli,
-            "control_center": build_control_center(index, project, records, today=today),
-        }
+        return {"state": "ok", "equivalent_cli": cli, "control_center": report}
 
     def team(self, today: date) -> dict:
         """Every active person's workload."""

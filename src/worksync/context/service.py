@@ -19,6 +19,9 @@ from worksync.context.retrieval import read_evidence as _read_evidence
 from worksync.context.retrieval import search_evidence as _search_evidence
 from worksync.core.config import ConfigError, load_config
 from worksync.inventory.index import index_path
+from worksync.work.control_center import build_control_center
+from worksync.work.lifecycle.loader import load_project_records
+from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
 from worksync.work.relationships import related_to
 from worksync.work.render import (
     attention_to_dict,
@@ -153,3 +156,16 @@ def read_context(vault: str | Path, db_path: str | Path, project_id: str, repo: 
 
 def get_staleness(vault: str | Path, db_path: str | Path, project_id: str, repo: str | None = None) -> dict:
     return _get_staleness(_index(vault), db_path, project_id, repo=repo)
+
+
+def control_center(vault: str | Path, runtime: str | Path, project_id: str, today: date) -> dict | None:
+    """The read-only lifecycle control center for one project, or ``None`` when unknown."""
+    index = _index(vault)
+    project = next(
+        (entity for entity in index.list_type("project") if getattr(entity, "project_id", None) == project_id), None
+    )
+    if project is None:
+        return None
+    registry = read_registry(runtime, project_id) or LifecycleRegistry(project_id=project_id)
+    records = load_project_records(index, registry)
+    return build_control_center(index, project, records, today=today)

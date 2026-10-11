@@ -14,14 +14,16 @@ from worksync.gui.controller import GuiService
 from worksync.safety import gateway
 from worksync.safety.models import MutationError
 from worksync.work.lifecycle.records import RegistryError
-from worksync.work.lifecycle.registry import LifecycleStore
+from worksync.work.lifecycle.registry import LifecycleEntry, LifecycleRegistry, LifecycleStore
 from worksync.work.lifecycle.transitions import apply_lifecycle_transition
+from worksync.work.lifecycle.waiting import WaitingError
 from worksync.work.writer import complete_action
 
 TODAY = date(2026, 10, 10)
 PROJECT = "9. Project/Project - Eleos.md"
 TICKET = "Tickets/Issue - Login fails.md"
 ACTION = "7. Task Notes/Active/Chase the vendor.md"
+MEETING = "10. Meetings/Weekly.md"
 
 
 def _seed(write_note: Callable[..., Path], vault: Path) -> None:
@@ -246,3 +248,107 @@ def test_gui_action_and_cli_produce_the_same_transition(
     assert gui_state is not None and cli_state is not None
     assert gui_state.entry(TICKET).lifecycle_state == "confirmed"
     assert cli_state.entry(TICKET).lifecycle_state == "confirmed"
+
+
+def test_destructive_transition_requires_confirmation(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(write_note, vault)
+    runtime = tmp_path / "var"
+
+    with pytest.raises(MutationError) as excinfo:
+        apply_lifecycle_transition(
+            vault,
+            runtime,
+            project_id="eleos",
+            record_id=TICKET,
+            kind="issue",
+            action="reject",
+            actor="Myles",
+            reason="Not a real defect",
+            today=TODAY,
+        )
+    assert excinfo.value.code == "needs_confirmation"
+
+    result = apply_lifecycle_transition(
+        vault,
+        runtime,
+        project_id="eleos",
+        record_id=TICKET,
+        kind="issue",
+        action="reject",
+        actor="Myles",
+        reason="Not a real defect",
+        today=TODAY,
+        confirmed=True,
+    )
+    assert result.committed is True and result.to_state == "rejected" and result.destructive is True
+
+
+def test_unsupported_transition_kind_fails_closed(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    _seed(write_note, vault)
+    with pytest.raises(RegistryError) as excinfo:
+        apply_lifecycle_transition(
+            vault,
+            tmp_path / "var",
+            project_id="eleos",
+            record_id=MEETING,
+            kind="decision",
+            action="confirm",
+            actor="Myles",
+            reason="Decided",
+            today=TODAY,
+        )
+    assert excinfo.value.code == "unsupported_transition_kind"
+
+
+def test_revising_a_missed_date_persists_previous_and_revised(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(write_note, vault)
+    runtime = tmp_path / "var"
+    LifecycleStore(runtime, "eleos").save(
+        LifecycleRegistry(
+            project_id="eleos",
+            records=(LifecycleEntry(record_id=ACTION, record_kind="date_gap", lifecycle_state="stale-missed"),),
+        ),
+        expected_absent=True,
+    )
+
+    apply_lifecycle_transition(
+        vault,
+        runtime,
+        project_id="eleos",
+        record_id=ACTION,
+        kind="date_gap",
+        action="revise",
+        actor="Myles",
+        reason="Vendor slipped",
+        today=TODAY,
+        evidence={"previous": "2026-10-01", "revised": "2026-11-01", "source": "[[Meeting - Reset]]"},
+    )
+
+    text = (vault / ACTION).read_text(encoding="utf-8")
+    assert "date_previous: 2026-10-01" in text
+    assert "date_revised: 2026-11-01" in text
+    assert "date_reason: Vendor slipped" in text
+
+
+def test_waiting_on_requires_the_dependency_fields(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(write_note, vault)
+    with pytest.raises(WaitingError) as excinfo:
+        apply_lifecycle_transition(
+            vault,
+            tmp_path / "var",
+            project_id="eleos",
+            record_id=ACTION,
+            kind="waiting_on",
+            action="resolve",
+            actor="Myles",
+            reason="Resolved",
+            today=TODAY,
+            evidence={"lane": "vendor", "owner": "Myles", "project": "Project - Eleos"},
+        )
+    assert excinfo.value.code == "missing_dependency"

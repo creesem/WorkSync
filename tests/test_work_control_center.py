@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import ast
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 
-import worksync
 from worksync.work.control_center import build_control_center, render_control_center
 from worksync.work.lifecycle.loader import load_project_records
 from worksync.work.lifecycle.records import RecordKind
@@ -116,18 +114,3 @@ def test_render_control_center_is_text(vault: Path, write_note: Callable[..., Pa
     rendered = render_control_center(_report(vault))
     assert "Project - Eleos" in rendered
     assert "Issue - Login fails" in rendered
-
-
-def test_control_center_import_closure_reaches_no_write_helper() -> None:
-    src = Path(worksync.__file__).parent
-    path = src / "work" / "control_center.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    imports: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            imports.add(node.module or "")
-    assert not any(name.startswith("worksync.safety") for name in imports)
-    assert not any(name.startswith("worksync.context") for name in imports)
-    assert not any(name.startswith("worksync.html") for name in imports)

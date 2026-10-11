@@ -162,6 +162,25 @@ def test_unknown_record_aborts_with_no_writes(vault: Path, write_note: Callable[
     assert LifecycleStore(runtime, "eleos").load() is None
 
 
+def test_invalid_waiting_status_aborts_with_no_writes(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path
+) -> None:
+    _seed(write_note, vault)
+    write_note(
+        vault,
+        f"{LEGACY_DIR}/delivery-registry.json",
+        json.dumps({"version": 1, "waiting": {WAITING_ACTION: {"lane": "vendor", "status": "snoozing"}}}),
+    )
+    runtime = tmp_path / "var"
+
+    with pytest.raises(LegacyMigrationError) as excinfo:
+        migrate_legacy(
+            vault, runtime, "eleos", legacy_dir=vault / LEGACY_DIR, reviewer="Myles", reason="x", today=TODAY
+        )
+    assert excinfo.value.code == "unmappable_state"
+    assert LifecycleStore(runtime, "eleos").load() is None
+
+
 def test_second_run_is_a_no_op(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
     _seed(write_note, vault)
     _legacy_registries(write_note, vault)

@@ -46,7 +46,7 @@ from worksync.work.clarification import ClarificationError
 from worksync.work.clarification import apply as run_clarification_apply
 from worksync.work.clarification import dismiss as run_clarification_dismiss
 from worksync.work.clarification import scan as run_clarification_scan
-from worksync.work.control_center import build_control_center, render_control_center
+from worksync.work.control_center import render_control_center
 from worksync.work.duplicates import DuplicatesError
 from worksync.work.duplicates import apply as run_duplicates_apply
 from worksync.work.duplicates import dismiss as run_duplicates_dismiss
@@ -55,10 +55,8 @@ from worksync.work.identity import IdentityError
 from worksync.work.identity import dismiss as run_identity_dismiss
 from worksync.work.identity import load_manifest as load_identity_manifest
 from worksync.work.identity import scan as run_identity_scan
-from worksync.work.lifecycle.loader import load_project_records
 from worksync.work.lifecycle.machine import TransitionError
 from worksync.work.lifecycle.records import RegistryError
-from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
 from worksync.work.lifecycle.transitions import apply_lifecycle_transition
 from worksync.work.merge import apply_merge as run_identity_apply
 from worksync.work.relationships import related_to
@@ -160,13 +158,14 @@ def build_parser() -> argparse.ArgumentParser:
     lifecycle = entity_subparsers["project"].add_parser("lifecycle", help="Apply a project lifecycle transition.")
     lifecycle.add_argument("--project-id", dest="project_id", required=True)
     lifecycle.add_argument("--record", required=True, help="Vault-relative record path.")
-    lifecycle.add_argument("--kind", required=True, choices=("issue", "delivery", "date_gap", "waiting_on", "decision"))
+    lifecycle.add_argument("--kind", required=True, choices=("issue", "delivery", "date_gap", "waiting_on"))
     lifecycle.add_argument("--action", required=True)
     lifecycle.add_argument("--reason", required=True, help="Human-readable reason for the transition.")
     lifecycle.add_argument("--actor", default=None, help="Override the remembered reviewer.")
     lifecycle.add_argument("--field", action="append", default=[], help="Canonical field edit key=value (repeatable).")
     lifecycle.add_argument("--evidence", action="append", default=[], help="Evidence key=value (repeatable).")
     lifecycle.add_argument("--sha", default=None, help="Expected record SHA (stale-safe precondition).")
+    lifecycle.add_argument("--confirm", action="store_true", help="Confirm a destructive transition.")
     lifecycle.add_argument("--today", default=None, help="Reference date YYYY-MM-DD (default: today).")
     lifecycle.add_argument("--dry-run", action="store_true", help="Show the change without writing.")
     lifecycle.add_argument("--json", action="store_true", help="Emit JSON.")
@@ -1788,6 +1787,7 @@ def _project_lifecycle(args: argparse.Namespace) -> int:
             evidence=_key_value_pairs(args.evidence),
             fields=_key_value_pairs(args.field),
             dry_run=args.dry_run,
+            confirmed=args.confirm,
         )
         if result.committed:
             _rebuild_derived(vault, runtime)
@@ -1823,18 +1823,10 @@ def _project_lifecycle(args: argparse.Namespace) -> int:
 def _project_control(args: argparse.Namespace) -> int:
     try:
         vault, runtime = _vault_runtime_paths(args)
-        index = WorkIndex.from_vault(vault)
-        project = next(
-            (entity for entity in index.list_type("project") if getattr(entity, "project_id", None) == args.project_id),
-            None,
-        )
-        if project is None:
+        report = service.control_center(vault, runtime, args.project_id, _resolve_today(args.today))
+        if report is None:
             print(f"worksync: project not found: {args.project_id}", file=sys.stderr)
             return 1
-        store = read_registry(runtime, args.project_id)
-        registry = store or LifecycleRegistry(project_id=args.project_id)
-        records = load_project_records(index, registry)
-        report = build_control_center(index, project, records, today=_resolve_today(args.today))
     except (RegistryError, ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
         print(f"worksync: {exc}", file=sys.stderr)
         return 2

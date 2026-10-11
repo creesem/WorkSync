@@ -4,8 +4,10 @@ A transition is a single ``safety.commit`` transaction: the canonical record upd
 the derived registry append travel in the same ``ChangeSet``, so a metadata failure
 restores the record and leaves the transition pending. The record update is SHA
 preconditioned, backed up, and rolled back in reverse order by the gateway; the registry
-lives only in the runtime zone. Quick completion and due-date changes remain canonical
-task mutations (see :mod:`worksync.work.writer` and :mod:`worksync.work.lifecycle.date_gaps`).
+lives only in the runtime zone. Destructive transitions (reject/defer/reopen, accept,
+accepted exception) require explicit confirmation. Quick completion and due-date changes
+remain canonical task mutations (see :mod:`worksync.work.writer` and
+:mod:`worksync.work.lifecycle.date_gaps`).
 """
 
 from __future__ import annotations
@@ -17,13 +19,13 @@ from pathlib import Path
 from worksync.core.paths import PathSafetyError, ensure_under
 from worksync.inventory.parse import edit_frontmatter_fields, parse_note
 from worksync.safety.gateway import commit
-from worksync.safety.models import ChangeSet, CommitResult, FileOp
+from worksync.safety.models import ChangeSet, CommitResult, FileOp, MutationError
 from worksync.safety.zones import write_zones
 from worksync.work.lifecycle import date_gaps, delivery, issue
-from worksync.work.lifecycle.machine import TransitionError, resolve
+from worksync.work.lifecycle.machine import TransitionError, resolve, state_key
 from worksync.work.lifecycle.records import RegistryError, is_record_kind
 from worksync.work.lifecycle.registry import LifecycleEntry, LifecycleRegistry, LifecycleStore, Transition, now
-from worksync.work.lifecycle.waiting import WaitingError
+from worksync.work.lifecycle.waiting import WaitingError, WaitingRecord, validate_waiting
 from worksync.work.schema import detect_type
 
 DEFAULT_STATE: dict[str, str] = {
@@ -51,6 +53,7 @@ class TransitionResult:
     to_state: str
     journal: Path | None
     changes: tuple[dict, ...]
+    destructive: bool = False
     dry_run: bool = False
     planned: str | None = None
 
@@ -75,6 +78,10 @@ def apply_lifecycle_transition(
     """Validate and commit one lifecycle transition (canonical record + registry) atomically."""
     if not is_record_kind(kind):
         raise RegistryError("unknown_record_kind", f"Unknown lifecycle record kind: {kind!r}")
+    if kind not in DEFAULT_STATE:
+        raise RegistryError(
+            "unsupported_transition_kind", f"Record kind does not support transitions: {kind!r}", affected=(kind,)
+        )
     if not str(actor or "").strip():
         raise TransitionError("missing_actor", "A transition requires a named actor.")
     if not str(reason or "").strip():
@@ -89,7 +96,15 @@ def apply_lifecycle_transition(
 
     entry = registry.entry(record_id)
     from_state = entry.lifecycle_state if entry is not None else DEFAULT_STATE[kind]
-    to_state = _next_state(kind, from_state, action, actor=actor, reason=reason, evidence=evidence)
+    to_state, destructive = _next_state(
+        kind, from_state, action, actor=actor, reason=reason, evidence=evidence, fields=fields
+    )
+    if destructive and not confirmed:
+        raise MutationError(
+            "needs_confirmation",
+            f"Transition '{action}' is destructive and requires explicit confirmation.",
+            affected=(record_id,),
+        )
 
     target = _resolve_record(vault_root, record_id)
     record = parse_note(target, vault_root)
@@ -101,9 +116,9 @@ def apply_lifecycle_transition(
     if target_sha is not None and target_sha != record.content_hash:
         raise RegistryError("stale_hash", f"Record changed since it was read: {record_id}", affected=(record_id,))
 
-    content = edit_frontmatter_fields(
-        record.content, set_fields=_canonical_edits(record.frontmatter, fields, today, actor, reason)
-    )
+    edits = _canonical_edits(record.frontmatter, fields, today, actor, reason)
+    edits.update(_evidence_edits(kind, action, evidence, reason))
+    content = edit_frontmatter_fields(record.content, set_fields=edits)
     updated_entry = _append_transition(entry, kind, record_id, from_state, to_state, actor, reason, evidence)
     new_registry = registry.with_records(_replace_entry(registry.records, updated_entry))
 
@@ -117,6 +132,7 @@ def apply_lifecycle_transition(
             to_state=to_state,
             journal=None,
             changes=(),
+            destructive=destructive,
             dry_run=True,
             planned=content,
         )
@@ -136,14 +152,18 @@ def apply_lifecycle_transition(
         to_state=to_state,
         journal=result.journal,
         changes=result.changes,
+        destructive=destructive,
     )
 
 
-def _next_state(kind: str, state: str, action: str, *, actor: str, reason: str, evidence: dict) -> str:
+def _next_state(
+    kind: str, state: str, action: str, *, actor: str, reason: str, evidence: dict, fields: dict | None
+) -> tuple[str, bool]:
     if kind == "issue":
-        return issue.apply_transition(state, action, actor=actor, reason=reason)
+        transition = issue.validate_transition(state, action, actor=actor, reason=reason)
+        return transition.to_state, transition.destructive
     if kind == "delivery":
-        return delivery.apply_transition(
+        transition = delivery.validate_transition(
             state,
             action,
             actor=actor,
@@ -153,8 +173,9 @@ def _next_state(kind: str, state: str, action: str, *, actor: str, reason: str, 
             accepter=str(evidence.get("accepter") or ""),
             rationale=str(evidence.get("rationale") or ""),
         )
+        return transition.to_state, transition.destructive
     if kind == "date_gap":
-        return date_gaps.apply_transition(
+        transition = date_gaps.validate_transition(
             state,
             action,
             actor=actor,
@@ -163,9 +184,48 @@ def _next_state(kind: str, state: str, action: str, *, actor: str, reason: str, 
             revised=str(evidence.get("revised") or ""),
             source=str(evidence.get("source") or ""),
         )
-    return resolve(
+        return transition.to_state, transition.destructive
+    if state_key(state) == "open":
+        validate_waiting(_waiting_record(evidence, fields))
+    transition = resolve(
         WAITING_STATES, WAITING_TRANSITIONS, (), state, action, actor=actor, reason=reason, error=WaitingError
-    ).to_state
+    )
+    return transition.to_state, transition.destructive
+
+
+def _waiting_record(evidence: dict, fields: dict | None) -> WaitingRecord:
+    supplied = dict(fields or {})
+
+    def value(evidence_key: str, field_key: str) -> str:
+        return str(evidence.get(evidence_key) or supplied.get(field_key) or "")
+
+    return WaitingRecord(
+        lane=value("lane", "waiting_on_lane"),
+        owner=value("owner", "waiting_on_owner"),
+        project=value("project", "project"),
+        dependency=value("dependency", "waiting_on_dependency"),
+        next_review=value("next_review", "waiting_on_review"),
+    )
+
+
+def _evidence_edits(kind: str, action: str, evidence: dict, reason: str) -> dict[str, str | None]:
+    if kind == "date_gap" and state_key(action) == "revise":
+        return {
+            "date_class": "confirmed",
+            "date_previous": str(evidence.get("previous") or ""),
+            "date_revised": str(evidence.get("revised") or ""),
+            "date_reason": str(reason).strip(),
+            "date_source": str(evidence.get("source") or ""),
+        }
+    if kind == "waiting_on":
+        record = _waiting_record(evidence, None)
+        return {
+            "waiting_on_lane": record.lane,
+            "waiting_on_owner": record.owner,
+            "waiting_on_dependency": record.dependency,
+            "waiting_on_review": record.next_review,
+        }
+    return {}
 
 
 def _resolve_record(vault_root: Path, record_id: str) -> Path:
