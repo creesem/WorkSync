@@ -9,9 +9,9 @@ owner, and a valid next review date.
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Six lanes as a first-class taxonomy; no source-type auto-assignment.
-- [ ] An open waiting-on item missing project/owner/dependency/next-review fails closed.
-- [ ] Tests: each lane, the required-fields gate, resolution, and that a source-type
+- [x] Six lanes as a first-class taxonomy; no source-type auto-assignment.
+- [x] An open waiting-on item missing project/owner/dependency/next-review fails closed.
+- [x] Tests: each lane, the required-fields gate, resolution, and that a source-type
       suggestion can be overridden.

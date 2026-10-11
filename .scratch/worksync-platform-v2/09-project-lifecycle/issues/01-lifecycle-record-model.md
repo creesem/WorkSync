@@ -9,12 +9,12 @@ registry.
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Record mapping implemented per the locked decisions (ADR-0019).
-- [ ] Record mapping implemented and documented; a temp-vault fixture loads records.
-- [ ] Derived registry shape defined (`version`, `updated_at`, per-record
+- [x] Record mapping implemented per the locked decisions (ADR-0019).
+- [x] Record mapping implemented and documented; a temp-vault fixture loads records.
+- [x] Derived registry shape defined (`version`, `updated_at`, per-record
       `lifecycle_state`, `transitions[]`, provenance), written only to the runtime zone.
-- [ ] Loader joins canonical records + registry deterministically; missing/unknown
+- [x] Loader joins canonical records + registry deterministically; missing/unknown
       registry fails closed.
-- [ ] Tests: mapping, registry load/save (stale-safe), fail-closed on unknown record.
+- [x] Tests: mapping, registry load/save (stale-safe), fail-closed on unknown record.

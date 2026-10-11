@@ -8,11 +8,11 @@ testing evidence, and communications. It coordinates; it never writes.
 
 **Blocked by:** 02, 03, 04, 05.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Aggregation contract (sections: summary, issues, testing/reports, dates,
+- [x] Aggregation contract (sections: summary, issues, testing/reports, dates,
       decisions, communications, waiting-on, update candidates, health, timeline).
-- [ ] Leads with unresolved outcomes + next decision.
-- [ ] Read-only proven (no write helper reachable).
-- [ ] Tests: aggregation against a temp vault with known records; never writes;
+- [x] Leads with unresolved outcomes + next decision.
+- [x] Read-only proven (no write helper reachable).
+- [x] Tests: aggregation against a temp vault with known records; never writes;
       deterministic ordering.

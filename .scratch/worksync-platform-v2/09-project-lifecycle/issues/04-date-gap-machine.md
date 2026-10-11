@@ -9,11 +9,11 @@ Canonical due-date edits go through the task mutation workflow, not a direct wri
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Explicit date classification replacing the legacy three-bucket + substring model.
-- [ ] Undated-work record: what needs scheduling, who must provide the date,
+- [x] Explicit date classification replacing the legacy three-bucket + substring model.
+- [x] Undated-work record: what needs scheduling, who must provide the date,
       dependency/risk, when requested, follow-up status.
-- [ ] Missed-date preserve-and-add enforced; ISO validation of every date.
-- [ ] Tests: each class, the missed-date rule, undated-work record, invalid date fails
+- [x] Missed-date preserve-and-add enforced; ISO validation of every date.
+- [x] Tests: each class, the missed-date rule, undated-work record, invalid date fails
       closed, canonical due-date edit goes through the SHA/backup/rollback workflow.

@@ -12,12 +12,12 @@ is asked rather than silently choosing.
 
 **Blocked by:** 01, 06.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Candidate discovery from content-only routing evidence.
-- [ ] Reviewer edit of target record/field/value validated against current records;
+- [x] Candidate discovery from content-only routing evidence.
+- [x] Reviewer edit of target record/field/value validated against current records;
       invented/stale targets rejected before any write.
-- [ ] Stale-safe manifest, merge-on-rescan, dismissal with reviewer + reason; a
+- [x] Stale-safe manifest, merge-on-rescan, dismissal with reviewer + reason; a
       full rescan retires undiscovered proposals.
-- [ ] Tests: mapping accepted/edited/rejected, stale target fails closed, basis change
+- [x] Tests: mapping accepted/edited/rejected, stale target fails closed, basis change
       voids a decision, batch commits or rolls back.

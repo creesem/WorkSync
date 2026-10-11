@@ -9,10 +9,10 @@ rollback).
 
 **Blocked by:** 02, 03, 04, 05.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One transition = one `ChangeSet` (canonical record op + derived registry op);
+- [x] One transition = one `ChangeSet` (canonical record op + derived registry op);
       metadata failure restores the record and leaves the transition pending.
-- [ ] CLI mirrors each transition; `equivalent_cli` returned by the GUI action.
-- [ ] Tests: destination content, backup, rollback on mid-transaction failure, stale
+- [x] CLI mirrors each transition; `equivalent_cli` returned by the GUI action.
+- [x] Tests: destination content, backup, rollback on mid-transaction failure, stale
       SHA fails closed, GUI/CLI parity.

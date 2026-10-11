@@ -8,11 +8,11 @@ rationale; `fix_reported` cannot jump to `accepted` (retest is required).
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Explicit state/transition map; no substring matching.
-- [ ] Acceptance gate enforced (tester result + acceptance, or accepted exception with
+- [x] Explicit state/transition map; no substring matching.
+- [x] Acceptance gate enforced (tester result + acceptance, or accepted exception with
       rationale); a builder's/fixer's "done" never satisfies it.
-- [ ] Missing actor/reason/evidence fails closed.
-- [ ] Table-driven tests: every legal/illegal transition, the acceptance gate, the
+- [x] Missing actor/reason/evidence fails closed.
+- [x] Table-driven tests: every legal/illegal transition, the acceptance gate, the
       accepted-exception gate, the no-jump-to-accepted rule.

@@ -7,11 +7,11 @@ terms; `docs/architecture.md` lifecycle pipeline section.
 
 **Blocked by:** 06, 07, 08, 09.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Import-closure / read-only boundary tests pass.
-- [ ] ADR(s) recording record home, registry derivation, and the transition/write
+- [x] Import-closure / read-only boundary tests pass.
+- [x] ADR(s) recording record home, registry derivation, and the transition/write
       contract.
-- [ ] `CONTEXT.md` gains Reported issue, Confirmed defect, Delivery state, Accepted
+- [x] `CONTEXT.md` gains Reported issue, Confirmed defect, Delivery state, Accepted
       exception, Date gap, Waiting-on, Update-review lane, Walkthrough.
-- [ ] `docs/architecture.md` documents the lifecycle pipeline; spec marked implemented.
+- [x] `docs/architecture.md` documents the lifecycle pipeline; spec marked implemented.

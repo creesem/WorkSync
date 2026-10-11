@@ -8,9 +8,9 @@ mutation journal. Any unmappable record aborts the run with no writes. Idempoten
 
 **Blocked by:** 01, 02, 03, 04, 05.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Legacy state → explicit state mapping table; unmappable record fails closed.
-- [ ] Transactional (gateway), backed up, reverse-order rollback; idempotent.
-- [ ] Tests: each legacy state maps; unknown state aborts with no writes; a second run
+- [x] Legacy state → explicit state mapping table; unmappable record fails closed.
+- [x] Transactional (gateway), backed up, reverse-order rollback; idempotent.
+- [x] Tests: each legacy state maps; unknown state aborts with no writes; a second run
       is a no-op; mid-run failure restores.

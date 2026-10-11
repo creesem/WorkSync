@@ -8,10 +8,10 @@ overwriting an existing packet requires confirmation. No hardcoded "Not recorded
 
 **Blocked by:** 06.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Deterministic render for a fixed `(vault, today)`; byte-stable across runs.
-- [ ] Written to the agreed zone (generated vs runtime views) with containment; no
+- [x] Deterministic render for a fixed `(vault, today)`; byte-stable across runs.
+- [x] Written to the agreed zone (generated vs runtime views) with containment; no
       fixed vault path overwrite without confirmation.
-- [ ] Tests: determinism, containment, overwrite requires confirmation, empty vault
+- [x] Tests: determinism, containment, overwrite requires confirmation, empty vault
       tolerated.
