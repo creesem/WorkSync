@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WorkSync | Command Center + Hybrid AI — Reconciled Handoff v2</title>
+<style>
+:root{--bg:#0a111f;--surface:#101b2e;--panel:#142238;--line:#293852;--text:#edf3fc;--muted:#9eafc8;--accent:#79b9ff;--soft:#192f4b;--success:#69d9b2;--warning:#ecca8a;--danger:#f3a1a1;--shadow:0 12px 40px #0004}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 Inter,Segoe UI,Arial,sans-serif}
+a{color:var(--accent)}code{font-family:ui-monospace,Consolas,monospace;font-size:.9em;background:#0d182a;border:1px solid var(--line);border-radius:4px;padding:.05em .35em}
+.sidebar{position:fixed;inset:0 auto 0 0;width:290px;background:#0d182a;border-right:1px solid var(--line);padding:26px 16px;overflow-y:auto;z-index:4}
+.logo{font-size:21px;font-weight:800;letter-spacing:-.8px}.logo em{color:var(--accent);font-style:normal}
+.aside-sub{font-size:12px;color:var(--muted);margin:4px 0 20px}
+.sidebar nav a{display:flex;gap:12px;color:#b6c7de;text-decoration:none;padding:8px 10px;border-radius:8px;font-size:12.5px;line-height:1.3;margin-bottom:3px}
+.sidebar nav a span{color:#6783a6;font-variant-numeric:tabular-nums}.sidebar nav a:hover,.sidebar nav a.active{color:#fff;background:#1b3150}
+.main{margin-left:290px;max-width:1280px;padding:34px clamp(24px,4vw,72px) 110px}
+.top{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-bottom:26px}
+.muted{color:var(--muted)}.pill{font-size:11px;text-transform:uppercase;letter-spacing:.1em;background:#153d36;color:#9af4d5;border:1px solid #256e59;padding:5px 10px;border-radius:30px;font-weight:700}
+.hero{padding:34px;border:1px solid #34506b;border-radius:18px;background:linear-gradient(125deg,#152d4b,#101b2e 70%);box-shadow:var(--shadow)}
+.section-eyebrow{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:700}
+h1{font-size:clamp(28px,3.4vw,42px);line-height:1.12;letter-spacing:-1.3px;margin:14px 0}
+h2{font-size:22px;line-height:1.25;letter-spacing:-.4px;margin:0 0 18px}
+h3{font-size:16px;margin:22px 0 8px}
+.lead{font-size:17px;color:#c5d7ed;max-width:820px}
+.meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.meta span{font-size:12px;border:1px solid #3f5470;background:#182e49;padding:6px 10px;border-radius:7px}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0 8px}
+.btn{background:#16273f;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px 14px;font-weight:600;font-size:13px}
+.btn:hover{background:#1b3150}.btn.primary{background:#1d4ed8;border-color:#3b6ef0}
+.searchbox{flex:1;min-width:220px;background:#0d182a;border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--text)}
+.doc-section{padding:26px 0;border-top:1px solid var(--line);margin-top:22px}
+.doc-section.hide{display:none}
+table.matrix{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:8px}
+table.matrix th{text-align:left;background:#0d182a;color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:9px 10px;border-bottom:1px solid var(--line)}
+table.matrix td{padding:9px 10px;border-bottom:1px solid #1e2c43;vertical-align:top}
+.tag{font-size:11px;font-weight:700;border-radius:5px;padding:.12em .5em;white-space:nowrap}
+.tag-I{background:#153d36;color:#9af4d5}.tag-P{background:#3a3320;color:#ecca8a}.tag-N{background:#3a2020;color:#f3a1a1}
+.starter{white-space:pre-wrap;word-break:break-word;background:#0d182a;border:1px solid var(--line);border-radius:12px;padding:16px;font:13px/1.6 ui-monospace,Consolas,monospace;color:#cfe0f5}
+.checklist{display:grid;gap:8px}
+.checkitem{display:flex;gap:10px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:14px}
+.checkitem input{margin-top:3px}
+.progress{height:8px;background:#0d182a;border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.progress>div{height:100%;width:0;background:linear-gradient(90deg,#1d4ed8,#69d9b2)}
+details{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-top:14px}
+summary{cursor:pointer;font-weight:600}
+ul.tight li{margin:4px 0}
+.footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);margin-top:34px;padding-top:16px}
+.mobile-menu{display:none}
+@media(max-width:960px){.sidebar{transform:translateX(-100%);transition:.2s}.sidebar.open{transform:none}.main{margin-left:0}.mobile-menu{display:inline-block}}
+@media print{.sidebar,.toolbar,.mobile-menu{display:none}.main{margin:0;max-width:none}body{background:#fff;color:#111}.hero,.doc-section,.starter,.checkitem{background:#fff;border-color:#ccc;box-shadow:none}}
+</style></head><body>
+
+<aside id="sidebar" class="sidebar">
+  <div class="logo">Work<em>Sync</em></div>
+  <div class="aside-sub">Reconciled handoff v2 · 11 Oct 2026</div>
+  <nav>
+    <a href="#prompt"><span>00</span> Orchestrator prompt</a>
+    <a href="#reconcile"><span>01</span> Reconciliation</a>
+    <a href="#baseline"><span>02</span> Baseline facts</a>
+    <a href="#matrix"><span>03</span> Feature matrix</a>
+    <a href="#locked"><span>04</span> Locked decisions</a>
+    <a href="#open"><span>05</span> Open decisions</a>
+    <a href="#arch"><span>06</span> Architecture</a>
+    <a href="#ai"><span>07</span> AI contract</a>
+    <a href="#packages"><span>08</span> Work packages</a>
+    <a href="#accept"><span>09</span> Acceptance</a>
+    <a href="#delivery"><span>10</span> Delivery protocol</a>
+    <a href="#tana"><span>11</span> Tana patterns</a>
+    <a href="#proto"><span>12</span> UI prototype</a>
+    <a href="#questions"><span>13</span> Open questions</a>
+    <a href="#provenance"><span>14</span> Provenance</a>
+  </nav>
+</aside>
+
+<main class="main">
+  <div class="top">
+    <button class="btn mobile-menu" onclick="document.getElementById('sidebar').classList.toggle('open')">☰ Contents</button>
+    <span class="pill">Reconciled · Audit first · Cloud off by default</span>
+    <span class="muted" style="font-size:12px">Supersedes v1 handoff</span>
+  </div>
+
+  <header class="hero">
+    <div class="section-eyebrow">WorkSync / Agent Orchestration</div>
+    <h1>Command Center<br>+ Hybrid AI Prioritization</h1>
+    <p class="lead">Reconciled coding-agent handoff (v2). The v1 direction is preserved, but every assumption is corrected against the real repository and a completed source-cited audit. Deterministic-first; cloud optional and gated; Obsidian Markdown stays authoritative.</p>
+    <div class="meta">
+      <span>Repo: C:\GitProjects\WorkSync</span>
+      <span>main @ 63b20aa · clean</span>
+      <span>Tracker: .scratch/worksync-platform-v2/</span>
+      <span>Single orchestrator</span>
+      <span>Cloud off by default</span>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <input id="search" class="searchbox" type="search" placeholder="Search sections…" aria-label="Search">
+    <button class="btn" onclick="window.print()">Print / PDF</button>
+    <button class="btn primary" onclick="copyBrief()">Copy agent starter</button>
+  </div>
+
+  <section class="doc-section" id="prompt">
+    <div class="section-eyebrow">Section 00 · Start here</div>
+    <h2>Orchestrator kickoff prompt</h2>
+    <p>Give the coding agent on the target workstation this HTML (or the Markdown twin) and the prompt below.</p>
+    <div class="starter" id="starter"></div>
+    <p class="muted" style="font-size:12.5px">The document below is the full reconciled handoff — not just this opening instruction.</p>
+  </section>
+
+  <section class="doc-section" id="reconcile">
+    <div class="section-eyebrow">Section 01</div>
+    <h2>Reconciliation — v1 handoff vs. repository reality</h2>
+    <table class="matrix">
+      <thead><tr><th>v1 assumed</th><th>Repository reality</th><th>Resolution</th></tr></thead>
+      <tbody>
+        <tr><td>"Verify <code>map.md</code> canonical tracker"</td><td><code>map.md</code> is the resolved rework map (decisions only); tracker is <code>.scratch/worksync-platform-v2/</code> + <code>NEXT-SESSION.md</code>.</td><td>Use the v2 tracker; start from <code>NEXT-SESSION.md</code>.</td></tr>
+        <tr><td>Person / Project / <b>Task</b> / Meeting model</td><td><code>task</code> retired (ADR-0002). Entities: project / person / ticket / meeting / action.</td><td>Five-entity model everywhere.</td></tr>
+        <tr><td>Person Identity &amp; Merge in progress / competing</td><td><b>Delivered to main</b> (WP-01–06). Caveats: Krisp speaker staging + verified bindings not built; no alias merge; no merge-preview UI.</td><td>Coordinate, don't rebuild; remaining half = package <code>ID-01</code>.</td></tr>
+        <tr><td>Krisp pipeline implied net new</td><td><b>Built</b>: pull → propose → promote; idempotent ledger; sidecars; sync_mode. No reconciliation; no durable transcript link.</td><td>Extend (<code>KR-01</code>).</td></tr>
+        <tr><td>Local model, no cloud stance</td><td>ADR-0011: local, suggestion-only, ingest enrichment; "LLM auto-writes" out of scope.</td><td>Cloud is a new gated increment (<code>HY-02/03/04</code>); MVP deterministic-first.</td></tr>
+        <tr><td>Command Center implied net new</td><td><b>Partial</b>: generated views, workday plan, per-project control center, GUI nav, generated HTML.</td><td>Extend (<code>CC-01</code>/<code>CC-02</code>).</td></tr>
+        <tr><td>Review center / overrides</td><td><code>work.queue</code> exists (propose-only). No override concept.</td><td>Extend reads; new derived records for layout/override/recommendation.</td></tr>
+        <tr><td>Verify HEAD/worktrees</td><td><code>main @ 63b20aa</code>, clean, single worktree; Krisp branch already merged.</td><td>Re-verify at CC/HY-00; no collisions today.</td></tr>
+        <tr><td>$10/month ceiling</td><td>No billing/cost infrastructure.</td><td>Budget meter is net new; ceiling provisional + configurable.</td></tr>
+        <tr><td>Delivery = its own package IDs</td><td>Repo has its own flow + tracker.</td><td>Adopt repo flow; v2 IDs = scope map, tickets = work unit.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="doc-section" id="baseline">
+    <div class="section-eyebrow">Section 02</div>
+    <h2>Baseline facts (verified 2026-10-11)</h2>
+    <ul class="tight">
+      <li><b>Repo:</b> <code>C:\GitProjects\WorkSync</code>, package <code>src/worksync</code>, Python ≥3.11 (dev 3.13).</li>
+      <li><b>Git:</b> <code>main @ 63b20aa</code>, clean; branches <code>fix/krisp-meeting-note-sync-mode</code> (merged), <code>prototype/html-links</code>; one worktree.</li>
+      <li><b>Shipped:</b> V1 read platform; V2 0.1 write path + ingest; release/cutover complete.</li>
+      <li><b>Tracker:</b> <code>.scratch/worksync-platform-v2/</code>; <code>map.md</code> resolved.</li>
+      <li><b>Entities:</b> project / person / ticket / meeting / action.</li>
+      <li><b>Seams (reuse, never duplicate):</b> scanner <code>inventory.parse</code>; write <code>safety.commit</code>/<code>safety.derived</code> (journal + backups + reverse-order rollback); review <code>work.queue</code>; read <code>context</code>; surfaces <code>cli</code>/<code>gui</code>/<code>html</code>/<code>mcp</code>.</li>
+      <li><b>Key ADRs:</b> 0002, 0003, 0006, 0007, 0011, 0017, 0018, 0019/0020/0021, 0022.</li>
+      <li><b>Local model:</b> <code>core/model.py</code>, suggestion-only (≤0.5), ingest enrichment.</li>
+      <li><b>Person Identity:</b> <code>work/identity.py</code>, <code>work/merge.py</code>, <code>work/redirects.py</code>, <code>migrate/person_ids.py</code>; no Krisp speaker staging.</li>
+      <li><b>Krisp:</b> <code>ingest/krisp/*</code>; <code>## Actions</code> only; <code>## Decisions</code>/<code>## Risks</code> empty.</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="matrix">
+    <div class="section-eyebrow">Section 03</div>
+    <h2>Feature matrix (F01–F18) → packages</h2>
+    <table class="matrix">
+      <thead><tr><th>#</th><th>Feature</th><th>Status</th><th>Package(s)</th></tr></thead>
+      <tbody>
+        <tr><td>F01</td><td>Typed entities &amp; canonical IDs</td><td><span class="tag tag-P">Partial</span></td><td>substrate</td></tr>
+        <tr><td>F02</td><td>Person identity / staging / merge</td><td><span class="tag tag-P">Partial</span></td><td>ID-01</td></tr>
+        <tr><td>F03</td><td>Transactional updates &amp; recovery</td><td><span class="tag tag-I">Implemented</span></td><td>reuse</td></tr>
+        <tr><td>F04</td><td>Relationship index &amp; provenance</td><td><span class="tag tag-P">Partial</span></td><td>CC-01</td></tr>
+        <tr><td>F05</td><td>Command Center</td><td><span class="tag tag-P">Partial</span></td><td>CC-01…CC-05</td></tr>
+        <tr><td>F06</td><td>Contextual Person/Project pages</td><td><span class="tag tag-I">Implemented</span></td><td>reuse</td></tr>
+        <tr><td>F07</td><td>Global search &amp; saved views</td><td><span class="tag tag-P">Partial</span></td><td>CC-01</td></tr>
+        <tr><td>F08</td><td>Krisp ingestion &amp; reconciliation</td><td><span class="tag tag-P">Partial</span></td><td>KR-01</td></tr>
+        <tr><td>F09</td><td>Meeting-to-work extraction</td><td><span class="tag tag-P">Partial</span></td><td>KR-01, CC-05</td></tr>
+        <tr><td>F10</td><td>Exception-only review center</td><td><span class="tag tag-P">Partial</span></td><td>CC-05</td></tr>
+        <tr><td>F11</td><td>Work/project management views</td><td><span class="tag tag-I">Implemented</span></td><td>reuse, CC-05</td></tr>
+        <tr><td>F12</td><td>Automation execution monitor</td><td><span class="tag tag-P">Partial</span></td><td>CC-05, HY-04</td></tr>
+        <tr><td>F13</td><td>Person/meeting/project history</td><td><span class="tag tag-P">Partial</span></td><td>KR-01</td></tr>
+        <tr><td>F14</td><td>Reusable commands/rules</td><td><span class="tag tag-P">Partial</span></td><td>deferred</td></tr>
+        <tr><td>F15</td><td>Configurable entity types/views</td><td><span class="tag tag-N">Net new</span></td><td>defer (ADR-0002/0019)</td></tr>
+        <tr><td>F16</td><td>Conversational assistant</td><td><span class="tag tag-N">Net new</span></td><td>defer (ADR-0011)</td></tr>
+        <tr><td>F17</td><td>Proactive intelligence</td><td><span class="tag tag-P">Partial</span></td><td>HY-01, HY-03</td></tr>
+        <tr><td>F18</td><td>Additional integrations</td><td><span class="tag tag-P">Partial</span></td><td>defer beyond Krisp</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="doc-section" id="locked">
+    <div class="section-eyebrow">Section 04</div>
+    <h2>Locked decisions (corrected)</h2>
+    <ol class="tight">
+      <li>Default landing = <b>Command Center</b>, persistent sidebar preferred, contextual details, global search.</li>
+      <li>Customization = <b>predefined configurable sections</b> (show/hide, reorder, filters) — not a dashboard builder.</li>
+      <li>Sections: Needs Attention; My Priorities; Since Last Check; Meeting Follow-ups; Team Pulse; Review &amp; Automation. <b>MVP = first three.</b></li>
+      <li>Prioritization = AI-assisted, explainable, deterministic constraints + manual overrides; official P1/P2/P3 separate from suggested attention.</li>
+      <li>Hybrid: local deterministic always; <b>cloud optional, off by default, policy-gated</b> (new ADR, not an extension of ADR-0011).</li>
+      <li><b>No direct AI write access</b>; validated before display; official fields unchanged by AI.</li>
+      <li>Overrides: Pin, Focus Today, Defer, Not Relevant, Always Prioritize; basis recorded; urgent new evidence = explicit conflict.</li>
+      <li>Privacy: classification gate <b>before</b> cloud; minimum fields; PHI/credentials/unapproved transcripts blocked by default.</li>
+      <li>Cost: configurable budget; provisional ~$10/month ceiling; batching, cache, accounting, stop at cap.</li>
+      <li>Identity: runtime-staged candidates; verified bindings auto-resolve; established merges need approval; name-only never verifies. (Merge half already delivered; staging/binding = ID-01.)</li>
+      <li>Repo = <code>C:\GitProjects\WorkSync</code>; verify tracker/HEAD/worktree first. (Tracker = v2, not map.md.)</li>
+      <li>Durable journal + startup recovery in scope; extend existing infra; no competing writer.</li>
+    </ol>
+  </section>
+
+  <section class="doc-section" id="open">
+    <div class="section-eyebrow">Section 05</div>
+    <h2>Open decisions (need a human)</h2>
+    <ol class="tight">
+      <li><b>Cloud AI in MVP or deferred?</b> Recommend deferred (deterministic first; cloud a gated increment).</li>
+      <li><b>Command Center surface:</b> interactive GUI (sidebar + content + detail), generated HTML read-only — confirm.</li>
+      <li><b>Layout variant</b> for CC-02: prototype A (sidebar+detail), B (tabs/ledger), C (console). Recommend A.</li>
+      <li><b>Tracker adoption:</b> fold in as a new v2 milestone via the repo flow — confirm.</li>
+      <li><b>Derived records</b> (layout/override/recommendation) stored via the safety gateway, no vault writes — confirm.</li>
+      <li><b>Budget owner + hard-stop behavior</b> if cloud is enabled.</li>
+    </ol>
+  </section>
+
+  <section class="doc-section" id="arch">
+    <div class="section-eyebrow">Section 06</div>
+    <h2>Architecture direction</h2>
+    <ul class="tight">
+      <li><b>Command Center</b> = default GUI route of predefined sections; reads through <code>context</code>; never touches vault files. Generated HTML stays read-only/zero-JS.</li>
+      <li><b>New derived records</b> (never in the vault): profile layout document; section result (with empty/stale/unavailable/error distinction); priority recommendation (citations + policy provenance); override (kind, basis, expiry, status).</li>
+      <li><b>Write path:</b> <code>safety.derived</code>/<code>safety.commit</code>; backup + SHA + rollback; never a parallel writer.</li>
+      <li><b>Hybrid reasoning:</b> deterministic baseline is the floor; cloud is an optional reranker behind the privacy gate + budget meter; failures fall back locally.</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="ai">
+    <div class="section-eyebrow">Section 07</div>
+    <h2>AI &amp; prioritization contract</h2>
+    <ul class="tight">
+      <li><b>Candidate query</b> — deterministic eligibility (ownership, status, evidence, deadlines, blockers, relationships, permissions).</li>
+      <li><b>Baseline ranker</b> — transparent factors + fixed safety policies + stable fallback; ships without a model.</li>
+      <li><b>Context prep</b> — bounded candidates, source-backed evidence, revision fingerprints, data minimization.</li>
+      <li><b>Privacy gate</b> — classify each field; deny restricted categories; cloud opt-in only.</li>
+      <li><b>Provider-neutral reasoner</b> — structured schema, timeouts, cancellation, retries, model metadata; no write access.</li>
+      <li><b>Validator</b> — IDs/evidence refs must exist and be authorized; enforce override precedence; reject hallucinated dates/assignments; distinguish discussed vs committed/explicit.</li>
+      <li><b>Cache</b> — keyed by profile + source revisions + candidate set + policy/override revision + privacy mode + provider config; invalidate only material deps.</li>
+      <li><b>Budget meter</b> — real usage; request + monthly limits; warn/suspend at cap; local fallback.</li>
+      <li><b>Evaluation</b> — privacy-safe scenarios: conflicting deadlines, blockers, competing commitments, stale data, speaker ambiguity, duplicate imports, unsupported claims.</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="packages">
+    <div class="section-eyebrow">Section 08</div>
+    <h2>Work packages (reconciled, deterministic-first)</h2>
+    <table class="matrix">
+      <thead><tr><th>ID</th><th>Package</th><th>Gate</th><th>Depends on</th></tr></thead>
+      <tbody>
+        <tr><td><code>CC/HY-00</code></td><td>Audit re-verification (read-only)</td><td>Updated dependency map</td><td>start</td></tr>
+        <tr><td><code>CC-01</code></td><td>Section read models (3 MVP)</td><td>fixture + index tests</td><td>CC/HY-00</td></tr>
+        <tr><td><code>HY-01</code></td><td>Deterministic baseline ranker</td><td>offline scenario tests</td><td>CC-01</td></tr>
+        <tr><td><code>CC-02</code></td><td>Command Center UI (default route)</td><td>3-section flow</td><td>CC-01, HY-01</td></tr>
+        <tr><td><code>CC-03</code></td><td>Layout preferences</td><td>restart + fault tests</td><td>CC-02</td></tr>
+        <tr><td><code>CC-04</code></td><td>Overrides + conflicts</td><td>no authoritative side effects</td><td>CC-02</td></tr>
+        <tr><td><code>ID-01</code></td><td>Krisp speaker staging + bindings</td><td>no silent verification</td><td>CC/HY-00</td></tr>
+        <tr><td><code>KR-01</code></td><td>Meeting reconciliation + transcript link + extraction</td><td>no manual-edit overwrite</td><td>CC/HY-00</td></tr>
+        <tr><td><code>HY-02</code></td><td>Privacy gate + provider abstraction</td><td>deny-by-default tests</td><td>CC-01, HY-01</td></tr>
+        <tr><td><code>HY-03</code></td><td>AI rerank / validate / explanations</td><td>unsupported claims rejected</td><td>HY-02</td></tr>
+        <tr><td><code>HY-04</code></td><td>Cache / budget / failure handling</td><td>resilience + budget tests</td><td>HY-03</td></tr>
+        <tr><td><code>CC-05</code></td><td>Expansion sections</td><td>end-to-end source-backed views</td><td>CC-04, KR-01</td></tr>
+        <tr><td><code>CC/HY-06</code></td><td>Release readiness</td><td>audited release report</td><td>all</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">Bounded packages: one concern, ~3–8 implementation files per session, with tests. UI/back-end parallelize only after contracts are stable.</p>
+  </section>
+
+  <section class="doc-section" id="accept">
+    <div class="section-eyebrow">Section 09</div>
+    <h2>Acceptance criteria</h2>
+    <p id="progresslabel" class="muted">0 checked</p>
+    <div class="progress"><div id="bar"></div></div>
+    <div style="height:14px"></div>
+    <div class="checklist">
+      <label class="checkitem"><input type="checkbox" data-check="a0"><span>Command Center is the default route; three MVP sections show real indexed data and correct counts.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a1"><span>Sections hide/reorder/filter; preferences persist safely across restart; Reset Layout touches no vault data.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a2"><span>Cards navigate to canonical records and return without losing layout/filter state.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a3"><span><code>no matching items</code> distinct from <code>source unavailable</code> and <code>stale data</code>.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a4"><span>Official priorities, owners, dates, vault entities unchanged by AI or acknowledgment.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a5"><span>AI suggestions carry authorized citations + model/policy provenance + a clear suggested action.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a6"><span>Name-only Krisp attribution never silently establishes a verified Person binding.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a7"><span>User overrides persist and are honored; urgent new evidence shows a clear override conflict.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a8"><span>Cloud disabled unless approved; PHI/credentials/unapproved transcripts never leave the machine.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a9"><span>Model failure / invalid output / offline / budget exhaustion retain a usable local ranking.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a10"><span>Cache reuse/invalidation respects changed evidence, policy, filters, overrides, model config.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a11"><span>Duplicate meetings/events do not create duplicate feed entries or action effects.</span></label>
+      <label class="checkitem"><input type="checkbox" data-check="a12"><span>Full tests, recovery where applicable, accessible controls, log privacy, documented migration/rollback pass.</span></label>
+    </div>
+  </section>
+
+  <section class="doc-section" id="delivery">
+    <div class="section-eyebrow">Section 10</div>
+    <h2>Delivery protocol (single orchestrator)</h2>
+    <ul class="tight">
+      <li>One orchestrator owns scope, ledger, briefs, gates, review, integration; runs integration tests; maintains <code>NEXT-SESSION.md</code> + decision log.</li>
+      <li>Repo flow: <code>ask-matt → grill-with-docs → to-spec → to-tickets → implement</code>; one ticket per commit; full suite + ruff + pre-commit before committing.</li>
+      <li>Subagents: isolated branches/worktrees; briefs state baseline HEAD, allowed files, prereqs, deliverables, tests, exclusions; never merge to main; no parallel writes to the same files; don't claim spawns if unsupported.</li>
+      <li>Pause for approval if the audit materially changes architecture/scope.</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="tana">
+    <div class="section-eyebrow">Section 11</div>
+    <h2>Tana reference-patterns that apply</h2>
+    <table class="matrix">
+      <thead><tr><th>WorkSync need</th><th>Tana pattern</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Command Center / inbox</td><td><code>user-inbox</code> unread + badge; event allowlist</td><td>D-ux-config-observability.md</td></tr>
+        <tr><td>Saved views / live query</td><td>versioned <code>liveQuery</code> + TTL cache + oversize guard</td><td>A-data-model-sync.md</td></tr>
+        <tr><td>Prioritization / proactive</td><td><code>listenFor</code> watch spec; firmness; auto-withdrawal</td><td>C-ai-suggestions-mcp.md</td></tr>
+        <tr><td>Review &amp; overrides</td><td>append-only <code>suggestion-log</code>; fold-derived status</td><td>C-ai-suggestions-mcp.md</td></tr>
+        <tr><td>Meeting follow-ups</td><td><code>evidence{quote,speaker,atSec}</code>; wrap-up phases</td><td>B-meeting-pipeline.md</td></tr>
+        <tr><td>Identity</td><td>evidence-weighted binding; name-only never verifies</td><td>B-meeting-pipeline.md</td></tr>
+        <tr><td>Transactional recovery</td><td>snapshot + version-vector catch-up + explicit resync</td><td>A-data-model-sync.md</td></tr>
+        <tr><td>Search</td><td>Search / Semantic / Hybrid + <code>fts_rank</code>+<code>vector_distance</code></td><td>A-data-model-sync.md</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="doc-section" id="proto">
+    <div class="section-eyebrow">Section 12</div>
+    <h2>UI prototype (for CC-02)</h2>
+    <p>Three throwaway variants in <code>tana-ui-explore/</code> (open <code>index.html</code>; switch via bottom bar, arrow keys, or <code>?variant=</code>):</p>
+    <ul class="tight">
+      <li><b>A — Outliner</b> (sidebar rail + content + right context) — closest to the preferred architecture; recommended base for CC-02.</li>
+      <li><b>B — Field ledger</b> (tabs + fields strip + activity ledger) — entity/history (F13).</li>
+      <li><b>C — Query console</b> (chips + grouped table + preview + ⌘K) — Review &amp; Automation / search (F10/F07).</li>
+    </ul>
+    <p class="muted">Illustrative only; fold the chosen direction into the real GUI properly.</p>
+  </section>
+
+  <section class="doc-section" id="questions">
+    <div class="section-eyebrow">Section 13</div>
+    <h2>Open questions / blockers</h2>
+    <ol class="tight">
+      <li>Cloud AI in MVP vs deferred.</li>
+      <li>Command Center surface + layout variant.</li>
+      <li>Tracker adoption (new v2 milestone).</li>
+      <li>Derived-record storage confirmation.</li>
+      <li>Are ID-01 / KR-01 in this milestone or a sibling one?</li>
+      <li>Budget owner + hard-stop behavior if cloud is enabled.</li>
+    </ol>
+  </section>
+
+  <section class="doc-section" id="provenance">
+    <div class="section-eyebrow">Section 14</div>
+    <h2>Provenance &amp; evidence</h2>
+    <ul class="tight">
+      <li>Current-state audit + F01–F18 matrix: <code>reports/WorkSync-Audit-2026-10-11/</code> (findings A–E).</li>
+      <li>Follow-up question set: <code>reports/WorkSync-Tana-Follow-Up-Report.md</code>.</li>
+      <li>Tana reverse-engineering notes: <code>notes/00-MASTER-…</code> + A–D.</li>
+      <li>UI prototype: <code>tana-ui-explore/</code>.</li>
+      <li>v1 handoff (superseded): <code>worksync-command-center-hybrid-ai-agent-handoff.html</code>.</li>
+      <li>Repo truth: <code>C:\GitProjects\WorkSync @ 63b20aa</code>; tracker <code>.scratch/worksync-platform-v2/</code>; ADRs 0001–0022.</li>
+    </ul>
+    <p class="footer">WorkSync · Reconciled direction, not evidence of repository implementation. Re-verify at CC/HY-00. Portable, self-contained HTML.</p>
+  </section>
+</main>
+
+<script>
+const starter=`You are the single orchestrator for the approved WorkSync Command Center + Hybrid AI Prioritization initiative. Work in C:\\GitProjects\\WorkSync (Python package src/worksync).
+
+READ FIRST: the reconciled handoff "WorkSync-CC-HY-Handoff-v2.md" plus its companion evidence in the TanaDupe repo (notes/, reports/). Then do CC/HY-00 before any implementation.
+
+CC/HY-00 (mandatory, read-only): re-verify the current-state audit against the live HEAD (record the real HEAD, do not trust the doc blindly), confirm the canonical tracker and any in-progress work, and produce an updated dependency map that reconciles the work packages with the real modules. No code in this phase.
+
+Ground rules: Obsidian Markdown stays authoritative; runtime/derived state lives outside the vault. One scanner (inventory.parse), one write seam (safety.commit/safety.derived), one review primitive (work.queue), one read seam (context) - reuse them, never add a competing writer/parser/index/queue. AI never writes authoritative records; official priority/owner/dates/vault entities do not change because AI recommended it. Name-only Krisp attribution never silently verifies a Person binding. Fail closed on stale/changed/missing/ambiguous targets. MVP is DETERMINISTIC-FIRST and CLOUD-OFF; any cloud reasoning is a separate, gated, separately-approved increment (new ADR + deny-by-default privacy tests). Do not transmit PHI/credentials/unapproved transcripts or restructure the vault. Extend the existing transaction/journal infra for layout/override/recommendation records.
+
+Deliverable: the CC/HY-00 audit + updated dependency plan, then pause for approval if the audit materially changes scope. Otherwise proceed package by package (deterministic-first order), each with tests and review, through the repo's own flow (ask-matt -> grill-with-docs -> to-spec -> to-tickets -> implement). One orchestrator owns the ledger; isolated worktrees for bounded subagent packages; never claim subagents were spawned if unsupported. Report changed files, commands run, and real test status. Document unresolved security/product decisions as blockers rather than guessing.`;
+document.getElementById('starter').textContent = starter;
+
+function copyBrief(){
+  const done=()=>alert('Agent starter copied');
+  if(navigator.clipboard && navigator.clipboard.writeText){navigator.clipboard.writeText(starter).then(done).catch(fallbackCopy);}else{fallbackCopy();}
+  function fallbackCopy(){const el=document.createElement('textarea');el.value=starter;document.body.appendChild(el);el.select();document.execCommand('copy');el.remove();done();}
+}
+const search=document.getElementById('search');
+search.addEventListener('input',()=>{const q=search.value.toLowerCase().trim();document.querySelectorAll('.doc-section').forEach(s=>{s.classList.toggle('hide',!!q&&!s.textContent.toLowerCase().includes(q))});});
+document.querySelectorAll('.sidebar a').forEach(a=>a.addEventListener('click',()=>document.getElementById('sidebar').classList.remove('open')));
+const checks=[...document.querySelectorAll('input[data-check]')];
+function refresh(){const n=checks.filter(x=>x.checked).length;document.getElementById('progresslabel').textContent=n+' of '+checks.length+' checked';document.getElementById('bar').style.width=(checks.length?100*n/checks.length:0)+'%';}
+checks.forEach(x=>x.addEventListener('change',refresh));refresh();
+</script>
+</body></html>
