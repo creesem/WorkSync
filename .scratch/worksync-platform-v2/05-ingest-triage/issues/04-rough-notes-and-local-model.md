@@ -8,7 +8,7 @@ capped confidence and provenance and never auto-resolve.
 
 **Blocked by:** 02.
 
-**Status:** done (verified 2026-10-08; full suite 441 passed, ruff clean, pre-commit clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] A configured rough-notes root is a discovery source, and a rough note can be imported
       into the inbox with a recoverable backup and no silent overwrite.

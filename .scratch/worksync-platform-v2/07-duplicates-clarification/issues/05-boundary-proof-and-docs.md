@@ -9,19 +9,19 @@ and pre-commit pass.
 
 **Blocked by:** 03, 04.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] An import-closure test proves `work.duplicates` and `work.clarification` reach
+- [x] An import-closure test proves `work.duplicates` and `work.clarification` reach
       `work.queue`/`safety.gateway` for writes, touch no raw write primitive or database
       connection, and import no `context` or `html`.
-- [ ] The layer matrix still admits the new modules' dependencies and the direction stays
+- [x] The layer matrix still admits the new modules' dependencies and the direction stays
       acyclic.
-- [ ] `docs/adr/0018-*.md` records the shared review-queue primitive, the
+- [x] `docs/adr/0018-*.md` records the shared review-queue primitive, the
       manifest-as-ledger decision (no separate rejection/decision ledger files), the
       basis-fingerprint invalidation rule, and the path-derived id caveat (stable across
       rescans, not across renames/moves).
-- [ ] `CONTEXT.md` gains the queue, proposal, decision basis, and invalidated-decision
+- [x] `CONTEXT.md` gains the queue, proposal, decision basis, and invalidated-decision
       terms.
-- [ ] `docs/architecture.md` documents the duplicate and clarification review→commit
+- [x] `docs/architecture.md` documents the duplicate and clarification review→commit
       pipelines and their placement in `work`.
-- [ ] The full test suite and Ruff pass; pre-commit is clean.
+- [x] The full test suite and Ruff pass; pre-commit is clean.

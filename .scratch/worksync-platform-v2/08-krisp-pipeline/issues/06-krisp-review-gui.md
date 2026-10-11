@@ -7,17 +7,17 @@ change set and equivalent command echoed back. The GUI holds no domain logic.
 
 **Blocked by:** 02, 05.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] A pull control on the Krisp tab dispatches a new `krisp-pull` action through the
+- [x] A pull control on the Krisp tab dispatches a new `krisp-pull` action through the
       existing write seam, calls the pull service, and echoes the summary and change set;
       a failed pull reports clearly and leaves no stale state, and the GUI never sets
       `force`.
-- [ ] The Review screen carries a `Krisp` tab alongside the existing queue tabs and shows
+- [x] The Review screen carries a `Krisp` tab alongside the existing queue tabs and shows
       meeting candidates filtered from the shared manifest.
-- [ ] The tab header shows the last-pull / sync health and the configured pull window.
-- [ ] Cards are pre-filled and editable, show confidence and provenance including the
+- [x] The tab header shows the last-pull / sync health and the configured pull window.
+- [x] Cards are pre-filled and editable, show confidence and provenance including the
       generation mode, and promote/dismiss through the existing ingest apply/dismiss
       actions; the screen refreshes after a promote.
-- [ ] The equivalent CLI command is shown for the pull and the promote, and no domain rule
+- [x] The equivalent CLI command is shown for the pull and the promote, and no domain rule
       lives in JavaScript; the write context carries the Krisp inbox path and client.

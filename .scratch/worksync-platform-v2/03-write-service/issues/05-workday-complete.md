@@ -9,12 +9,12 @@ with no write — and refreshes derived state after a committed write.
 
 **Blocked by:** 02 (completion writer) and 03 (workday plan).
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] `work.workday` quick completion delegates to `work.writer`'s completion operation
+- [x] `work.workday` quick completion delegates to `work.writer`'s completion operation
       and returns the rebuilt plan.
-- [ ] `worksync workday complete` requires `--sha`, fails closed on a stale SHA, and
+- [x] `worksync workday complete` requires `--sha`, fails closed on a stale SHA, and
       supports `--json`.
-- [ ] On success the task is `done` with a recorded completion date and no longer
+- [x] On success the task is `done` with a recorded completion date and no longer
       appears in the plan's active or selected set.
-- [ ] Tests cover the success path and the stale-SHA failure path.
+- [x] Tests cover the success path and the stale-SHA failure path.

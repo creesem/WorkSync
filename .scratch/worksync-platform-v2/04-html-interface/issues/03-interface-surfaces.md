@@ -7,7 +7,7 @@ Canonical notes are linked, not copied.
 
 **Blocked by:** 02.
 
-**Status:** done (verified 2026-10-07; full suite 360 passed, ruff clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] `today.html` shows the five-slot workday plan plus attention and waiting items.
 - [x] `projects.html` lists active projects with status, priority, owner, and health, and

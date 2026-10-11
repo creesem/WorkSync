@@ -10,12 +10,12 @@ set removes the completed action.
 
 **Blocked by:** 01 (shares the writer, allowlist, and reviewer resolution).
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] `work.writer` exposes a completion operation that sets `status: done` and
+- [x] `work.writer` exposes a completion operation that sets `status: done` and
       `completed: <today>` with history fields in one transaction.
-- [ ] Completing an already-done action is a no-op or fails clearly; a non-action or
+- [x] Completing an already-done action is a no-op or fails clearly; a non-action or
       stale target fails closed.
-- [ ] `worksync task complete` supports `--dry-run` and `--json`, refreshes derived
+- [x] `worksync task complete` supports `--dry-run` and `--json`, refreshes derived
       state on commit, and records a named reviewer and reason.
-- [ ] Tests cover completion, the completed-date write, and the fail-closed paths.
+- [x] Tests cover completion, the completed-date write, and the fail-closed paths.

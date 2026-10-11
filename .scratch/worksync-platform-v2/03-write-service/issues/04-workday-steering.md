@@ -10,14 +10,14 @@ read. Clearing steering must not clear the selected slots.
 
 **Blocked by:** 03 (extends the plan and ranking).
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] `work.workday` stores `focus_project`, `urgent_paths`, and `note` with the dated
+- [x] `work.workday` stores `focus_project`, `urgent_paths`, and `note` with the dated
       plan, validating focus/urgent references against the active set.
-- [ ] Manual elevation and project focus change ranking and surface as reasons.
-- [ ] Clearing steering preserves the selected slots.
-- [ ] Focus and urgent references surface in the steering-effect counts.
-- [ ] `worksync workday steer` supports focus, urgent add/remove, note, clear, and
+- [x] Manual elevation and project focus change ranking and surface as reasons.
+- [x] Clearing steering preserves the selected slots.
+- [x] Focus and urgent references surface in the steering-effect counts.
+- [x] `worksync workday steer` supports focus, urgent add/remove, note, clear, and
       `--json`.
-- [ ] Tests cover the ranking effect, the reasons, stale-ref rejection, and clear
+- [x] Tests cover the ranking effect, the reasons, stale-ref rejection, and clear
       semantics.

@@ -7,14 +7,14 @@ changes what candidate exists, its status, or whether it is promoted.
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] With no model configured or the endpoint unavailable, the deterministic draft is
+- [x] With no model configured or the endpoint unavailable, the deterministic draft is
       produced unchanged and provenance records the deterministic generation mode.
-- [ ] With a model, the note prose is drafted from a bounded input (the sidecar's Krisp
+- [x] With a model, the note prose is drafted from a bounded input (the sidecar's Krisp
       notes and key points, capped) and never the full transcript by default; provenance
       records the model generation mode.
-- [ ] A model failure or malformed response falls back silently to the deterministic
+- [x] A model failure or malformed response falls back silently to the deterministic
       draft; the pipeline never errors because of the model.
-- [ ] The model cannot originate or decide a candidate, change its status, or auto-promote,
+- [x] The model cannot originate or decide a candidate, change its status, or auto-promote,
       and receives no canonical write authority.

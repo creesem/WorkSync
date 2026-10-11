@@ -298,3 +298,13 @@ def test_cli_dry_run_does_not_remember_reviewer(vault: Path, write_note: Callabl
     )
     assert code == 0
     assert not (runtime / "reviewer.json").exists()
+
+
+def test_cli_workday_show_renders_suggestions_without_json(
+    vault: Path, write_note: Callable[..., Path], tmp_path: Path, capsys
+) -> None:
+    _seed(vault, write_note)
+    runtime = tmp_path / "var"
+    code = main(["workday", "show", "--vault", str(vault), "--runtime", str(runtime), "--today", TODAY])
+    assert code == 0
+    assert "Task One" in capsys.readouterr().out

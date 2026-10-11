@@ -11,23 +11,23 @@ it with no behavior change.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] A `work.queue` module exposes the proposal shape, the manifest container, the
+- [x] A `work.queue` module exposes the proposal shape, the manifest container, the
       status vocabulary (`pending`/`applied`/`dismissed`/`obsolete`/`blocked`), and the
       guarded persistence helpers, all with stable JSON round-tripping.
-- [ ] The primitive supports a `basis_sha256` per proposal and a `decision_history`; a
+- [x] The primitive supports a `basis_sha256` per proposal and a `decision_history`; a
       retained decision is honored only while the basis matches, and a mismatch returns
       the proposal to `pending` with a history entry (prior outcome, void reason,
       timestamp) rather than dropping it.
-- [ ] The primitive offers the manifest-update as a `staging` operation so a domain apply
+- [x] The primitive offers the manifest-update as a `staging` operation so a domain apply
       can place it in the same `ChangeSet` as its canonical operations.
-- [ ] `ingest` re-exports the moved public names and builds its scan/apply on the
+- [x] `ingest` re-exports the moved public names and builds its scan/apply on the
       primitive; the existing ingest test suite passes unchanged with no output
       difference.
-- [ ] The primitive contains no duplicate scoring, no clarification predicates, and no
+- [x] The primitive contains no duplicate scoring, no clarification predicates, and no
       concern-specific `FileOp` construction (reviewed at the seam).
-- [ ] A manifest write is preconditioned: a first-create race and a concurrent update
+- [x] A manifest write is preconditioned: a first-create race and a concurrent update
       both fail closed.
-- [ ] An undiscovered pending proposal is retired on rescan and no stale actionable card
+- [x] An undiscovered pending proposal is retired on rescan and no stale actionable card
       remains.

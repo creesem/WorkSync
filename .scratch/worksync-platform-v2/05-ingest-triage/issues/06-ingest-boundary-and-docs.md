@@ -10,7 +10,7 @@ any canonical write.
 
 **Blocked by:** 05.
 
-**Status:** done (verified 2026-10-08; full suite 442 passed, ruff clean, pre-commit clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] The layer matrix admits `ingest` and the dependency graph stays acyclic.
 - [x] An import-closure test proves `ingest` imports no `context`/`html` and only writes

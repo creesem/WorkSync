@@ -7,7 +7,7 @@ complete.
 
 **Blocked by:** 03.
 
-**Status:** done (verified 2026-10-07; full suite 363 passed, ruff clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] One `worksync interface build` writes the complete page set into
       `0. System/Interface` deterministically.

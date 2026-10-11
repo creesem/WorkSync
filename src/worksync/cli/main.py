@@ -1794,7 +1794,7 @@ def _print_plan(plan: dict, as_json: bool) -> None:
         print(f"  {slot}: {selected['title']}" if selected else f"  {slot}: (open)")
         for item in plan["suggestions"].get(slot, []):
             reasons = ", ".join(item["reasons"]) or "ranked"
-            print(f"      {item['score']:>4}  {item['task']['title']}  [{reasons}]")
+            print(f"      {item['score']:>4}  {item['action']['title']}  [{reasons}]")
 
 
 def _workday_show(args: argparse.Namespace) -> int:

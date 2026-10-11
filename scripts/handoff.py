@@ -81,7 +81,7 @@ def parse_ticket(path: Path, root: Path = V2) -> Ticket:
     """Parse one ticket file into a :class:`Ticket`."""
     text = path.read_text(encoding="utf-8")
     match = STATUS_RE.search(text)
-    status = match.group(1) if match else "unknown"
+    status = match.group(1).split()[0].strip() if match and match.group(1).split() else "unknown"
     boxes = CHECKBOX_RE.findall(text)
     done = sum(1 for box in boxes if box in "xX")
     relative = path.relative_to(root)

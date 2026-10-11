@@ -14,22 +14,22 @@ service lives in the `work` package and never imports `context`.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] `work.writer` applies an allowlisted action field edit as one `trusted`
+- [x] `work.writer` applies an allowlisted action field edit as one `trusted`
       `safety.commit` update, with the fresh SHA as the precondition.
-- [ ] Only allowlisted fields and history fields change; the note body and unmapped
+- [x] Only allowlisted fields and history fields change; the note body and unmapped
       lines are byte-identical.
-- [ ] `waiting` without a non-empty `waiting_on` fails closed; `due` must be an ISO
+- [x] `waiting` without a non-empty `waiting_on` fails closed; `due` must be an ISO
       date; priority normalizes to `P1`–`P4`; an unknown field is rejected before any
       write.
-- [ ] A missing, outside-vault, or non-action target fails closed; a stale SHA fails
+- [x] A missing, outside-vault, or non-action target fails closed; a stale SHA fails
       with the note unchanged.
-- [ ] `work.reviewer` resolves explicit > runtime > configured, persists an explicit
+- [x] `work.reviewer` resolves explicit > runtime > configured, persists an explicit
       reviewer, and errors when none is available.
-- [ ] `worksync task update` applies by default, supports `--dry-run` and `--json`,
+- [x] `worksync task update` applies by default, supports `--dry-run` and `--json`,
       refreshes derived state on commit, and records a named reviewer and reason.
-- [ ] Regression tests cover the module seam (allowlist, history, backup, stale hash,
+- [x] Regression tests cover the module seam (allowlist, history, backup, stale hash,
       fail-closed, dry run) and the CLI seam.
-- [ ] `docs/architecture.md` describes the work-write service under `work`; the boundary
+- [x] `docs/architecture.md` describes the work-write service under `work`; the boundary
       test still proves `work` does not import `context`.

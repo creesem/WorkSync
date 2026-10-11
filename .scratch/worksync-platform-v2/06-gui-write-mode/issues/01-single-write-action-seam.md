@@ -12,7 +12,7 @@ affordances that prove the seam (complete an action, set the reviewer, render th
 
 **Blocked by:** None (can start immediately).
 
-**Status:** done (verified 2026-10-07; full suite 380 passed, ruff clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] `POST /api/action/<name>` requires the per-run token, accepts a JSON body, and never
       takes a vault, runtime, or reviewer from the request; unknown actions fail `404`.

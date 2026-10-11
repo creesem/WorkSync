@@ -9,10 +9,10 @@ carried, and the plan is re-dated to the target workday. `worksync workday impor
 
 **Blocked by:** 03 (plan model and persistence).
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] `work.workday` imports a legacy plan file and maps it into the new plan shape.
-- [ ] Stale selections and invalid focus/urgent references are dropped, not guessed.
-- [ ] The imported plan is re-dated to the target workday and persisted.
-- [ ] `worksync workday import` reports kept and dropped entries and supports `--json`.
-- [ ] Tests cover a representative legacy file and a file with stale references.
+- [x] `work.workday` imports a legacy plan file and maps it into the new plan shape.
+- [x] Stale selections and invalid focus/urgent references are dropped, not guessed.
+- [x] The imported plan is re-dated to the target workday and persisted.
+- [x] `worksync workday import` reports kept and dropped entries and supports `--json`.
+- [x] Tests cover a representative legacy file and a file with stale references.

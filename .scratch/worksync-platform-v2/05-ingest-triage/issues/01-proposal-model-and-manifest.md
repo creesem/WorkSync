@@ -7,7 +7,7 @@ cannot clobber each other's proposal lifecycle. Nothing is discovered or applied
 
 **Blocked by:** None (can start immediately).
 
-**Status:** done (verified 2026-10-07; full suite 394 passed, ruff clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] A proposal carries a stable id, an action kind, source path and sha256, optional
       target path, proposed fields, confidence, provenance reasons, and a status

@@ -8,7 +8,7 @@ apply. The GUI holds no domain logic.
 
 **Blocked by:** 03.
 
-**Status:** done (verified 2026-10-08; full suite 441 passed, ruff clean, pre-commit clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] `ingest-scan`, `ingest-apply`, and `ingest-dismiss` dispatch through the action seam
       to the same `ingest` services as the CLI.

@@ -7,15 +7,15 @@ first-class, policy-governed derived zone so a later writer can target it safely
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] A reserved in-vault path constant for `0. System/Interface` is owned by `core`.
-- [ ] The shared zones helper returns the `generated` root inside the vault; `safety`
+- [x] A reserved in-vault path constant for `0. System/Interface` is owned by `core`.
+- [x] The shared zones helper returns the `generated` root inside the vault; `safety`
       recognizes `generated` as a derived zone.
-- [ ] Containment for a `generated` write is checked against both the generated root and
+- [x] Containment for a `generated` write is checked against both the generated root and
       the vault root.
-- [ ] The mutation contract documents the zone: derived class, no canonical
+- [x] The mutation contract documents the zone: derived class, no canonical
       backup/reviewer/reason, force-gated overwrite, visible generated marker,
       deterministic output, and `.html` never scanned or indexed.
-- [ ] Tests cover gateway acceptance of the zone, containment enforcement, and the
+- [x] Tests cover gateway acceptance of the zone, containment enforcement, and the
       derived (no-reviewer) write behaviour.

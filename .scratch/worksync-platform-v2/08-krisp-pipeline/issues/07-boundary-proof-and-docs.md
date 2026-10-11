@@ -8,18 +8,18 @@ pipeline, and the glossary gains the new terms. The full suite, Ruff, and pre-co
 
 **Blocked by:** 03, 04, 05, 06.
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] An import-closure test proves the Krisp source reaches `safety` for writes, touches
+- [x] An import-closure test proves the Krisp source reaches `safety` for writes, touches
       no raw write primitive, and imports no `context` or `html`.
-- [ ] The layer dependency direction stays acyclic and admits the new module's
+- [x] The layer dependency direction stays acyclic and admits the new module's
       dependencies.
-- [ ] The shared-queue ADR records the amended decisions: the path-independent Krisp
+- [x] The shared-queue ADR records the amended decisions: the path-independent Krisp
       proposal id, the transcript-content decision basis, and the `meeting` kind sharing
       the one queue.
-- [ ] `docs/architecture.md` documents the Krisp discovery and pull and the meeting
+- [x] `docs/architecture.md` documents the Krisp discovery and pull and the meeting
       promote path, and the source mapping is updated.
-- [ ] `CONTEXT.md` gains the Krisp terms (for example transcript, sidecar, pull ledger,
+- [x] `CONTEXT.md` gains the Krisp terms (for example transcript, sidecar, pull ledger,
       meeting-note candidate, processed).
-- [ ] A secret-scan test confirms no key is present in tracked config.
-- [ ] The full test suite and Ruff pass and pre-commit is clean.
+- [x] A secret-scan test confirms no key is present in tracked config.
+- [x] The full test suite and Ruff pass and pre-commit is clean.

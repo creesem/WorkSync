@@ -11,7 +11,7 @@ commands, and the shell renders it.
 
 **Blocked by:** 01.
 
-**Status:** done (verified 2026-10-07; full suite 387 passed, ruff clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] The action-write service is split into a pure plan step and a commit step with no
       change to a single write's external behaviour.

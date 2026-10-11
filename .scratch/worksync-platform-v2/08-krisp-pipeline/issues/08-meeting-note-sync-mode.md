@@ -12,7 +12,7 @@ local canonical record derived from an external recording.
 
 **Blocked by:** None.
 
-**Status:** done
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 ## Evidence
 

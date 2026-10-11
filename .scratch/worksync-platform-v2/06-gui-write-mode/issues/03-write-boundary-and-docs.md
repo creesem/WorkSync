@@ -9,7 +9,7 @@ CLI.
 
 **Blocked by:** 01, 02.
 
-**Status:** done (verified 2026-10-07; full suite 387 passed, ruff clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] The GUI read surface test proves reading writes nothing (retained and still true).
 - [x] An import-closure test proves the write seam reaches `safety.gateway` and never the

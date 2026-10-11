@@ -9,7 +9,7 @@ that were not rediscovered.
 
 **Blocked by:** 01.
 
-**Status:** done (verified 2026-10-07; full suite 414 passed, ruff clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] `ingest.discover` scans the configured inbox root with the single scanner (content,
       not only frontmatter) and produces the expected proposal kinds.

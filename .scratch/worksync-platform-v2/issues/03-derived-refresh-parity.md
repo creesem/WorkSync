@@ -4,11 +4,11 @@
 
 **Blocked by:** 02: Transactional frontmatter repair through the gateway
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] the `migrate frontmatter` command rebuilds the derived index and associations after a successful commit and reports before/after malformed counts
-- [ ] after a repair `inventory`/the index reports no `malformed_frontmatter` for the repaired notes
-- [ ] a previously dropped active task regains its `note_project_links` membership and appears as authoritative
-- [ ] the read service and MCP adapter surface the repaired evidence (no new read path, same seams)
-- [ ] the real-vault migration is applied and the real-vault parity harness is re-run; the malformed-block carve-out is gone and authoritative membership now matches legacy
-- [ ] tests assert the reader-integration outcome and the before/after counts
+- [x] the `migrate frontmatter` command rebuilds the derived index and associations after a successful commit and reports before/after malformed counts
+- [x] after a repair `inventory`/the index reports no `malformed_frontmatter` for the repaired notes
+- [x] a previously dropped active task regains its `note_project_links` membership and appears as authoritative
+- [x] the read service and MCP adapter surface the repaired evidence (no new read path, same seams)
+- [x] the real-vault migration is applied and the real-vault parity harness is re-run; the malformed-block carve-out is gone and authoritative membership now matches legacy
+- [x] tests assert the reader-integration outcome and the before/after counts

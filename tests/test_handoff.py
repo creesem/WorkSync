@@ -45,6 +45,17 @@ def test_unknown_status_is_flagged(tmp_path: Path) -> None:
     assert handoff.parse_ticket(path, tmp_path).unknown is True
 
 
+def test_status_with_a_verification_note_is_recognized(tmp_path: Path) -> None:
+    path = _ticket(
+        tmp_path, "01-thing.md", "**Status:** done (verified 2026-10-07; full suite 360 passed)\n\n- [x] a\n"
+    )
+    ticket = handoff.parse_ticket(path, tmp_path)
+    assert ticket.status == "done"
+    assert ticket.stale is False
+    assert ticket.unknown is False
+    assert ticket.open is False
+
+
 def test_discover_and_render_block(tmp_path: Path) -> None:
     _ticket(tmp_path, "01-a.md", "**Status:** ready-for-agent\n\n- [ ] x\n")
     _ticket(tmp_path, "02-b.md", "**Status:** done\n\n- [x] x\n")

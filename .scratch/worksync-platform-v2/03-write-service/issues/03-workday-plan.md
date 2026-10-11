@@ -13,16 +13,16 @@ signals with deterministic reasons and no hardcoded person.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
-- [ ] `work.workday` builds a five-slot plan (`must_win`, `support_one`, `support_two`,
+- [x] `work.workday` builds a five-slot plan (`must_win`, `support_one`, `support_two`,
       `unblock`, `quick_win`) with per-slot ranked suggestions carrying reasons.
-- [ ] Plan persistence is atomic runtime JSON and round-trips selections.
-- [ ] Stale selections are ignored on read and rejected on write; a prior-date plan
+- [x] Plan persistence is atomic runtime JSON and round-trips selections.
+- [x] Stale selections are ignored on read and rejected on write; a prior-date plan
       contributes no selections.
-- [ ] Ranking is deterministic for a fixed `today`, selected set, and steering, and
+- [x] Ranking is deterministic for a fixed `today`, selected set, and steering, and
       never rewrites canonical priority, ownership, due date, or status.
-- [ ] `worksync workday show` supports `--json` and `--today`; `worksync workday set`
+- [x] `worksync workday show` supports `--json` and `--today`; `worksync workday set`
       selects or clears a slot.
-- [ ] Tests cover the module seam (build, rank, persist, stale refs, date rollover) and
+- [x] Tests cover the module seam (build, rank, persist, stale refs, date rollover) and
       the CLI seam.

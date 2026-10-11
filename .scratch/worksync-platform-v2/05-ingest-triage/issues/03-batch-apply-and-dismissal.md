@@ -11,7 +11,7 @@ reason and keeps the proposal from reappearing.
 
 **Blocked by:** 02.
 
-**Status:** done (verified 2026-10-07; full suite 414 passed, ruff clean)
+**Status:** done (verified 2026-10-10; full suite 667 passed, ruff clean, pre-commit clean)
 
 - [x] `ingest.apply` builds one `ChangeSet` and calls `safety.commit` once; a single
       proposal is the one-item case.
