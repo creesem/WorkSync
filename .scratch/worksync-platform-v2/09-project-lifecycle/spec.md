@@ -1,7 +1,8 @@
 # Spec — V2 project lifecycle and control center (milestone 0.1e)
 
-Status: ready-for-agent — decisions locked (see "Decisions"). Tickets under `issues/`
-are ready; work blockers-first.
+Status: implemented (2026-10-10) — decisions locked (see "Decisions"). Tickets under
+`issues/` are complete; the milestone shipped as `work.lifecycle` + `work.control_center`
++ `work.walkthrough` with CLI/GUI surfaces.
 
 ## Problem Statement
 

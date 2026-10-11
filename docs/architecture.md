@@ -181,6 +181,53 @@ The GUI exposes both pipelines through the existing write seam
 queue screen carries the `Review` nav label; the pre-existing project board is labelled
 `Board` so the two are not confused.
 
+## Project lifecycle pipeline
+
+`work.lifecycle` is one `work` concern (not a new package): four pure state machines, a
+derived registry, the read-only control center, the update-review lane, and the
+generated weekly walkthrough. The new modules depend on `inventory`/`safety`/`work` and
+import no `context` or `html`; every transition that changes canonical meaning is a
+canonical write through `safety.commit`, and transition history lives only in the
+runtime zone (see [ADR-0019](adr/0019-project-lifecycle-records.md),
+[ADR-0020](adr/0020-project-lifecycle-transitions.md),
+[ADR-0021](adr/0021-weekly-walkthrough-generated.md)).
+
+1. **Record home** — lifecycle records reuse the five entities: a reported issue and a
+   report/deliverable are `ticket` notes, a date gap and a waiting-on item are `action`
+   notes, and a decision is a `meeting`. Transition history and review ledgers are
+   derived runtime state under `var/project/<project_id>/lifecycle.json`, never a vault
+   sidecar (the legacy `9. Project/<project>/` location is retired).
+2. **Pure machines** — `work.lifecycle.issue`, `delivery`, `date_gaps`, and `waiting` are
+   explicit `(state, action) -> state` maps with a destructive-action set. Resolution
+   requires a named actor and a human-readable reason and fails closed on any unknown or
+   illegal request. Reported issues and confirmed defects are never collapsed; `fixed`
+   cannot jump to `verified`; acceptance requires the named tester's result plus business
+   acceptance (or an explicit accepted exception); a missed date is preserved with its
+   reason and the approved revised date added.
+3. **Transitions** — `work.lifecycle.transitions` applies a transition as one
+   `safety.commit` `ChangeSet`: the canonical record update (SHA preconditioned, backed
+   up) plus the derived registry append in the same transaction, so a metadata failure
+   restores the record and leaves the transition pending. Quick completion and due-date
+   changes remain canonical task mutations.
+4. **Control center** — `work.control_center` is read-only aggregation over the joined
+   records and the `work.review` rollups; it leads with unresolved outcomes and the next
+   decision and reaches no write helper.
+5. **Update-review lane** — `work.lifecycle.update_review` is a third concern on the
+   shared `work.queue`. Routing evidence is extracted from note content only; a reviewer
+   maps it to an exact canonical record, field, and value with a rationale before
+   acceptance; an invented or stale target fails closed.
+6. **Walkthrough** — `work.walkthrough` renders the weekly packet deterministically for a
+   fixed `(vault, today)` and writes it into the generated zone; overwriting an existing
+   packet requires confirmation.
+7. **Migration** — `work.lifecycle.migrate_legacy` is a one-shot, fail-closed import of
+   the retired `9. Project/<project>/*-registry.json` sidecars into the runtime registry
+   home; it is idempotent, transactional, and aborts with no writes on an unmappable
+   record.
+
+The CLI exposes `worksync project lifecycle` and `worksync project control`; the GUI
+exposes a `lifecycle-transition` write action and a control-center read, and never sets
+`force`.
+
 ## Source mapping
 
 | Source | Destination |
