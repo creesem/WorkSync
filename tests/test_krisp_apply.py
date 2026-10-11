@@ -16,8 +16,12 @@ from worksync.ingest.apply import render_meeting_note
 from worksync.ingest.discover import IngestError
 from worksync.ingest.krisp import write_sidecar
 from worksync.ingest.manifest import load_manifest_with_hash
+from worksync.inventory.parse import parse_note
 from worksync.safety import gateway
 from worksync.safety.models import MutationError
+from worksync.work.models import Meeting
+from worksync.work.schema import entity_from_record
+from worksync.work.validate import validate_entity
 
 TODAY = date(2026, 10, 7)
 PERSON = "---\ntype: person\nstatus: active\n---\n# Myles Creese\n"
@@ -68,6 +72,7 @@ def test_promote_creates_the_note_and_consumes_the_transcript(
     assert "## Notes" in content and "Ship v2" in content
     assert "## Actions" in content and "Send deck" in content
     assert "people:" not in content and "record_types:" not in content and "staged:" not in content
+    assert 'sync_mode: "managed-locally"' in content
 
     assert not (inbox / TRANSCRIPT_NAME).exists()
     processed = inbox / "Processed" / "2026-10-07"
@@ -202,6 +207,37 @@ def test_render_meeting_note_accepts_a_valid_draft() -> None:
     assert "status: held" in content
     assert "date: 2026-10-07" in content
     assert 'date_status: "undated"' in content
+    assert "sync_mode" not in content
+
+
+def test_render_meeting_note_writes_sync_mode_for_a_sourced_note() -> None:
+    content = render_meeting_note(
+        {"status": "held", "date": "2026-10-07", "source_system": "krisp", "external_id": "a1b2c3d4e5f6"}
+    )
+    assert 'source_system: "krisp"' in content
+    assert 'external_id: "a1b2c3d4e5f6"' in content
+    assert 'sync_mode: "managed-locally"' in content
+
+
+def test_promoted_meeting_note_declares_sync_mode(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
+    runtime, inbox = _seed(vault, write_note, tmp_path)
+    scan(vault, runtime, krisp_inbox_path=inbox, today=TODAY)
+    apply(
+        vault,
+        runtime,
+        reviewer="myles",
+        reason="Promote the meeting",
+        ids=(PROPOSAL_ID,),
+        today=TODAY,
+        krisp_inbox_path=inbox,
+    )
+    note = vault / "10. Meetings" / "Meeting - Q3 Sync.md"
+    entity = entity_from_record(parse_note(note, vault))
+    assert isinstance(entity, Meeting)
+    assert entity.sync_mode == "managed-locally"
+    issues = validate_entity(entity)
+    assert not any("source_system present without sync_mode" in issue.message for issue in issues)
+    assert not any(issue.rule == "conditional" for issue in issues)
 
 
 @pytest.mark.parametrize("fields", [{"status": "archived"}, {"date": "next Tuesday"}])

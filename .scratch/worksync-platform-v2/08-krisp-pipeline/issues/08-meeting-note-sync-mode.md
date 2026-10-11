@@ -12,7 +12,7 @@ local canonical record derived from an external recording.
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Evidence
 
@@ -33,11 +33,22 @@ likely fit; `snapshot` is the alternative. Do not invent a new enum value.
 
 ## Tasks
 
-- [ ] Decide and document the correct `sync_mode` for a promoted meeting note.
-- [ ] `render_meeting_note` writes that `sync_mode` alongside `source_system`/`external_id`.
-- [ ] A regression test asserts a promoted meeting note carries `sync_mode` and produces
+- [x] Decide and document the correct `sync_mode` for a promoted meeting note.
+- [x] `render_meeting_note` writes that `sync_mode` alongside `source_system`/`external_id`.
+- [x] A regression test asserts a promoted meeting note carries `sync_mode` and produces
       **no** `source_system present without sync_mode` warning.
-- [ ] Confirm no other Krisp-authored note type has the same omission.
+- [x] Confirm no other Krisp-authored note type has the same omission.
+
+## Resolution
+
+`sync_mode: managed-locally` — a promoted meeting note is a local canonical record authored
+once from an external recording, not a re-syncable copy (`snapshot`) and not a pointer to an
+authoritative external record (`reference`). `render_meeting_note` writes it next to
+`source_system` using the canonical `SyncMode` enum. The decision is recorded in
+`spec.md` ("Deterministic meeting-note draft"). Krisp authors only `meeting` proposals and
+`render_meeting_note` is the only writer of `source_system:`, so no other note type has the
+omission. Tests: `test_render_meeting_note_writes_sync_mode_for_a_sourced_note`,
+`test_promoted_meeting_note_declares_sync_mode`, plus an assertion in the promote test.
 
 ## Comments
 
