@@ -1,6 +1,6 @@
 # Spec — V2 release and cutover (milestone 0.1 release)
 
-Status: ready-for-agent
+Status: implemented (2026-10-11) — tickets 01–05 complete.
 
 ## Problem Statement
 

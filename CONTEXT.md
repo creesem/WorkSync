@@ -332,6 +332,29 @@ The gitignored, per-machine settings file (`vault_path`, runtime root, port) see
 from the committed example; it never carries a development-machine absolute path.
 _Avoid_: local settings, env file
 
+### Release and cutover
+
+**Cutover**:
+The entry-point switch that moves daily work from `WorkSync-Control-Center` to the new
+platform over the shared, unmoved vault; a repoint of launchers, the desktop shortcut,
+and the editor MCP wiring, not a data migration.
+_Avoid_: migration, move
+
+**Runtime migration**:
+The one-shot, fail-closed relocation of irreplaceable legacy runtime state into a
+provenance archive, plus live imports of the artifacts that have a consumer.
+_Avoid_: data migration, state copy
+
+**Single-active-app**:
+The side-by-side discipline that both applications may be installed and runnable, but
+only one writes the shared vault at a time.
+_Avoid_: read-only mode
+
+**Rollback boundary**:
+The point past which reverting the entry points is no longer a clean revert — the first
+new-platform canonical vault write.
+_Avoid_: point of no return
+
 ### Local model
 
 **Local model**:
