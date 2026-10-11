@@ -72,6 +72,16 @@ Cutover requires all of:
   is `scripts/parity.py`; it writes nothing inside the vault and records its PASS/FAIL
   report as cutover evidence.
 
+## Side-by-side
+
+Both applications can address the shared vault, so side-by-side is governed by
+**single-active-app**: never two writers at once. The new platform runs on a **distinct
+configured UI port** (for example `8766`, seeded alongside the legacy `8765`) so it can
+serve a read comparison while the legacy app is stopped. The new machine config is seeded
+from the legacy values with `scripts/seed_config.py` — vault path, legacy vault roots, the
+distinct port, and the Krisp secret — and stays gitignored. A read comparison uses the
+read-only parity harness (`scripts/parity.py`), which builds its indexes outside the vault.
+
 ## Cutover and rollback
 
 The vault is shared and never moved, so cutover is an **entry-point switch**, not a
