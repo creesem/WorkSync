@@ -1,41 +1,38 @@
-# Next-Session Prompt — Person Identity & Merge (start at WP-01)
+# Next-Session Prompt — Person Identity & Merge
 
 ## Situation
 
-- Canonical repo `C:\GitProjects\WorkSync`, branch `main`, HEAD `16fcf6f6d809bfc67046001fdc974f207306474b`.
-- WP-00 (G0 repository audit) is **complete and GO**. The tracker is
-  `.scratch/person-identity-merge/`.
-- Nothing has been implemented. No product file has been changed by the audit.
+- Canonical repo `C:\GitProjects\WorkSync`, branch `main`.
+- The delivered feature (WP-00 through WP-06) is **complete and committed**. Read
+  `.scratch/person-identity-merge/person-identity-final-handoff.md` first; it lists the exact
+  commits, the operations, the guarantees, and the caveats.
+- Test suite green: `pytest -q` → 645 passed; Ruff and pre-commit clean.
 
-## Read first (in order)
+## What is done
 
-1. `.scratch/person-identity-merge/person-identity-repository-audit.md` — what already exists and what is new.
-2. `.scratch/person-identity-merge/person-identity-decisions.md` — B1/B2/B3 + audit-derived decisions A1–A9.
-3. `.scratch/person-identity-merge/person-identity-interface-contracts.md` — the seams to reuse and the new interfaces.
-4. `.scratch/person-identity-merge/person-identity-work-ledger.md` — dependency graph, packages, gates.
-5. `.scratch/person-identity-merge/person-identity-test-matrix.md` — tests per package.
-6. The spec of record: `.scratch/person-identity-merge/spec.md`.
-7. Context: `docs/adr/0006`, `docs/adr/0018`, `docs/mutation-contract.md`, `docs/operational-note-schemas.md`, `.scratch/worksync-platform-v2/08-krisp-pipeline/spec.md`.
+- Recovery foundation (`safety.gateway` id reservation + GUI startup recovery).
+- `person_id` field, fail-closed format/uniqueness validation, `migrate person-ids`.
+- Duplicate-person detection on `work.queue` (`work/identity.py`).
+- Redirect registry + acyclic resolver (`work/redirects.py`).
+- Merge planner + transactional apply (`work/merge.py`).
+- CLI (`worksync identity scan|show|apply|dismiss`) and the Review-tab GUI.
 
-## Do this next (blockers-first)
+## What remains (spec's Krisp half, and refinements)
 
-- **WP-01A** (B2 foundation): confirm/extend the `safety.gateway` journal and `recover`; decide boot-hook vs lazy recovery (open decision O2); make operation ids collision-proof; add process-termination-then-restart tests. Touches `src/worksync/safety/*`, `tests/test_safety_gateway.py`.
-- **WP-01**: add `person_id` to `work/models.py` + `work/schema.py`, with format + uniqueness that fail closed (A4); migrate the 10 live person notes (O4); prove index queryability. Touches `src/worksync/work/models.py`, `work/schema.py`, `migrate/*`.
+1. **Krisp speaker candidate staging** — runtime-staged, name-only, manual verification, on the
+   existing `work.queue` and the Krisp ingest source; then verified bindings. This is the
+   unbuilt half of the spec (per B1 there is no persistent speaker id to bind).
+2. Refine the canonical-survivor ordering to the spec's prioritization.
+3. Alias-list merging and a GUI conflict-resolution preview.
+4. Approval authority for merges over team/private data (spec §12).
 
-WP-01A and WP-01 are independent and may run in parallel.
+## Constraints (unchanged)
 
-## Then
-
-WP-02 (identity module on `work.queue`) → WP-03 (redirect registry/follower) and WP-04 (merge planner + apply) → WP-05 (CLI/GUI) → WP-06 (release). See the work ledger for gates G1–G6.
-
-## Hard constraints (unchanged)
-
-- **Reuse, don't rebuild:** `safety.commit`/`recover` is the only write seam; `work.queue` is the only review/decision primitive; no second writer, queue, identity store, or parser.
-- **No name-only identity:** staging + manual verification only (B1); never auto-link by name; never auto-merge two established persons.
-- **Fail closed** on stale/changed/missing/ambiguous/non-action targets; never unlink (tombstone/disposition only); no auto-write on confidence alone.
-- **One transaction:** a canonical write plus its manifest/registry update is one `ChangeSet`; it completes or restores prior state.
-- Reviewer names come from `reviewer_store`, not hardcoded defaults.
-- Never weaken validation or tests to make a check pass; never force-push or rewrite history.
+- Reuse `safety.commit`/`recover` (the only write seam) and `work.queue` (the only review
+  primitive); no second writer, queue, index, or parser.
+- No name-only identity assertion; never auto-merge established persons; reviewer + reason +
+  confirm required.
+- Fail closed on stale/changed/missing/ambiguous; never unlink (tombstone/disposition only).
 
 ## Checks (do not claim green unless actually run)
 
@@ -49,4 +46,5 @@ $env:PYTHONPATH="C:\GitProjects\WorkSync\src"
 
 ## Skills
 
-`implement` (one focused change per commit), `test-driven-development` per ticket, `code-review` before finishing. Planning flow if scope grows: `ask-matt` → `grill-with-docs` → `to-spec` → `to-tickets`.
+`implement` (one focused change per commit), `test-driven-development` per ticket,
+`code-review` before finishing.

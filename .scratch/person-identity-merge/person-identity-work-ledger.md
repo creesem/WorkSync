@@ -65,8 +65,8 @@ WP-01A and WP-01 may run in parallel (different files: `safety/*` vs `work/model
 | WP-02 | complete | this session | 8497497 | 611 passed | identity detection on queue; apply deferred to WP-04 |
 | WP-03 | complete | this session | 1307bb0 | 627 passed | redirect registry + resolver |
 | WP-04 | complete | this session | 27fecd2 | 627 passed | merge planner + transactional apply |
-| WP-05 | pending | — | — | — | CLI/GUI |
-| WP-06 | pending | — | — | — | release |
+| WP-05 | complete | this session | ee72e01 | 638 passed | CLI + Review-tab GUI |
+| WP-06 | complete | this session | a0d5e73 | 645 passed | release hardening |
 
 ## WP-01A recovery outcomes (recorded per B2)
 
@@ -191,6 +191,50 @@ pre-commit passed. Committed as `27fecd2`.
 fields only); the canonical-survivor heuristic is metadata-count/age/path (WP-02's
 `_canonical_choice`), to be refined against the spec's reference-count ordering; no CLI/GUI
 surface yet.
+
+## WP-05 outcomes
+
+The identity surface, reusing the existing CLI and GUI seams (decision A7):
+
+- **CLI** (`worksync identity scan|show|apply|dismiss`): `apply` takes one proposal id, a
+  `--decision FIELD=LEFT|RIGHT` per conflicting field, `--confirm`, `--reviewer`, `--reason`,
+  `--dry-run`, `--json`; every command honours `--vault`/`--runtime`. `apply` rebuilds derived
+  artifacts after a commit.
+- **GUI**: `identity-scan`/`identity-dismiss`/`identity-apply` registered in `gui/actions.py`
+  (thin adapters, no domain logic, reviewer from `reviewer_store`), plus an **Identity** tab on
+  the Review screen in `gui/static/app.js` with per-card Merge/Dismiss and `equivalent_cli`.
+  The GUI never sets `force`; `merge` requires `confirmed` and the backend `409` stays
+  authoritative.
+
+New tests: `tests/test_cli_identity.py`, `tests/test_gui_identity.py`. Checks: `pytest -q` →
+**638 passed**; Ruff clean; pre-commit passed. Committed as `ee72e01`.
+
+## WP-06 outcomes
+
+Release hardening (spec §10 property/fault tests):
+
+- **Fault injection.** A failure at a mid-transaction write boundary (the reference rewrite)
+  rolls back every file byte-identically; the redirect registry is not committed and the
+  proposal stays `pending`.
+- **Replay/idempotency.** Re-applying a completed merge is rejected (`not_pending`); a rescan
+  after a merge does not recreate the pair.
+- **Migration + restore parity.** `migrate person-ids` output is queryable through the index;
+  after a merge, deleting the redirect registry and running `rebuild_redirects` reproduces the
+  exact map.
+- **Layer boundary.** `work.identity`, `work.merge`, and `work.redirects` import no
+  `context`/`html`/`gui`/`cli`/`mcp`/`ingest` (import-closure test).
+- **Merge disposition.** The retired note reads as `type: redirect`, so it leaves the active
+  person set.
+
+New tests: `tests/test_identity_release.py`. Checks: `pytest -q` → **645 passed**; Ruff clean;
+pre-commit passed. Committed as `a0d5e73`.
+
+**Scope note (Krisp connector fixture).** The spec's `KRI-ID-*` connector-contract tests target
+Krisp **speaker candidate staging / verified bindings**, which this implementation did **not**
+build: the delivered feature is duplicate-person detection + reviewed merge (the spec's
+WP-06/07/09 area), not the Krisp speaker-ingestion subsystem. Per B1 there is no persistent
+speaker identity to bind, so there is nothing to assert at the connector seam here. Building
+Krisp candidate staging remains open (see the final handoff).
 
 ## Checks (do not claim green unless run)
 
