@@ -62,9 +62,9 @@ WP-01A and WP-01 may run in parallel (different files: `safety/*` vs `work/model
 | WP-00 | complete | audit | 6ee0ca8 | n/a | G0 GO |
 | WP-01A | complete | prior session | d508b0a | 585 passed | B2 foundation |
 | WP-01 | complete | this session | 67b16b8 | 600 passed | person_id + migration |
-| WP-02 | pending | — | — | — | identity module |
+| WP-02 | complete | this session | 8497497 | 611 passed | identity detection on queue; apply deferred to WP-04 |
 | WP-03 | pending | — | — | — | redirects |
-| WP-04 | pending | — | — | — | merge |
+| WP-04 | pending | — | — | — | merge (incl. the apply deferred from WP-02) |
 | WP-05 | pending | — | — | — | CLI/GUI |
 | WP-06 | pending | — | — | — | release |
 
@@ -123,6 +123,30 @@ pre-commit passed. Committed as `67b16b8`.
 Note: the `sync_mode` ticket (`.scratch/worksync-platform-v2/08-krisp-pipeline/issues/08-…`)
 was resolved independently by the operator in commit `263866c` on branch
 `fix/krisp-meeting-note-sync-mode`; the person-identity work is unaffected and stays on `main`.
+
+## WP-02 outcomes
+
+`work/identity.py` registers person-duplicate detection on the shared `work.queue` primitive
+(reuse, not rebuild — decision A2):
+
+1. **Discovery.** Active persons are scored pairwise with `work.similarity.score` plus
+   explainable bonuses for an exact normalized name, a shared alias, and a shared team;
+   `person_pair_evidence` returns the score and human-readable reasons. Nothing auto-merges.
+2. **Identity-based proposal ids.** `person-dup:<sha16>` over the sorted identity keys
+   (`person_id`, falling back to path for legacy notes), stable across rescans.
+3. **Material-basis fingerprint.** `person_basis` hashes exactly the identity-bearing facts
+   (person_id, normalized name, aliases, role, team, email) plus the ruleset version, so a
+   body-only edit does **not** void a dismissal while a material identity change does —
+   verified by tests, mirroring the clarification basis pattern (ADR-0018).
+4. **Queue wiring.** `scan` / `dismiss` / `load_manifest` / `manifest_path` mirror
+   `work.duplicates`; the manifest is the decision ledger and lives in the staging zone.
+
+**Deliberate scope split:** merge **apply** is deferred to WP-04. A person merge must resolve
+every conflicting field (D4) and rewrite indexed references (D3); a naive merge would violate
+the invariants, so WP-02 stops at detection and review. New tests: `tests/test_work_identity.py`.
+
+Checks run (all green): `pytest -q` → **611 passed**; Ruff check + format clean; pre-commit
+passed. Committed as `8497497`.
 
 ## Checks (do not claim green unless run)
 
