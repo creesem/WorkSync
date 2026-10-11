@@ -30,6 +30,7 @@ from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit
 from worksync.safety.models import ChangeSet, CommitResult, FileOp
 from worksync.safety.zones import write_zones
+from worksync.work.models import SyncMode
 from worksync.work.queue import QueueStore, op_dict
 from worksync.work.schema import canonical_action_status, canonical_priority
 
@@ -456,6 +457,7 @@ def render_meeting_note(fields: dict) -> str:
         lines.append(f"meeting_type: {_scalar(fields['meeting_type'])}")
     if fields.get("source_system"):
         lines.append(f"source_system: {_scalar(fields['source_system'])}")
+        lines.append(f"sync_mode: {_scalar(SyncMode.MANAGED_LOCALLY.value)}")
     if fields.get("external_id"):
         lines.append(f"external_id: {_scalar(fields['external_id'])}")
     lines.append("---")

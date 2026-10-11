@@ -176,7 +176,7 @@ reason.
   parser. Inbox-and-rough-note discovery keeps using the one scanner.
 - **Deterministic meeting-note draft.** The draft is built from the sidecar: frontmatter
   uses only the current `meeting` schema (`type`, `status`, `date`, `attendees`, `projects`
-  or `project`, `meeting_type`, `source_system`, `external_id`); body carries `## Notes`
+  or `project`, `meeting_type`, `source_system`, `external_id`, `sync_mode`); body carries `## Notes`
   (Krisp key points), `## Actions` (Krisp action items, with assignee when present), and
   empty `## Decisions` / `## Risks / Blockers` sections. Attendees are proposed only when
   a speaker resolves to a Person entity through `WorkIndex`; unmatched and ambiguous
@@ -187,7 +187,13 @@ reason.
   unmatched-project set; an ambiguous project title (claimed by more than one entity) is
   recorded, never linked. `status` is
   `held`; a recording with no usable date uses the `1970-01-01` + `date_status: undated`
-  placeholder. `source_system` is `krisp` and `external_id` is the meeting id. No legacy
+  placeholder. `source_system` is `krisp`, `external_id` is the meeting id, and, because a
+  promoted meeting note is a **local canonical record** authored once from an external
+  recording (not mirrored or re-synced), `sync_mode` is `managed-locally`. That resolves the
+  `source_system present without sync_mode` validator warning; **`managed-locally` is the
+  decision** (`snapshot` implies a re-syncable point-in-time copy and `reference` implies the
+  external record is authoritative, neither of which holds here; a new enum value is not
+  introduced). No legacy
   fields (`people`, `record_types`, `staged`, `note_generation`, `source_transcript`) are
   written.
 - **Optional model draft.** When a model is configured it may rewrite the `## Notes`
