@@ -45,30 +45,35 @@ def resolve(
     *,
     actor: str,
     reason: str,
+    error: type[TransitionError] = TransitionError,
 ) -> Transition:
     """Resolve one transition request, failing closed on any gap."""
     key = state_key(state)
     verb = state_key(action)
     if key not in states:
-        raise TransitionError("unknown_state", f"Unknown lifecycle state: {state!r}", affected=(key,))
+        raise error("unknown_state", f"Unknown lifecycle state: {state!r}", affected=(key,))
     actions = {name for _from, name in transitions}
     if verb not in actions:
-        raise TransitionError("unknown_action", f"Unknown lifecycle action: {action!r}", affected=(verb,))
+        raise error("unknown_action", f"Unknown lifecycle action: {action!r}", affected=(verb,))
     if not str(actor or "").strip():
-        raise TransitionError("missing_actor", "A transition requires a named actor.")
+        raise error("missing_actor", "A transition requires a named actor.")
     if not str(reason or "").strip():
-        raise TransitionError("missing_reason", "A transition requires a human-readable reason.")
+        raise error("missing_reason", "A transition requires a human-readable reason.")
     target = transitions.get((key, verb))
     if target is None:
-        raise TransitionError("illegal_transition", f"Illegal transition: {key} cannot {verb}", affected=(key, verb))
+        raise error("illegal_transition", f"Illegal transition: {key} cannot {verb}", affected=(key, verb))
     return Transition(from_state=key, to_state=target, action=verb, destructive=verb in destructive)
 
 
 def legal_actions_for(
-    states: frozenset[str], transitions: Mapping[tuple[str, str], str], state: object
+    states: frozenset[str],
+    transitions: Mapping[tuple[str, str], str],
+    state: object,
+    *,
+    error: type[TransitionError] = TransitionError,
 ) -> tuple[str, ...]:
     """Return the actions legal from *state*, in stable order."""
     key = state_key(state)
     if key not in states:
-        raise TransitionError("unknown_state", f"Unknown lifecycle state: {state!r}", affected=(key,))
+        raise error("unknown_state", f"Unknown lifecycle state: {state!r}", affected=(key,))
     return tuple(sorted(action for from_state, action in transitions if from_state == key))
