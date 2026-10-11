@@ -63,8 +63,8 @@ WP-01A and WP-01 may run in parallel (different files: `safety/*` vs `work/model
 | WP-01A | complete | prior session | d508b0a | 585 passed | B2 foundation |
 | WP-01 | complete | this session | 67b16b8 | 600 passed | person_id + migration |
 | WP-02 | complete | this session | 8497497 | 611 passed | identity detection on queue; apply deferred to WP-04 |
-| WP-03 | pending | — | — | — | redirects |
-| WP-04 | pending | — | — | — | merge (incl. the apply deferred from WP-02) |
+| WP-03 | complete | this session | 1307bb0 | 627 passed | redirect registry + resolver |
+| WP-04 | complete | this session | 27fecd2 | 627 passed | merge planner + transactional apply |
 | WP-05 | pending | — | — | — | CLI/GUI |
 | WP-06 | pending | — | — | — | release |
 
@@ -147,6 +147,50 @@ the invariants, so WP-02 stops at detection and review. New tests: `tests/test_w
 
 Checks run (all green): `pytest -q` → **611 passed**; Ruff check + format clean; pre-commit
 passed. Committed as `8497497`.
+
+## WP-03 outcomes
+
+`work/redirects.py` — the durable retired-id → canonical-id registry (decision A5):
+
+1. **Storage.** One JSON file in the runtime zone (`identity/redirects.json`), written inside
+   the merge `ChangeSet` (WP-04) and rebuildable from tombstone notes.
+2. **Fail-closed read.** A missing registry is empty (fresh vault); a corrupt/invalid one
+   raises `redirect_registry_unreadable` / `redirect_registry_invalid` — never assumed empty
+   (spec INDEX-002).
+3. **Acyclic resolver.** `resolve_person` follows the chain and raises `redirect_cycle` on any
+   cycle (including a self-cycle).
+4. **Rebuild story.** `rebuild_redirects` reconstructs the map from `type: redirect` tombstones
+   (retired `person_id` + `redirect:` target resolved to the canonical note's `person_id`) and
+   writes it via the derived seam; an unresolvable target is skipped, never guessed.
+
+New tests: `tests/test_work_redirects.py`. Checks: `pytest -q` → **627 passed**; Ruff clean;
+pre-commit passed. Committed as `1307bb0`.
+
+## WP-04 outcomes
+
+`work/merge.py` — the merge planner and the transactional apply (decisions A1, D3, D4):
+
+1. **Plan (read-only).** `plan_merge` compares the mergeable fields (`role`, `team`, `manager`,
+   `email`, `status`), flags every conflicting field, enumerates the referring notes (wiki
+   links to the duplicate via the scanner), and computes the identity `basis_sha256`.
+2. **Conflict gate (D4).** `apply_merge` refuses unless every conflicting field has an explicit
+   `left`/`right` decision — `unresolved_conflict` otherwise.
+3. **One transaction (A1).** The canonical note is updated (nonconflicting fields combined, body
+   preserved under `## Merged context`, a dated `## Updates` entry), the duplicate becomes a
+   redirect tombstone, every confidently parsed wiki link to the duplicate is rewritten to the
+   canonical title, the redirect registry is updated, and the queue proposal is marked
+   `applied` — all in one `safety.commit` `ChangeSet` (`verb="merge"`, a confirm verb).
+4. **Fail closed.** A changed source note → `stale_source`; a changed identity basis →
+   `stale_basis`; the gateway's SHA preconditions and reverse-order rollback cover every write.
+   Ordinary prose is never rewritten (wiki links only).
+
+New tests: `tests/test_work_merge.py`. Checks: `pytest -q` → **627 passed**; Ruff clean;
+pre-commit passed. Committed as `27fecd2`.
+
+**Known limitations (deferred to WP-05/WP-06):** alias-list merging is not yet combined (scalar
+fields only); the canonical-survivor heuristic is metadata-count/age/path (WP-02's
+`_canonical_choice`), to be refined against the spec's reference-count ordering; no CLI/GUI
+surface yet.
 
 ## Checks (do not claim green unless run)
 
