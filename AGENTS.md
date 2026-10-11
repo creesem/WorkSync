@@ -8,10 +8,17 @@ stored inside this project.
 
 ## Where the plan lives
 
-The canonical architecture plan is the wayfinder map at
-`.scratch/worksync-platform-rework/map.md` and its child tickets under
-`.scratch/worksync-platform-rework/issues/`. Work the map blockers-first; one
-ticket per session; produce decisions, not code, until the map clears.
+The 0.1 implementation plan is `.scratch/worksync-platform-v2/0.1-plan.md`; its specs
+live in `.scratch/worksync-platform-v2/<NN-name>/` (`spec.md` + `issues/`). **Start
+every session from `.scratch/worksync-platform-v2/NEXT-SESSION.md`** — it names the
+current milestone and the ready tickets.
+
+The architecture wayfinder map `.scratch/worksync-platform-rework/map.md` is
+**resolved** (tickets 01–14 done); consult it for decisions and rationale, never as the
+current work list.
+
+Planning flow for new work: `ask-matt` → `grill-with-docs` → `to-spec` → `to-tickets`
+→ `implement`.
 
 ## Safety invariants (inherited; keep them)
 
@@ -27,21 +34,40 @@ ticket per session; produce decisions, not code, until the map clears.
 
 ## Expected checks
 
+Fast loop while iterating (focused, last-failed first):
+
 ```powershell
-.\.venv\Scripts\python -m pytest
+.\.venv\Scripts\python -m pytest -q --lf tests/test_the_thing.py
+```
+
+Full check before committing a ticket or closing a session (parallel):
+
+```powershell
+.\.venv\Scripts\python -m pytest -q -n auto
 .\.venv\Scripts\python -m ruff check .
+.\.venv\Scripts\python -m ruff format --check .
 py -m pre_commit run --all-files
 ```
 
-Do not claim a check passed unless it was actually run.
+Do not claim a check passed unless it was actually run. Run focused tests per change;
+run the full suite once before committing a ticket — not on every edit.
 
 ## Workflow
 
-1. Inspect the map and the relevant ticket.
-2. Claim the ticket (`Status: claimed`) before working.
-3. Implement one small slice; add or update tests.
-4. Run the checks above.
-5. Review `git diff` before committing. Commit each completed ticket to `main` once the
-   checks pass; keep unrelated changes out of the commit, and never force-push or
-   rewrite history.
+1. Read `NEXT-SESSION.md`; take the next ready ticket (`Status: ready-for-agent`).
+2. Work one small slice with `test-driven-development` (red → green → refactor).
+3. Focused tests while iterating; full suite + ruff + pre-commit before committing.
+4. Commit one ticket per commit to `main` (`<type>: <summary>`); keep unrelated changes
+   out; never force-push or rewrite history.
+5. Mark the ticket done in its file. When a spec/milestone completes, regenerate
+   `NEXT-SESSION.md` (HEAD, test count, open tickets, next milestone).
 6. Report changed files, commands run, and real test status.
+
+## Testing expectations
+
+- Add a regression test for every repaired failure mode; assert the complete outcome
+  (destination content, source disposition, backup, rollback), not just the happy path.
+- Never weaken validation or a test to make a hook pass; fix the cause or report the
+  conflict.
+- Keep test-only scaffolding in shared helpers (e.g. `tests/krisp_fakes.py`), not
+  duplicated per file.

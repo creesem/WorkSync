@@ -17,6 +17,7 @@ dependencies = ["PyYAML>=6"]
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",
+  "pytest-xdist>=3.0",
   "ruff>=0.5",
   "pre-commit>=3.0",
 ]
