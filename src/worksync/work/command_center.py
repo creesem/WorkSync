@@ -7,9 +7,16 @@ from datetime import date
 from typing import Literal
 
 from worksync.work.config import DEFAULT_CONFIG, WorkConfig
-from worksync.work.models import EntityBase, EntityType
+from worksync.work.models import EntityBase, EntityType, entity_id_of
+from worksync.work.relationships import related_to
 from worksync.work.repository import WorkIndex
-from worksync.work.review import attention_items
+from worksync.work.review import (
+    CLOSED_TICKET_STATUSES,
+    OPEN_ACTION_STATUSES,
+    OPEN_TICKET_STATUSES,
+    attention_items,
+)
+from worksync.work.schema import priority_rank
 
 QUERY_VERSION = 1
 
@@ -117,6 +124,83 @@ def needs_attention(
         section_items,
         generated_at=generated_at,
         effective_filters={"kinds": kept_kinds},
+    )
+
+
+def my_priorities(
+    index: WorkIndex,
+    owner_id: str | None,
+    today: date,
+    *,
+    generated_at: str,
+    config: WorkConfig = DEFAULT_CONFIG,
+) -> SectionResult:
+    """Build the My Priorities section for an explicitly selected person."""
+    person = next(
+        (
+            candidate
+            for candidate in index.list_type(EntityType.PERSON.value)
+            if getattr(candidate, "person_id", None) == owner_id
+        ),
+        None,
+    )
+    effective_filters = {"owner_id": owner_id}
+    if not owner_id or person is None:
+        return build_section(
+            "my_priorities",
+            (),
+            generated_at=generated_at,
+            effective_filters=effective_filters,
+            availability="unavailable",
+            error_state="source_unavailable",
+        )
+
+    relationships = related_to(index, person)
+    entities = tuple(
+        entity
+        for entity in (*relationships.actions, *relationships.tickets)
+        if (
+            entity.entity_type is EntityType.ACTION
+            and entity.status in OPEN_ACTION_STATUSES
+            or entity.entity_type is EntityType.TICKET
+            and entity.status in OPEN_TICKET_STATUSES
+            and entity.status not in CLOSED_TICKET_STATUSES
+        )
+    )
+    attention_by_path: dict[str, list] = {}
+    for item in attention_items(index, today, config):
+        attention_by_path.setdefault(item.path, []).append(item)
+
+    section_items = tuple(
+        sorted(
+            (
+                SectionItem(
+                    entity_id=entity_id_of(entity),
+                    entity_type=entity.entity_type.value,
+                    status=entity.status,
+                    label=entity.title,
+                    path=entity.path,
+                    reason=attention_by_path[entity.path][0].reason
+                    if attention_by_path.get(entity.path)
+                    else entity.status,
+                    priority=getattr(entity, "priority", None),
+                    attention=tuple(item.kind for item in attention_by_path.get(entity.path, ())),
+                    timestamps=timestamps_for_entity(entity),
+                )
+                for entity in entities
+            ),
+            key=lambda item: (
+                priority_rank(item.priority) if priority_rank(item.priority) is not None else float("inf"),
+                item.label.casefold(),
+                item.path,
+            ),
+        )
+    )
+    return build_section(
+        "my_priorities",
+        section_items,
+        generated_at=generated_at,
+        effective_filters=effective_filters,
     )
 
 
