@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 
+from worksync.work.config import DEFAULT_CONFIG, WorkConfig
 from worksync.work.models import EntityBase, EntityType
+from worksync.work.repository import WorkIndex
+from worksync.work.review import attention_items
 
 QUERY_VERSION = 1
 
@@ -78,6 +82,42 @@ def timestamps_for_entity(entity: EntityBase) -> tuple[tuple[str, str], ...]:
         if value:
             timestamps.append((field, value))
     return tuple(timestamps)
+
+
+def needs_attention(
+    index: WorkIndex,
+    today: date,
+    *,
+    generated_at: str,
+    config: WorkConfig = DEFAULT_CONFIG,
+) -> SectionResult:
+    """Build the Needs Attention section from the work review signals."""
+    selected = tuple(
+        item
+        for item in attention_items(index, today, config)
+        if item.kind in {"blocked", "manager_attention", "overdue_action"} or item.severity == "high"
+    )
+    entities_by_path = {entity.path: entity for entity in index.entities}
+    section_items = tuple(
+        SectionItem(
+            entity_id=item.entity_id,
+            entity_type=item.entity_type,
+            status=entities_by_path[item.path].status,
+            label=item.title,
+            path=item.path,
+            reason=item.reason,
+            priority=getattr(entities_by_path[item.path], "priority", None),
+            attention=(item.kind,),
+        )
+        for item in selected
+    )
+    kept_kinds = list(dict.fromkeys(item.kind for item in selected))
+    return build_section(
+        "needs_attention",
+        section_items,
+        generated_at=generated_at,
+        effective_filters={"kinds": kept_kinds},
+    )
 
 
 def section_state(result: SectionResult) -> str:
