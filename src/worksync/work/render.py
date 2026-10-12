@@ -18,6 +18,7 @@ def attention_to_dict(item: AttentionItem) -> dict:
         "title": item.title,
         "path": item.path,
         "reason": item.reason,
+        "entity_id": item.entity_id,
     }
 
 

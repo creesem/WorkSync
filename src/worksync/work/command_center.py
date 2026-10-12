@@ -14,6 +14,7 @@ from worksync.work.review import (
     CLOSED_TICKET_STATUSES,
     OPEN_ACTION_STATUSES,
     OPEN_TICKET_STATUSES,
+    AttentionItem,
     attention_items,
 )
 from worksync.work.schema import priority_rank
@@ -91,6 +92,21 @@ def timestamps_for_entity(entity: EntityBase) -> tuple[tuple[str, str], ...]:
     return tuple(timestamps)
 
 
+def _aggregate_section_item(entity: EntityBase, kept: tuple[AttentionItem, ...]) -> SectionItem:
+    """Fold one entity's kept attention signals into a single section row."""
+    return SectionItem(
+        entity_id=entity_id_of(entity),
+        entity_type=entity.entity_type.value,
+        status=entity.status,
+        label=entity.title,
+        path=entity.path,
+        reason=kept[0].reason,
+        priority=getattr(entity, "priority", None),
+        attention=tuple(item.kind for item in kept),
+        timestamps=timestamps_for_entity(entity),
+    )
+
+
 def needs_attention(
     index: WorkIndex,
     today: date,
@@ -105,18 +121,11 @@ def needs_attention(
         if item.kind in {"blocked", "manager_attention", "overdue_action"} or item.severity == "high"
     )
     entities_by_path = {entity.path: entity for entity in index.entities}
+    kept_by_path: dict[str, list[AttentionItem]] = {}
+    for item in selected:
+        kept_by_path.setdefault(item.path, []).append(item)
     section_items = tuple(
-        SectionItem(
-            entity_id=item.entity_id,
-            entity_type=item.entity_type,
-            status=entities_by_path[item.path].status,
-            label=item.title,
-            path=item.path,
-            reason=item.reason,
-            priority=getattr(entities_by_path[item.path], "priority", None),
-            attention=(item.kind,),
-        )
-        for item in selected
+        _aggregate_section_item(entities_by_path[path], tuple(kept)) for path, kept in kept_by_path.items()
     )
     kept_kinds = list(dict.fromkeys(item.kind for item in selected))
     return build_section(

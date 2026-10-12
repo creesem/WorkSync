@@ -86,6 +86,52 @@ def test_needs_attention_maps_and_filters_attention_items_in_source_order(vault,
     assert result.total_count == 3
 
 
+def test_needs_attention_aggregates_signals_to_one_row_per_entity(vault, write_note) -> None:
+    write_note(
+        vault,
+        "Tickets/blocked-flagged.md",
+        "---\ntype: ticket\nstatus: blocked\nticket_id: blocked-flagged-1\nmanager_attention: true\n"
+        "priority: P1\nlast_checked: 2026-10-10\n---\n# Blocked and flagged\n",
+    )
+    index = WorkIndex.from_vault(vault)
+
+    result = needs_attention(index, TODAY, generated_at=GENERATED_AT)
+
+    assert result.total_count == 1
+    assert len(result.items) == 1
+    (item,) = result.items
+    assert item.entity_id == "blocked-flagged-1"
+    assert item.entity_type == "ticket"
+    assert item.status == "blocked"
+    assert item.label == "Blocked and flagged"
+    assert item.path == "Tickets/blocked-flagged.md"
+    assert item.reason == "Ticket is blocked"
+    assert item.priority == "P1"
+    assert item.attention == ("blocked", "manager_attention")
+    assert result.effective_filters == {"kinds": ["blocked", "manager_attention"]}
+
+
+def test_needs_attention_items_carry_entity_timestamps(vault, write_note) -> None:
+    write_note(
+        vault,
+        "Tickets/blocked.md",
+        "---\ntype: ticket\nstatus: blocked\nticket_id: blocked-1\nlast_checked: 2026-10-10\n---\n# Blocked\n",
+    )
+    write_note(
+        vault,
+        "Actions/overdue.md",
+        "---\ntype: action\nstatus: open\naction_id: action-1\ndue: 2026-10-01\n---\n# Overdue action\n",
+    )
+    index = WorkIndex.from_vault(vault)
+
+    result = needs_attention(index, TODAY, generated_at=GENERATED_AT)
+
+    assert {item.path: item.timestamps for item in result.items} == {
+        "Tickets/blocked.md": (("last_checked", "2026-10-10"),),
+        "Actions/overdue.md": (("due", "2026-10-01"),),
+    }
+
+
 def test_needs_attention_empty_vault_has_empty_section_state(vault) -> None:
     result = needs_attention(WorkIndex.from_vault(vault), TODAY, generated_at=GENERATED_AT)
 

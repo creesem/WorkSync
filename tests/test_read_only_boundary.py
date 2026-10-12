@@ -370,6 +370,7 @@ LIFECYCLE_WRITE_MODULES = (
 )
 LIFECYCLE_READ_MODULES = (
     "worksync.work.control_center",
+    "worksync.work.command_center",
     "worksync.work.walkthrough",
     "worksync.work.lifecycle.loader",
     "worksync.work.lifecycle.registry_model",
@@ -407,5 +408,11 @@ def test_lifecycle_read_modules_import_no_context_or_html() -> None:
     control = _closure(("worksync.work.control_center",), modules)
     control_targets = _closure_targets(control, modules)
     assert not any(target == "worksync.safety" or target.startswith("worksync.safety.") for target in control_targets)
+    # The read-only command center sections reach no write helper at all.
+    command_center = _closure(("worksync.work.command_center",), modules)
+    command_center_targets = _closure_targets(command_center, modules)
+    assert not any(
+        target == "worksync.safety" or target.startswith("worksync.safety.") for target in command_center_targets
+    )
     # The walkthrough is a generated artifact; it writes only through the gateway.
     assert "worksync.safety.gateway" in targets

@@ -36,6 +36,7 @@ def test_review_today_json_is_deterministic(vault: Path, write_note: Callable[..
     kinds = {item["kind"] for item in first}
     assert {"review_due", "overdue_action"} <= kinds
     assert all(item["reason"] for item in first)
+    assert all(item["entity_id"] for item in first)
 
 
 def test_review_projects_json(vault: Path, write_note: Callable[..., Path], capsys) -> None:
