@@ -119,7 +119,14 @@ def test_every_factor_has_a_reason_and_the_score_is_the_sum_of_the_deltas() -> N
             manager_attention=True,
             changed_on="2026-09-01",
         ),
-        _candidate(entity_id="delta", title="Delta", priority="P4", due="2026-11-30", status="waiting"),
+        _candidate(
+            entity_id="delta",
+            title="Delta",
+            priority="P4",
+            due="2026-11-30",
+            status="waiting",
+            waiting=True,
+        ),
     )
 
     result = rank(candidates, today=TODAY)
@@ -133,6 +140,9 @@ def test_every_factor_has_a_reason_and_the_score_is_the_sum_of_the_deltas() -> N
         assert [reason.factor for reason in item.reasons] == expected
         assert item.score == _delta_sum(item.reasons, item.candidate.priority)
         assert all(reason.code and reason.detail for reason in item.reasons)
+    delta = next(item for item in result.items if item.candidate.entity_id == "delta")
+    assert _codes(delta, "dependency") == ["waiting"]
+    assert _codes(delta, "readiness") == ["not_ready"]
 
 
 def test_urgency_orders_overdue_due_today_due_soon_and_no_due_date() -> None:
