@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
-from worksync.work.command_center import SectionItem, build_section, section_state
-from worksync.work.models import Ticket, entity_id_of
+from worksync.work.command_center import SectionItem, build_section, section_state, timestamps_for_entity
+from worksync.work.models import Action, Project, Ticket, entity_id_of
 from worksync.work.repository import WorkIndex
 from worksync.work.review import attention_items
 
@@ -83,3 +84,26 @@ def test_attention_items_carry_blocked_ticket_canonical_id(vault, write_note) ->
     blocked = next(item for item in attention_items(index, today=date(2026, 10, 11)) if item.kind == "blocked")
 
     assert blocked.entity_id == "blocked-ticket"
+
+
+def test_section_items_carry_set_entity_timestamps_through_build_section() -> None:
+    entities = (
+        Project(path="Projects/p.md", title="Project", status="active", last_reviewed="2026-10-01"),
+        Ticket(path="Tickets/t.md", title="Ticket", status="open", last_checked="2026-10-02"),
+        Action(path="Actions/a.md", title="Action", status="open", due="2026-10-03"),
+        Ticket(path="Tickets/unchecked.md", title="Unchecked", status="open"),
+    )
+    expected = (
+        (("last_reviewed", "2026-10-01"),),
+        (("last_checked", "2026-10-02"),),
+        (("due", "2026-10-03"),),
+        (),
+    )
+    items = tuple(replace(_item(), timestamps=timestamps_for_entity(entity)) for entity in entities)
+    result = build_section("timestamps", items, generated_at="2026-10-11T12:00:00Z")
+
+    assert tuple(item.timestamps for item in result.items) == expected
+
+
+def test_section_item_timestamps_default_to_empty() -> None:
+    assert _item().timestamps == ()

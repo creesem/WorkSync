@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from worksync.work.models import EntityBase, EntityType
+
 QUERY_VERSION = 1
 
 
@@ -20,6 +22,7 @@ class SectionItem:
     reason: str
     priority: str | None
     attention: tuple[str, ...]
+    timestamps: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,21 @@ def build_section(
         availability=availability,
         error_state=error_state,
     )
+
+
+def timestamps_for_entity(entity: EntityBase) -> tuple[tuple[str, str], ...]:
+    """Return the relevant set timestamp fields for an entity as immutable pairs."""
+    fields_by_type = {
+        EntityType.TICKET: ("last_checked",),
+        EntityType.ACTION: ("due",),
+        EntityType.PROJECT: ("last_reviewed",),
+    }
+    timestamps = []
+    for field in fields_by_type.get(entity.entity_type, ()):
+        value = getattr(entity, field, None)
+        if value:
+            timestamps.append((field, value))
+    return tuple(timestamps)
 
 
 def section_state(result: SectionResult) -> str:
