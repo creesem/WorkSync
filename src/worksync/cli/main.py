@@ -37,6 +37,7 @@ from worksync.ingest import scan as run_ingest_scan
 from worksync.ingest.krisp import KrispAPIError, build_client
 from worksync.ingest.krisp import pull as run_krisp_pull
 from worksync.inventory.index import index_path, index_vault
+from worksync.migrate import entity_ids as entity_ids_migration
 from worksync.migrate import person_ids as person_ids_migration
 from worksync.migrate import runtime as runtime_migration
 from worksync.migrate import schema as schema_migration
@@ -457,6 +458,15 @@ def build_parser() -> argparse.ArgumentParser:
     person_ids.add_argument("--dry-run", action="store_true", help="List the proposed ids without writing.")
     person_ids.add_argument("--json", action="store_true", help="Emit JSON.")
     person_ids.set_defaults(handler=_migrate_person_ids)
+
+    entity_ids = migrate_sub.add_parser(
+        "entity-ids", help="Assign canonical ticket, meeting, and action ids to notes that lack one."
+    )
+    entity_ids.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
+    entity_ids.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
+    entity_ids.add_argument("--dry-run", action="store_true", help="List the proposed ids without writing.")
+    entity_ids.add_argument("--json", action="store_true", help="Emit JSON.")
+    entity_ids.set_defaults(handler=_migrate_entity_ids)
 
     runtime = migrate_sub.add_parser("runtime", help="Migrate the legacy runtime root into the new runtime.")
     runtime.add_argument(
@@ -1701,6 +1711,51 @@ def _print_person_ids(payload: dict, as_json: bool) -> None:
         print(f"worksync migrate person-ids: assigned {len(payload['assigned'])} note(s)")
     for item in payload["assigned"]:
         print(f"  {item['path']}: {item['person_id']}")
+
+
+def _migrate_entity_ids_payload(
+    vault: Path,
+    assignments: tuple[entity_ids_migration.EntityIdAssignment, ...],
+    *,
+    dry_run: bool,
+    result=None,
+) -> dict:
+    return {
+        "vault": str(vault),
+        "dry_run": dry_run,
+        "assigned": [{"path": item.path, "field": item.field, "value": item.value} for item in assignments],
+        "committed": bool(result and result.committed),
+        "journal": str(result.journal) if result else None,
+    }
+
+
+def _print_entity_ids(payload: dict, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    if payload["dry_run"]:
+        print(f"worksync migrate entity-ids: dry run - {len(payload['assigned'])} note(s) to assign")
+    else:
+        print(f"worksync migrate entity-ids: assigned {len(payload['assigned'])} note(s)")
+    for item in payload["assigned"]:
+        print(f"  {item['path']}: {item['field']}={item['value']}")
+
+
+def _migrate_entity_ids(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        assignments = entity_ids_migration.detect_entity_ids(vault)
+        if args.dry_run:
+            _print_entity_ids(_migrate_entity_ids_payload(vault, assignments, dry_run=True), args.json)
+            return 0
+        result = entity_ids_migration.apply_entity_ids(vault, runtime, assignments=assignments)
+        if result is not None:
+            _rebuild_derived(vault, runtime)
+        _print_entity_ids(_migrate_entity_ids_payload(vault, assignments, dry_run=False, result=result), args.json)
+        return 0
+    except MutationError as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
 
 
 def _migrate_person_ids(args: argparse.Namespace) -> int:

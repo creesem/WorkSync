@@ -19,7 +19,12 @@ from worksync.work.models import (
     EntityBase,
     EntityType,
 )
-from worksync.work.schema import DATE_STATUS_UNDATED, is_valid_person_id, link_targets
+from worksync.work.schema import (
+    CANONICAL_ID_FIELD_BY_TYPE,
+    DATE_STATUS_UNDATED,
+    is_valid_person_id,
+    link_targets,
+)
 
 REQUIRED_BY_TYPE: dict[str, tuple[str, ...]] = {
     EntityType.PROJECT.value: ("owners",),
@@ -61,6 +66,7 @@ def validate_entity(entity: EntityBase) -> list[ValidationIssue]:
     issues.extend(_validate_date_order(entity))
     if entity_type == EntityType.PERSON.value:
         issues.extend(_validate_person_id(entity))
+    issues.extend(_validate_canonical_id(entity))
     return issues
 
 
@@ -94,6 +100,7 @@ def validate_all(entities: Iterable[EntityBase], known_targets: set[str]) -> lis
         issues.extend(validate_entity(entity))
         issues.extend(validate_relationships(entity, known_targets))
     issues.extend(_duplicate_person_id_issues(ordered))
+    issues.extend(_duplicate_canonical_id_issues(ordered))
     issues.sort(key=_issue_sort)
     return issues
 
@@ -186,6 +193,29 @@ def _validate_person_id(entity: EntityBase) -> list[ValidationIssue]:
     if person_id and not is_valid_person_id(person_id):
         return [_issue(entity, f"Invalid person_id '{person_id}'", rule="person_id")]
     return []
+
+
+def _validate_canonical_id(entity: EntityBase) -> list[ValidationIssue]:
+    field_name = CANONICAL_ID_FIELD_BY_TYPE.get(entity.entity_type.value)
+    value = getattr(entity, field_name, None) if field_name else None
+    if value and not is_valid_person_id(value):
+        return [_issue(entity, f"Invalid {field_name} '{value}'", rule=field_name)]
+    return []
+
+
+def _duplicate_canonical_id_issues(entities: Iterable[EntityBase]) -> list[ValidationIssue]:
+    """Flag every entity that shares a canonical id with another of its own type."""
+    by_key: dict[tuple[str, str], list[EntityBase]] = {}
+    for entity in entities:
+        field_name = CANONICAL_ID_FIELD_BY_TYPE.get(entity.entity_type.value)
+        value = getattr(entity, field_name, None) if field_name else None
+        if value:
+            by_key.setdefault((field_name, value), []).append(entity)
+    issues: list[ValidationIssue] = []
+    for (field_name, value), group in by_key.items():
+        if len(group) > 1:
+            issues.extend(_issue(entity, f"Duplicate {field_name}: {value}", rule=field_name) for entity in group)
+    return issues
 
 
 def _duplicate_person_id_issues(entities: Iterable[EntityBase]) -> list[ValidationIssue]:

@@ -145,7 +145,8 @@ escalated, resolved, closed}`; if `sync_mode ∈ {reference, snapshot}` then
 
 **Optional:** `priority`, `assignee`, `application`, `project`, `next_action`,
 `manager_attention`, `last_checked`, `external_url`, `sync_mode`, `external_status`,
-`tags`.
+`ticket_id`, `tags`. `ticket_id` is a canonical kebab-case id assigned by
+`worksync migrate entity-ids`; it is unique among tickets and immutable once written.
 
 **Relationships:** → `assignee` (person), `project`; → meetings where discussed.
 
@@ -182,7 +183,9 @@ decisions, actions, and risks/blockers.
 **Required:** `type: meeting`; `status ∈ {scheduled, held, cancelled}`; `date` (ISO).
 
 **Optional:** `attendees`, `projects`, `project` (when exactly one), `meeting_type`,
-`source_proposal`, `source_system`, `external_id`, `sync_mode`, `date_status`, `tags`.
+`source_proposal`, `source_system`, `external_id`, `sync_mode`, `date_status`, `meeting_id`,
+`tags`. `meeting_id` is the canonical id (assigned by `worksync migrate entity-ids`); it is
+distinct from the Krisp source key in `external_id`.
 `date_status: undated` marks a `date` that is a placeholder (the migration sets
 `1970-01-01`); clear the marker when a real date is set.
 
@@ -220,7 +223,7 @@ meeting_type: weekly-update
 done, cancelled}`.
 
 **Optional:** `owners`, `priority`, `due`, `project`, `related_ticket`, `waiting_on`,
-`completed`, `next_action`, `source`, `source_date`, `task_kind`, `recipient`,
+`completed`, `next_action`, `action_id` (canonical id, assigned by `worksync migrate entity-ids`), `source`, `source_date`, `task_kind`, `recipient`,
 `subject`, `email_draft`, `attachment`, `tracking_status`, `blocker`, `delay_reason`,
 `failed_attempt`, `escalation_date`, `revised_date`, `final_outcome`, `delegated_by`,
 `delegated_date`, `vendor`, `next_milestone_date`, `tags`.
@@ -273,7 +276,7 @@ No type is removed or renamed in V1.
 | `meeting` | add `status` (`held` if dated ≤ today else `scheduled`); rename `people`→`attendees`; keep `projects`; derive missing `date` from filename | 57 |
 | `project` | keep `owners`; `status complete`→`done`; `priority`/`health` left unset (recommended) | 21 |
 | `person` | add `status: active` | 10 |
-| `ticket` | none exist | 0 |
+| `ticket` | none exist; `worksync migrate entity-ids` assigns `ticket_id` to new notes | 0 |
 | Malformed YAML | tolerant read now; repair during migration | 61 |
 | Non-entity types | unchanged | 227 |
 

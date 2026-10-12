@@ -42,6 +42,11 @@ PROJECT_STATUS_VALUES = frozenset({"active", "paused", "blocked", "done", "archi
 PROJECT_STATUS_ALIASES: dict[str, str] = {"complete": "done"}
 PERSON_STATUS_VALUES = frozenset({"active", "inactive"})
 PERSON_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+CANONICAL_ID_FIELD_BY_TYPE: dict[str, str] = {
+    EntityType.TICKET.value: "ticket_id",
+    EntityType.MEETING.value: "meeting_id",
+    EntityType.ACTION.value: "action_id",
+}
 MEETING_STATUS_VALUES = frozenset({"scheduled", "held", "cancelled"})
 UNDATED_DATE = "1970-01-01"
 DATE_STATUS_UNDATED = "undated"
@@ -399,6 +404,7 @@ def entity_from_record(record: IndexRecord) -> EntityBase | None:
             next_action=_as_str(frontmatter.get("next_action")),
             manager_attention=_as_bool(frontmatter.get("manager_attention")),
             last_checked=_as_str(frontmatter.get("last_checked")),
+            ticket_id=_as_str(frontmatter.get("ticket_id")),
         )
     if entity_type == EntityType.MEETING.value:
         return Meeting(
@@ -411,6 +417,7 @@ def entity_from_record(record: IndexRecord) -> EntityBase | None:
             source_system=_as_str(frontmatter.get("source_system")),
             external_id=_as_str(frontmatter.get("external_id")),
             sync_mode=_as_str(frontmatter.get("sync_mode")),
+            meeting_id=_as_str(frontmatter.get("meeting_id")),
         )
     if entity_type == EntityType.ACTION.value:
         return Action(
@@ -423,6 +430,7 @@ def entity_from_record(record: IndexRecord) -> EntityBase | None:
             waiting_on=_as_str(frontmatter.get("waiting_on")),
             completed=_as_str(frontmatter.get("completed")),
             next_action=_as_str(frontmatter.get("next_action")),
+            action_id=_as_str(frontmatter.get("action_id")),
         )
     return None
 

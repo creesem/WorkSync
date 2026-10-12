@@ -178,6 +178,7 @@ class Ticket(EntityBase):
     sync_mode: str | None = None
     next_action: str | None = None
     manager_attention: bool = False
+    ticket_id: str | None = None
     last_checked: str | None = None
 
     @property
@@ -197,6 +198,7 @@ class Meeting(EntityBase):
     source_system: str | None = None
     external_id: str | None = None
     sync_mode: str | None = None
+    meeting_id: str | None = None
 
     @property
     def owners(self) -> tuple[str, ...]:
@@ -215,6 +217,7 @@ class Action(EntityBase):
     waiting_on: str | None = None
     completed: str | None = None
     next_action: str | None = None
+    action_id: str | None = None
 
 
 WorkEntity = Project | Person | Ticket | Meeting | Action
