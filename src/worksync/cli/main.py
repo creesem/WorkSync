@@ -466,6 +466,9 @@ def build_parser() -> argparse.ArgumentParser:
     entity_ids.add_argument("--runtime", type=Path, default=None, help="Override the configured runtime root.")
     entity_ids.add_argument("--dry-run", action="store_true", help="List the proposed ids without writing.")
     entity_ids.add_argument("--json", action="store_true", help="Emit JSON.")
+    entity_ids.add_argument(
+        "--revert", type=Path, default=None, help="Restore the notes from one entity-ids apply journal."
+    )
     entity_ids.set_defaults(handler=_migrate_entity_ids)
 
     runtime = migrate_sub.add_parser("runtime", help="Migrate the legacy runtime root into the new runtime.")
@@ -1744,6 +1747,8 @@ def _print_entity_ids(payload: dict, as_json: bool) -> None:
 def _migrate_entity_ids(args: argparse.Namespace) -> int:
     try:
         vault, runtime = _vault_runtime_paths(args)
+        if args.revert is not None:
+            return _revert_entity_ids(args, vault, runtime)
         assignments = entity_ids_migration.detect_entity_ids(vault)
         if args.dry_run:
             _print_entity_ids(_migrate_entity_ids_payload(vault, assignments, dry_run=True), args.json)
@@ -1756,6 +1761,29 @@ def _migrate_entity_ids(args: argparse.Namespace) -> int:
     except MutationError as exc:
         print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
         return 1
+
+
+def _revert_entity_ids(args: argparse.Namespace, vault: Path, runtime: Path) -> int:
+    ops = entity_ids_migration.plan_entity_id_revert(vault, runtime, args.revert)
+    if args.dry_run:
+        payload = {"vault": str(vault), "dry_run": True, "reverted": len(ops), "committed": False}
+    else:
+        result = entity_ids_migration.revert_entity_ids(vault, runtime, args.revert)
+        if result is not None:
+            _rebuild_derived(vault, runtime)
+        payload = {
+            "vault": str(vault),
+            "dry_run": False,
+            "reverted": len(ops),
+            "committed": bool(result and result.committed),
+            "journal": str(result.journal) if result else None,
+        }
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        verb = "would restore" if payload["dry_run"] else "restored"
+        print(f"worksync migrate entity-ids --revert: {verb} {payload['reverted']} note(s)")
+    return 0
 
 
 def _migrate_person_ids(args: argparse.Namespace) -> int:

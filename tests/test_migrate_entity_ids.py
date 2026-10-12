@@ -8,7 +8,14 @@ from pathlib import Path
 import pytest
 
 from worksync.cli.main import main
-from worksync.migrate.entity_ids import REASON, REVIEWER, apply_entity_ids, detect_entity_ids
+from worksync.migrate.entity_ids import (
+    REASON,
+    REVIEWER,
+    apply_entity_ids,
+    detect_entity_ids,
+    plan_entity_id_revert,
+    revert_entity_ids,
+)
 from worksync.safety.models import MutationError
 
 
@@ -41,15 +48,32 @@ def test_detect_assigns_a_kebab_id_per_type(vault: Path) -> None:
 
 
 def test_detect_dedupes_within_each_field(vault: Path) -> None:
-    _write(vault, "Actions/A.md", "---\ntype: action\nstatus: open\n---\n# Follow up\n")
-    _write(vault, "Actions/B.md", "---\ntype: action\nstatus: open\n---\n# Follow up\n")
+    _write(vault, "Actions/Follow up.md", "---\ntype: action\nstatus: open\n---\n# Follow up\n")
+    _write(vault, "Archive/Follow up.md", "---\ntype: action\nstatus: open\n---\n# Follow up\n")
     assert sorted(_assigned(vault).values()) == ["follow-up", "follow-up-2"]
 
 
+def test_detect_uses_the_filename_not_a_section_heading(vault: Path) -> None:
+    _write(
+        vault,
+        "10. Meetings/Meeting - Canopy Anywhere Updates.md",
+        "---\ntype: meeting\nstatus: held\n---\n## Attendees\n- Eddie D\n",
+    )
+    assert _assigned(vault) == {"10. Meetings/Meeting - Canopy Anywhere Updates.md": "meeting-canopy-anywhere-updates"}
+
+
+def test_detect_caps_long_titles_at_a_word_boundary(vault: Path) -> None:
+    name = "Confirm whether the Key Pair authentication is the preferred approach for ODBC Connector"
+    _write(vault, f"Actions/{name}.md", "---\ntype: action\nstatus: open\n---\n# Heading\n")
+    value = _assigned(vault)[f"Actions/{name}.md"]
+    assert value == "confirm-whether-the-key-pair-authentication-is-the-preferred"
+    assert len(value) <= 60
+
+
 def test_detect_avoids_an_existing_id_of_the_same_field(vault: Path) -> None:
-    _write(vault, "Tickets/A.md", "---\ntype: ticket\nstatus: open\nticket_id: login-bug\n---\n# Login bug\n")
-    _write(vault, "Tickets/B.md", "---\ntype: ticket\nstatus: open\n---\n# Login bug\n")
-    assert _assigned(vault) == {"Tickets/B.md": "login-bug-2"}
+    _write(vault, "Tickets/Login bug.md", "---\ntype: ticket\nstatus: open\nticket_id: login-bug\n---\n# Login bug\n")
+    _write(vault, "Archive/Login bug.md", "---\ntype: ticket\nstatus: open\n---\n# Login bug\n")
+    assert _assigned(vault) == {"Archive/Login bug.md": "login-bug-2"}
 
 
 def test_detect_ignores_notes_that_already_have_an_id(vault: Path) -> None:
@@ -78,6 +102,42 @@ def test_apply_writes_ids_with_backups_and_is_idempotent(vault: Path, tmp_path: 
     assert apply_entity_ids(vault, runtime) is None
 
 
+def test_revert_restores_the_original_bytes_and_the_ids_are_missing_again(vault: Path, tmp_path: Path) -> None:
+    original = _write(vault, "Tickets/Login bug.md", "---\ntype: ticket\nstatus: open\n---\n# Login bug\n").read_bytes()
+    runtime = tmp_path / "var"
+    applied = apply_entity_ids(vault, runtime)
+    reverted = revert_entity_ids(vault, runtime, applied.journal)
+    assert reverted is not None and reverted.committed is True
+    assert (vault / "Tickets/Login bug.md").read_bytes() == original
+    assert _assigned(vault) == {"Tickets/Login bug.md": "login-bug"}
+
+
+def test_revert_refuses_a_note_changed_since_apply_and_touches_nothing(vault: Path, tmp_path: Path) -> None:
+    _write(vault, "Tickets/Login bug.md", "---\ntype: ticket\nstatus: open\n---\n# Login bug\n")
+    _write(vault, "Tickets/Other.md", "---\ntype: ticket\nstatus: open\n---\n# Other\n")
+    runtime = tmp_path / "var"
+    applied = apply_entity_ids(vault, runtime)
+    edited = vault / "Tickets/Login bug.md"
+    edited.write_text(edited.read_text(encoding="utf-8") + "\nNew line.\n", encoding="utf-8")
+    other_before = (vault / "Tickets/Other.md").read_bytes()
+    edited_before = edited.read_bytes()
+    with pytest.raises(MutationError) as excinfo:
+        revert_entity_ids(vault, runtime, applied.journal)
+    assert excinfo.value.code == "stale_hash"
+    assert (vault / "Tickets/Other.md").read_bytes() == other_before
+    assert edited.read_bytes() == edited_before
+
+
+def test_plan_revert_lists_every_journaled_note_without_writing(vault: Path, tmp_path: Path) -> None:
+    _write(vault, "Tickets/Login bug.md", "---\ntype: ticket\nstatus: open\n---\n# Login bug\n")
+    runtime = tmp_path / "var"
+    applied = apply_entity_ids(vault, runtime)
+    before = (vault / "Tickets/Login bug.md").read_bytes()
+    ops = plan_entity_id_revert(vault, runtime, applied.journal)
+    assert [op.path for op in ops] == [Path("Tickets/Login bug.md")]
+    assert (vault / "Tickets/Login bug.md").read_bytes() == before
+
+
 def test_changed_source_fails_closed(vault: Path, tmp_path: Path) -> None:
     _write(vault, "Actions/Send notes.md", "---\ntype: action\nstatus: open\n---\n# Send notes\n")
     assignments = detect_entity_ids(vault)
@@ -96,6 +156,31 @@ def test_cli_entity_ids_assigns_and_reports(vault: Path, tmp_path: Path, capsys)
     assert payload["committed"] is True
     assert payload["assigned"] == [{"path": "Meetings/Weekly sync.md", "field": "meeting_id", "value": "weekly-sync"}]
     assert "meeting_id: weekly-sync" in (vault / "Meetings/Weekly sync.md").read_text(encoding="utf-8")
+
+
+def test_cli_entity_ids_revert_restores_the_notes(vault: Path, tmp_path: Path, capsys) -> None:
+    original = _write(
+        vault, "Actions/Send notes.md", "---\ntype: action\nstatus: open\n---\n# Send notes\n"
+    ).read_bytes()
+    runtime = tmp_path / "var"
+    applied = apply_entity_ids(vault, runtime)
+    code = main(
+        [
+            "migrate",
+            "entity-ids",
+            "--vault",
+            str(vault),
+            "--runtime",
+            str(runtime),
+            "--revert",
+            str(applied.journal),
+            "--json",
+        ]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["committed"] is True and payload["reverted"] == 1
+    assert (vault / "Actions/Send notes.md").read_bytes() == original
 
 
 def test_cli_entity_ids_dry_run_writes_nothing(vault: Path, tmp_path: Path, capsys) -> None:
