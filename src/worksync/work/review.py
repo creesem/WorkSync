@@ -12,7 +12,7 @@ from enum import StrEnum
 
 from worksync.work.config import DEFAULT_CONFIG, WorkConfig
 from worksync.work.dates import parse_iso_date
-from worksync.work.models import EntityBase, EntityType
+from worksync.work.models import EntityBase, EntityType, entity_id_of
 from worksync.work.relationships import related_to
 from worksync.work.repository import WorkIndex
 
@@ -45,6 +45,7 @@ class AttentionItem:
     title: str
     path: str
     reason: str
+    entity_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -224,6 +225,7 @@ def _item(kind: AttentionKind, severity: str, entity: EntityBase, reason: str) -
         title=entity.title,
         path=entity.path,
         reason=reason,
+        entity_id=entity_id_of(entity),
     )
 
 

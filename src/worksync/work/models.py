@@ -222,6 +222,19 @@ class Action(EntityBase):
 
 WorkEntity = Project | Person | Ticket | Meeting | Action
 
+
+def entity_id_of(entity: EntityBase) -> str:
+    """Return an entity's canonical id, falling back to its vault path."""
+    id_field = {
+        EntityType.PROJECT: "project_id",
+        EntityType.PERSON: "person_id",
+        EntityType.TICKET: "ticket_id",
+        EntityType.MEETING: "meeting_id",
+        EntityType.ACTION: "action_id",
+    }[entity.entity_type]
+    return getattr(entity, id_field) or entity.path
+
+
 ENTITY_CLASS_BY_TYPE: dict[str, type[EntityBase]] = {
     EntityType.PROJECT.value: Project,
     EntityType.PERSON.value: Person,
