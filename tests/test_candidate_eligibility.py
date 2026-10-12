@@ -9,8 +9,9 @@ from __future__ import annotations
 from datetime import date
 
 from worksync.work.models import EntityType
-from worksync.work.prioritization import Eligibility, ExclusionReason, eligibility
+from worksync.work.prioritization import Eligibility, ExclusionReason, eligibility, rank
 from worksync.work.repository import WorkIndex
+from worksync.work.review import AttentionKind, attention_items
 
 TODAY = date(2026, 10, 12)
 PERSON = "---\ntype: person\nstatus: active\nperson_id: myles-smith\n---\n# Myles Smith\n"
@@ -45,6 +46,14 @@ def _ticket(body: str) -> str:
 def _reason_for(result: Eligibility, path: str) -> str | None:
     """Return the exclusion reason recorded for one note, or ``None`` when it is kept."""
     return next((item.reason for item in result.exclusions if item.path == path), None)
+
+
+def _attention_kinds(index: WorkIndex) -> dict[str, set[str]]:
+    """Group the attention kinds the review module reports, by note path."""
+    kinds: dict[str, set[str]] = {}
+    for item in attention_items(index, TODAY):
+        kinds.setdefault(item.path, set()).add(item.kind)
+    return kinds
 
 
 def test_open_action_with_owner_and_project_is_a_candidate(vault, write_note) -> None:
@@ -347,6 +356,278 @@ def test_changed_on_is_none_when_no_date_field_parses(vault, write_note) -> None
     candidate = eligibility(index, today=TODAY).candidates[0]
 
     assert candidate.changed_on is None
+
+
+def test_changed_on_same_day_tie_keeps_the_first_field_in_order(vault, write_note) -> None:
+    """Dates compare at day granularity, so a tie keeps ``CHANGED_ON_FIELDS`` order.
+
+    ``last_checked`` and ``updated`` carry the same day here, and only
+    ``last_checked`` comes first in ``CHANGED_ON_FIELDS``, so the later timestamp
+    written into ``updated`` must not win.
+    """
+    _seed_project(vault, write_note)
+    write_note(
+        vault,
+        "Actions/Tie.md",
+        _action(
+            "type: action\n"
+            "status: open\n"
+            "action_id: tie-action\n"
+            'owners:\n  - "[[Myles Smith]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+            "last_checked: 2026-10-05\n"
+            'updated: "2026-10-05T09:30:00"\n'
+        ),
+    )
+    index = WorkIndex.from_vault(vault)
+
+    candidate = eligibility(index, today=TODAY).candidates[0]
+
+    assert candidate.changed_on == "2026-10-05"
+
+
+def test_an_owner_link_that_resolves_to_nobody_falls_back_to_the_link_target(vault, write_note) -> None:
+    _seed_project(vault, write_note)
+    write_note(
+        vault,
+        "Actions/Ghost owner.md",
+        _action(
+            "type: action\n"
+            "status: open\n"
+            "action_id: ghost-owner-action\n"
+            'owners:\n  - "[[Ghost Person]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+        ),
+    )
+    index = WorkIndex.from_vault(vault)
+
+    result = eligibility(index, today=TODAY)
+
+    assert _reason_for(result, "Actions/Ghost owner.md") is None
+    assert [candidate.entity_id for candidate in result.candidates] == ["ghost-owner-action"]
+    # The unresolved link survives as its link target: never dropped, never an id.
+    assert result.candidates[0].owner_ids == ("ghost person",)
+
+
+def test_owner_ids_follow_input_order_and_drop_duplicates(vault, write_note) -> None:
+    _seed_project(vault, write_note)
+    write_note(
+        vault,
+        "People/Ada Lovelace.md",
+        "---\ntype: person\nstatus: active\nperson_id: ada-lovelace\n---\n# Ada Lovelace\n",
+    )
+    write_note(
+        vault,
+        "Actions/Shared.md",
+        _action(
+            "type: action\n"
+            "status: open\n"
+            "action_id: shared-action\n"
+            'owners:\n  - "[[Ada Lovelace]]"\n  - "[[Myles Smith]]"\n  - "[[Ada Lovelace]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+        ),
+    )
+    index = WorkIndex.from_vault(vault)
+
+    result = eligibility(index, today=TODAY)
+
+    # Input order, not path order, and the repeated owner appears once.
+    assert result.candidates[0].owner_ids == ("ada-lovelace", "myles-smith")
+
+
+def test_a_note_whose_only_issue_is_a_warning_is_still_a_candidate(vault, write_note) -> None:
+    """``unauthorized`` is error-only: a warning never excludes a note."""
+    _seed_project(vault, write_note)
+    path = "Tickets/Warned.md"
+    write_note(
+        vault,
+        path,
+        _ticket(
+            "type: ticket\n"
+            "status: open\n"
+            "ticket_id: warned-ticket\n"
+            'assignee: "[[Myles Smith]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+            "source_system: jira\n"
+        ),
+    )
+    index = WorkIndex.from_vault(vault)
+
+    assert index.has_errors(path) is False
+    assert [issue.severity for issue in index.issues_for(path)] == ["warning"]
+
+    result = eligibility(index, today=TODAY)
+
+    assert _reason_for(result, path) is None
+    assert [candidate.entity_id for candidate in result.candidates] == ["warned-ticket"]
+
+
+def _seed_blocker_scenarios(vault, write_note) -> None:
+    """Seed every blocker shape: an overdue and a waiting action, and blocked, waiting, and flagged tickets."""
+    _seed_project(vault, write_note)
+    write_note(
+        vault,
+        "Actions/Overdue.md",
+        _action(
+            "type: action\n"
+            "status: open\n"
+            "action_id: overdue-action\n"
+            "priority: P2\n"
+            "due: 2026-10-01\n"
+            'owners:\n  - "[[Myles Smith]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+        ),
+    )
+    write_note(
+        vault,
+        "Actions/Awaiting.md",
+        _action(
+            "type: action\n"
+            "status: waiting\n"
+            "action_id: awaiting-action\n"
+            "waiting_on: vendor\n"
+            'owners:\n  - "[[Myles Smith]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+        ),
+    )
+    write_note(
+        vault,
+        "Tickets/Stuck.md",
+        _ticket(
+            "type: ticket\n"
+            "status: blocked\n"
+            "ticket_id: stuck-ticket\n"
+            'assignee: "[[Myles Smith]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+        ),
+    )
+    write_note(
+        vault,
+        "Tickets/Awaiting.md",
+        _ticket(
+            "type: ticket\n"
+            "status: waiting\n"
+            "ticket_id: awaiting-ticket\n"
+            'assignee: "[[Myles Smith]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+        ),
+    )
+    write_note(
+        vault,
+        "Tickets/Flagged.md",
+        _ticket(
+            "type: ticket\n"
+            "status: open\n"
+            "ticket_id: flagged-ticket\n"
+            "manager_attention: true\n"
+            'assignee: "[[Myles Smith]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+        ),
+    )
+    write_note(
+        vault,
+        "Tickets/Flagged and closed.md",
+        _ticket(
+            "type: ticket\n"
+            "status: resolved\n"
+            "ticket_id: flagged-closed-ticket\n"
+            "manager_attention: true\n"
+            'assignee: "[[Myles Smith]]"\n'
+            "project: '[[Project - Eleos]]'\n"
+        ),
+    )
+
+
+def test_blocker_signals_are_the_attention_kinds_the_review_module_reports(vault, write_note) -> None:
+    """One owner for the blocker signal: eligibility mirrors ``work.review``.
+
+    The plan's global constraint binds this module to ``attention_items`` for the
+    blocker signal, so each candidate's three flags are exactly the kinds that
+    module reports for the same note, with no second derivation to drift.
+    """
+    _seed_blocker_scenarios(vault, write_note)
+    index = WorkIndex.from_vault(vault)
+
+    result = eligibility(index, today=TODAY)
+    kinds = _attention_kinds(index)
+
+    assert [candidate.entity_id for candidate in result.candidates] == [
+        "awaiting-action",
+        "overdue-action",
+        "awaiting-ticket",
+        "flagged-ticket",
+        "stuck-ticket",
+    ]
+    # A closed note is excluded before the signal is read, so the review module's
+    # not-closed guard on manager attention cannot change a candidate's flags.
+    assert _reason_for(result, "Tickets/Flagged and closed.md") == ExclusionReason.CLOSED_STATUS.value
+
+    for candidate in result.candidates:
+        reported = kinds[candidate.path]
+        assert candidate.blocked is (AttentionKind.BLOCKED.value in reported)
+        assert candidate.waiting is (AttentionKind.WAITING.value in reported)
+        assert candidate.manager_attention is (AttentionKind.MANAGER_ATTENTION.value in reported)
+
+    # An action can be overdue and waiting, but it is never blocked.
+    assert AttentionKind.OVERDUE_ACTION.value in kinds["Actions/Overdue.md"]
+    by_id = {candidate.entity_id: candidate for candidate in result.candidates}
+    assert by_id["overdue-action"].blocked is False
+    assert by_id["awaiting-action"].waiting is True
+    assert by_id["stuck-ticket"].blocked is True
+    assert by_id["awaiting-ticket"].waiting is True
+    assert by_id["flagged-ticket"].manager_attention is True
+
+
+def test_the_blocker_signals_leave_the_scores_reasons_and_order_alone(vault, write_note) -> None:
+    """Moving the blocker signal must not move a score, a reason, or a row."""
+    _seed_blocker_scenarios(vault, write_note)
+    index = WorkIndex.from_vault(vault)
+
+    ranked = rank(eligibility(index, today=TODAY).candidates, today=TODAY)
+
+    assert [item.candidate.entity_id for item in ranked.items] == [
+        "overdue-action",
+        "flagged-ticket",
+        "stuck-ticket",
+        "awaiting-action",
+        "awaiting-ticket",
+    ]
+    by_id = {item.candidate.entity_id: item for item in ranked.items}
+    overdue = by_id["overdue-action"]
+    assert overdue.score == 91
+    assert overdue.band == 0
+    assert overdue.policies == ("overdue",)
+    assert [reason.code for reason in overdue.reasons] == [
+        "overdue",
+        "priority",
+        "independent",
+        "explicit_commitment",
+        "ready",
+        "unchanged",
+    ]
+    stuck = by_id["stuck-ticket"]
+    assert stuck.score == 7
+    assert stuck.band == 1
+    assert stuck.policies == ("blocked",)
+    assert [reason.code for reason in stuck.reasons] == [
+        "no_due_date",
+        "no_priority",
+        "blocked",
+        "no_commitment",
+        "not_ready",
+        "unchanged",
+    ]
+    awaiting = by_id["awaiting-action"]
+    assert awaiting.score == -3
+    assert awaiting.band == 2
+    assert [reason.code for reason in awaiting.reasons] == [
+        "no_due_date",
+        "no_priority",
+        "waiting",
+        "no_commitment",
+        "not_ready",
+        "unchanged",
+    ]
 
 
 def test_eligibility_is_deterministic_and_ordered_for_the_same_index(vault, write_note) -> None:

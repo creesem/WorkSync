@@ -16,6 +16,10 @@ always-prioritize lift a record above them, defer sinks it below them, and
 not-relevant drops the row. A lowering override aimed at a record carrying
 material urgent evidence is refused and reported as a conflict instead, so the
 evidence a human already flagged stays in view.
+
+An override kind the ranker does not know raises ``ValueError`` rather than being
+ignored: a kind that cannot be honoured must fail closed, and CC-04 validates the
+kinds it persists before they ever reach this module.
 """
 
 from __future__ import annotations
@@ -33,6 +37,8 @@ from worksync.work.review import (
     CLOSED_TICKET_STATUSES,
     OPEN_ACTION_STATUSES,
     OPEN_TICKET_STATUSES,
+    AttentionKind,
+    attention_items,
 )
 from worksync.work.schema import link_target, priority_rank
 
@@ -90,9 +96,10 @@ class Eligibility:
 def eligibility(index: WorkIndex, *, today: date, config: WorkConfig = DEFAULT_CONFIG) -> Eligibility:
     """Return every rankable candidate and one reason per excluded note.
 
-    ``today`` and ``config`` are accepted so a caller passes the same context it
-    passes the ranker; eligibility itself reads neither.
+    ``today`` and ``config`` are forwarded to the review module's attention pass,
+    which is the single owner of the blocker signal this module records.
     """
+    attention = _attention_kinds_by_path(index, today, config)
     visible_paths = {
         entity.path for entity_type in CANDIDATE_TYPES for entity in index.view_entities(entity_type.value)
     }
@@ -101,7 +108,7 @@ def eligibility(index: WorkIndex, *, today: date, config: WorkConfig = DEFAULT_C
     for entity in index.entities:
         reason = _exclusion_reason(index, entity, visible_paths)
         if reason is None:
-            candidates.append(_candidate(index, entity))
+            candidates.append(_candidate(index, entity, attention))
         else:
             exclusions.append(
                 Exclusion(
@@ -157,8 +164,23 @@ def _is_set(value: object | None) -> bool:
     return value is not None and bool(str(value).strip())
 
 
-def _candidate(index: WorkIndex, entity: EntityBase) -> Candidate:
+def _attention_kinds_by_path(index: WorkIndex, today: date, config: WorkConfig) -> dict[str, set[str]]:
+    """Reshape the review module's attention pass into a per-note kind lookup.
+
+    The blocker signal has one owner. Deriving it a second time from raw status
+    strings here is exactly the drift the global reuse constraint forbids, so
+    this pass only groups what ``attention_items`` already decided, keyed by the
+    note path the candidate carries.
+    """
+    kinds_by_path: dict[str, set[str]] = {}
+    for item in attention_items(index, today, config):
+        kinds_by_path.setdefault(item.path, set()).add(item.kind)
+    return kinds_by_path
+
+
+def _candidate(index: WorkIndex, entity: EntityBase, attention: dict[str, set[str]]) -> Candidate:
     """Project one eligible entity onto the fields ranking reads."""
+    kinds = attention.get(entity.path, frozenset())
     return Candidate(
         entity_id=entity_id_of(entity),
         entity_type=entity.entity_type.value,
@@ -169,9 +191,9 @@ def _candidate(index: WorkIndex, entity: EntityBase) -> Candidate:
         owner_ids=_owner_ids(index, entity),
         due=getattr(entity, "due", None) if entity.entity_type is EntityType.ACTION else None,
         project_id=_project_id(index, entity),
-        blocked=entity.status == "blocked",
-        waiting=entity.status == "waiting",
-        manager_attention=bool(getattr(entity, "manager_attention", False)),
+        blocked=AttentionKind.BLOCKED.value in kinds,
+        waiting=AttentionKind.WAITING.value in kinds,
+        manager_attention=AttentionKind.MANAGER_ATTENTION.value in kinds,
         changed_on=_changed_on(entity),
     )
 
@@ -503,9 +525,13 @@ def _readiness_reasons(candidate: Candidate) -> list[tuple[RankReason, int]]:
 
 
 def _recent_change_reasons(candidate: Candidate, today: date) -> list[tuple[RankReason, int]]:
-    """Score whether the record changed recently."""
+    """Score whether the record changed in the window ending today.
+
+    The window is bounded on both ends: a change dated in the future has not
+    happened yet as far as this ranking is concerned, so it earns nothing.
+    """
     changed_on = parse_iso_date(candidate.changed_on)
-    if changed_on is not None and today - changed_on.date() <= RECENT_CHANGE_WINDOW:
+    if changed_on is not None and 0 <= (today - changed_on.date()).days <= RECENT_CHANGE_WINDOW.days:
         return [
             (
                 _reason(RankFactor.RECENT_CHANGE, "recent_change", f"Changed {candidate.changed_on}"),

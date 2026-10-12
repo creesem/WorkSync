@@ -7,11 +7,10 @@ fixed ``TODAY`` keeps every score and order reproducible offline.
 
 from __future__ import annotations
 
-from datetime import date
-
+from prioritization_fakes import TODAY
+from prioritization_fakes import candidate as _candidate
 from worksync.work.models import EntityType
 from worksync.work.prioritization import (
-    Candidate,
     RankedItem,
     RankFactor,
     Ranking,
@@ -22,7 +21,6 @@ from worksync.work.prioritization import (
 )
 from worksync.work.repository import WorkIndex
 
-TODAY = date(2026, 10, 12)
 FACTOR_ORDER = ["urgency", "impact", "dependency", "commitment", "readiness", "recent_change"]
 
 # The brief's weights, restated so a test can assert score == sum of the deltas.
@@ -47,39 +45,6 @@ FACTOR_DELTAS = {
     "recent_change": 10,
     "unchanged": 0,
 }
-
-
-def _candidate(
-    *,
-    entity_id: str = "alpha-action",
-    entity_type: str = EntityType.ACTION.value,
-    title: str = "Alpha",
-    status: str = "open",
-    priority: str | None = None,
-    owner_ids: tuple[str, ...] = ("myles-smith",),
-    due: str | None = None,
-    project_id: str | None = "eleos",
-    blocked: bool = False,
-    waiting: bool = False,
-    manager_attention: bool = False,
-    changed_on: str | None = None,
-) -> Candidate:
-    """Build one candidate, overriding only the fields a case is about."""
-    return Candidate(
-        entity_id=entity_id,
-        entity_type=entity_type,
-        path=f"Notes/{entity_id}.md",
-        title=title,
-        status=status,
-        priority=priority,
-        owner_ids=owner_ids,
-        due=due,
-        project_id=project_id,
-        blocked=blocked,
-        waiting=waiting,
-        manager_attention=manager_attention,
-        changed_on=changed_on,
-    )
 
 
 def _delta_sum(reasons: tuple[RankReason, ...], priority: str | None) -> int:
@@ -316,6 +281,19 @@ def test_recent_change_window_boundary() -> None:
     assert _codes(by_id["unparseable"], "recent_change") == ["unchanged"]
 
 
+def test_a_future_changed_on_earns_no_recent_change() -> None:
+    """The window is bounded on both ends: only the past fourteen days counts."""
+    future = _candidate(entity_id="future", title="Future", changed_on="2026-12-01")
+    undated = _candidate(entity_id="undated", title="Undated")
+
+    result = rank((future, undated), today=TODAY)
+
+    by_id = {item.candidate.entity_id: item for item in result.items}
+    assert _codes(by_id["future"], "recent_change") == ["unchanged"]
+    assert _detail(by_id["future"], "recent_change") == "Unchanged"
+    assert by_id["future"].score == by_id["undated"].score
+
+
 def test_ranking_is_deterministic_for_the_same_candidates() -> None:
     candidates = (
         _candidate(entity_id="alpha", title="Alpha", priority="P1", due="2026-10-05"),
@@ -324,6 +302,9 @@ def test_ranking_is_deterministic_for_the_same_candidates() -> None:
     )
 
     assert rank(candidates, today=TODAY) == rank(candidates, today=TODAY)
+    # The documented sort key is total for distinct candidates, so the order the
+    # candidates arrive in cannot leak into the order they come back in.
+    assert rank(list(reversed(candidates)), today=TODAY) == rank(candidates, today=TODAY)
 
 
 PERSON = "---\ntype: person\nstatus: active\nperson_id: myles-smith\n---\n# Myles Smith\n"

@@ -8,13 +8,13 @@ conflict rules against the fixed ``TODAY``.
 from __future__ import annotations
 
 import dataclasses
-from datetime import date
 
 import pytest
 
+from prioritization_fakes import TODAY
+from prioritization_fakes import candidate as _candidate
 from worksync.work.models import EntityType
 from worksync.work.prioritization import (
-    Candidate,
     Override,
     OverrideConflict,
     OverrideKind,
@@ -24,7 +24,6 @@ from worksync.work.prioritization import (
     rank,
 )
 
-TODAY = date(2026, 10, 12)
 KINDS = [
     OverrideKind.PIN,
     OverrideKind.FOCUS_TODAY,
@@ -32,39 +31,6 @@ KINDS = [
     OverrideKind.NOT_RELEVANT,
     OverrideKind.ALWAYS_PRIORITIZE,
 ]
-
-
-def _candidate(
-    *,
-    entity_id: str = "alpha-action",
-    entity_type: str = EntityType.ACTION.value,
-    title: str = "Alpha",
-    status: str = "open",
-    priority: str | None = None,
-    owner_ids: tuple[str, ...] = ("myles-smith",),
-    due: str | None = None,
-    project_id: str | None = "eleos",
-    blocked: bool = False,
-    waiting: bool = False,
-    manager_attention: bool = False,
-    changed_on: str | None = None,
-) -> Candidate:
-    """Build one candidate, overriding only the fields a case is about."""
-    return Candidate(
-        entity_id=entity_id,
-        entity_type=entity_type,
-        path=f"Notes/{entity_id}.md",
-        title=title,
-        status=status,
-        priority=priority,
-        owner_ids=owner_ids,
-        due=due,
-        project_id=project_id,
-        blocked=blocked,
-        waiting=waiting,
-        manager_attention=manager_attention,
-        changed_on=changed_on,
-    )
 
 
 def _override(override_id: str, target_id: str, kind: str, reason: str = "") -> Override:
@@ -79,6 +45,11 @@ def _item(result: Ranking, entity_id: str) -> RankedItem:
     return next(item for item in result.items if item.candidate.entity_id == entity_id)
 
 
+# Task 2's own output for the candidates below, pinned as a literal order so the
+# empty-override case cannot silently drift into a different baseline.
+TASK_2_ORDER = ("alpha", "bravo", "charlie")
+
+
 def test_empty_override_set_matches_ticket_07_output() -> None:
     candidates = (
         _candidate(entity_id="alpha", title="Alpha", priority="P1", due="2026-10-05"),
@@ -90,7 +61,8 @@ def test_empty_override_set_matches_ticket_07_output() -> None:
     result = rank(candidates, today=TODAY, overrides=())
 
     assert result == expected
-    assert _ids(result) == _ids(expected) == ["alpha", "bravo", "charlie"]
+    assert tuple(_ids(result)) == TASK_2_ORDER
+    assert tuple(_ids(expected)) == TASK_2_ORDER
     assert result.conflicts == ()
 
 

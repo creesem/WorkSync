@@ -362,6 +362,36 @@ def test_membership_writer_uses_inventory_adapter_not_raw_connect() -> None:
     assert "worksync.inventory.index.replace_membership" in imports
 
 
+PRIORITIZATION_READ_MODULES = ("worksync.work.prioritization",)
+
+
+def test_command_center_prioritization_reaches_no_write_helper() -> None:
+    """The deterministic ranking layer is pure derived state.
+
+    It reaches no write helper, no safety gateway, and neither the retrieval nor
+    the html layer, and it reuses the review module's blocker signal instead of
+    deriving one of its own.
+    """
+    modules = _module_index()
+    closure = _closure(PRIORITIZATION_READ_MODULES, modules)
+    targets = _closure_targets(closure, modules)
+
+    assert "worksync.work.prioritization" in closure
+    assert "worksync.work.review" in closure
+    assert not any(name.startswith("worksync.context") for name in closure)
+    assert not any(name.startswith("worksync.html") for name in closure)
+    assert not any(target == "worksync.safety" or target.startswith("worksync.safety.") for target in targets)
+    assert WRITE_HELPER not in targets
+
+    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
+    for name in (module for module in closure if module.startswith("worksync.")):
+        for imported in _imports_of(name, modules[name]):
+            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
+                f"{name} imports a raw write primitive: {imported}"
+            )
+            assert imported != "sqlite3", f"{name} opens a raw database connection"
+
+
 LIFECYCLE_WRITE_MODULES = (
     "worksync.work.lifecycle.transitions",
     "worksync.work.lifecycle.migrate_legacy",
