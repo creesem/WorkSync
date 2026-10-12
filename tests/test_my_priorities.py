@@ -141,5 +141,19 @@ def test_empty_owner_id_returns_unavailable(vault) -> None:
     result = my_priorities(WorkIndex.from_vault(vault), "", date(2026, 10, 11), generated_at="2026-10-11T12:00:00Z")
 
     assert result.availability == "unavailable"
+    assert result.error_state == "source_unavailable"
+    assert result.items == ()
+    assert section_state(result) == "unavailable"
+
+
+def test_owner_with_duplicate_person_id_returns_unavailable(vault, write_note) -> None:
+    write_note(vault, "People/Carlos.md", "---\ntype: person\nstatus: active\nperson_id: carlos\n---\n# Carlos\n")
+    write_note(vault, "People/Carlos B.md", "---\ntype: person\nstatus: active\nperson_id: carlos\n---\n# Carlos B\n")
+    index = WorkIndex.from_vault(vault)
+
+    result = my_priorities(index, "carlos", date(2026, 10, 11), generated_at="2026-10-11T12:00:00Z")
+
+    assert result.availability == "unavailable"
+    assert result.error_state == "source_unavailable"
     assert result.items == ()
     assert section_state(result) == "unavailable"

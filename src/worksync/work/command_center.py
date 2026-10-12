@@ -139,7 +139,7 @@ def my_priorities(
     person = next(
         (
             candidate
-            for candidate in index.list_type(EntityType.PERSON.value)
+            for candidate in index.view_entities(EntityType.PERSON.value)
             if getattr(candidate, "person_id", None) == owner_id
         ),
         None,
