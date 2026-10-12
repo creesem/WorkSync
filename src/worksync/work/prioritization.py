@@ -10,12 +10,18 @@ Every candidate is then scored by one reason per factor — urgency, impact,
 dependency, commitment, readiness, recent change — with fixed safety floors on
 top. The score is the transparent additive sum of those reasons, so the ranking
 is explainable row by row and reproducible for the same input.
+
+An override the user made is decided before those floors: pin, focus-today, and
+always-prioritize lift a record above them, defer sinks it below them, and
+not-relevant drops the row. A lowering override aimed at a record carrying
+material urgent evidence is refused and reported as a conflict instead, so the
+evidence a human already flagged stays in view.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from enum import StrEnum
 
@@ -215,6 +221,16 @@ class RankFactor(StrEnum):
     RECENT_CHANGE = "recent_change"
 
 
+class OverrideKind(StrEnum):
+    """What the user did to one record; the ranker honours it before the floors."""
+
+    PIN = "pin"
+    FOCUS_TODAY = "focus_today"
+    DEFER = "defer"
+    NOT_RELEVANT = "not_relevant"
+    ALWAYS_PRIORITIZE = "always_prioritize"
+
+
 class SafetyPolicy(StrEnum):
     """A fixed floor on the band; a policy never drops a row."""
 
@@ -229,6 +245,9 @@ POLICY_BAND: dict[SafetyPolicy, int] = {
     SafetyPolicy.BLOCKED: 1,
 }
 DEFAULT_BAND: int = 2
+ELEVATED_BAND: int = -1
+DEFERRED_BAND: int = 3
+LOWERING_KINDS: frozenset[OverrideKind] = frozenset({OverrideKind.DEFER, OverrideKind.NOT_RELEVANT})
 
 DUE_SOON_WINDOW = timedelta(days=7)
 RECENT_CHANGE_WINDOW = timedelta(days=14)
@@ -244,6 +263,27 @@ COMMITMENT_DELTA = 10
 READY_DELTA = 12
 NOT_READY_DELTA = -10
 RECENT_CHANGE_DELTA = 10
+
+
+@dataclass(frozen=True)
+class Override:
+    """One user decision about one record; the reason is carried for provenance."""
+
+    override_id: str
+    target_id: str
+    kind: str
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class OverrideConflict:
+    """One override that cannot be honoured, with the evidence that stops it."""
+
+    override_id: str
+    entity_id: str
+    kind: str
+    evidence: str
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -271,18 +311,88 @@ class Ranking:
     """The ranked items and the conflicts a caller must surface before applying."""
 
     items: tuple[RankedItem, ...]
-    conflicts: tuple = ()
+    conflicts: tuple[OverrideConflict, ...] = ()
 
 
-def rank(candidates: Iterable[Candidate], *, today: date, config: WorkConfig = DEFAULT_CONFIG) -> Ranking:
-    """Return the baseline ranking, lowest floor band and highest score first.
+def rank(
+    candidates: Iterable[Candidate],
+    *,
+    today: date,
+    overrides: Iterable[Override] = (),
+    config: WorkConfig = DEFAULT_CONFIG,
+) -> Ranking:
+    """Return the ranking with the overrides decided before the safety floors.
 
-    ``today`` is injected; nothing here reads a clock. ``config`` is accepted so a
-    caller passes the same context it passes ``eligibility``; the weights and the
-    safety floors are fixed constants, not configuration.
+    An override replaces the floor band of the record it names, or drops that row
+    entirely; a lowering override aimed at a record holding material urgent
+    evidence is refused and reported as an ``OverrideConflict`` instead, leaving
+    the record at its safety band. With no overrides the result is the baseline
+    ranking and ``conflicts`` is empty. ``today`` is injected; nothing here reads a
+    clock. ``config`` is accepted so a caller passes the same context it passes
+    ``eligibility``; the weights and the safety floors are fixed constants, not
+    configuration.
     """
-    items = sorted((_ranked_item(candidate, today) for candidate in candidates), key=_sort_key)
-    return Ranking(items=tuple(items))
+    resolved = _resolve_overrides(overrides)
+    items: list[RankedItem] = []
+    conflicts: list[OverrideConflict] = []
+    for candidate in candidates:
+        item = _ranked_item(candidate, today)
+        override = resolved.get(item.candidate.entity_id)
+        if override is None:
+            items.append(item)
+            continue
+        kind = _override_kind(override)
+        if kind in LOWERING_KINDS and item.policies:
+            conflicts.append(_conflict(override, kind, item))
+            items.append(item)
+            continue
+        band = _override_band(kind)
+        if band is None:
+            continue
+        items.append(replace(item, band=band))
+    items.sort(key=_sort_key)
+    conflicts.sort(key=lambda conflict: (conflict.entity_id, conflict.kind, conflict.override_id))
+    return Ranking(items=tuple(items), conflicts=tuple(conflicts))
+
+
+def _resolve_overrides(overrides: Iterable[Override]) -> dict[str, Override]:
+    """Index the overrides by the record they target, the last one for a target winning."""
+    resolved: dict[str, Override] = {}
+    for override in overrides:
+        # Validated here, before any precedence is applied: a kind the ranker does not
+        # know is a caller bug even when the override is superseded or names no candidate.
+        _override_kind(override)
+        resolved[override.target_id] = override
+    return resolved
+
+
+def _override_kind(override: Override) -> OverrideKind:
+    """Return the override's kind, failing closed on one the ranker does not know."""
+    try:
+        return OverrideKind(str(override.kind).strip())
+    except ValueError as error:
+        raise ValueError(f"Unknown override kind {override.kind!r} for target {override.target_id}") from error
+
+
+def _override_band(kind: OverrideKind) -> int | None:
+    """Return the band the override forces, or ``None`` when it drops the row."""
+    if kind is OverrideKind.DEFER:
+        return DEFERRED_BAND
+    if kind is OverrideKind.NOT_RELEVANT:
+        return None
+    return ELEVATED_BAND
+
+
+def _conflict(override: Override, kind: OverrideKind, item: RankedItem) -> OverrideConflict:
+    """Report the lowering override that was refused, and the evidence that refused it."""
+    evidence = item.policies[0]
+    return OverrideConflict(
+        override_id=override.override_id,
+        entity_id=item.candidate.entity_id,
+        kind=kind.value,
+        evidence=evidence,
+        detail=f"Cannot {kind.value} {item.candidate.entity_id}: {evidence}",
+    )
 
 
 def _sort_key(item: RankedItem) -> tuple[int, int, int, str, str, str]:
