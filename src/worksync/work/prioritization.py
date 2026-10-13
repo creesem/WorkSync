@@ -19,8 +19,9 @@ evidence a human already flagged stays in view.
 
 An override kind the ranker does not know is a bad record that is skipped, not a
 reason to abort the whole ranking, exactly as an override whose target matches no
-candidate is skipped: one unpersistable record must not fail a read. CC-04
-validates the kinds it persists before they ever reach this module.
+candidate is skipped: one unpersistable record must not fail a read. CC-04 is
+expected to validate the kinds it persists before they ever reach this module,
+but this module survives until it does.
 """
 
 from __future__ import annotations
@@ -408,7 +409,12 @@ def _resolve_overrides(overrides: Iterable[Override]) -> dict[str, Override]:
 
 
 def _override_kind(override: Override) -> OverrideKind:
-    """Return the override's kind, failing closed on one the ranker does not know."""
+    """Return the override's kind, raising for one this module does not name.
+
+    This is the validator and nothing more: what an unknown kind means about the
+    override is its caller's decision, so ``_resolve_overrides`` alone reads the
+    raise as a bad record to skip.
+    """
     try:
         return OverrideKind(str(override.kind).strip())
     except ValueError as error:

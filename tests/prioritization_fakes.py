@@ -40,14 +40,18 @@ def seed_project(vault: Path, write_note: Callable[[Path, str, str], Path]) -> N
     write_note(vault, "Projects/Eleos.md", project_note)
 
 
-def action_note(body: str) -> str:
-    """Wrap one action frontmatter body in its note."""
-    return f"---\n{body}---\n# Action note\n"
+ACTION_HEADING = "# Action note"
+TICKET_HEADING = "# Ticket note"
 
 
-def ticket_note(body: str) -> str:
-    """Wrap one ticket frontmatter body in its note."""
-    return f"---\n{body}---\n# Ticket note\n"
+def action_note(body: str, title: str | None = None) -> str:
+    """Wrap one action frontmatter body in its note, under *title* when given."""
+    return f"---\n{body}---\n{title or ACTION_HEADING}\n"
+
+
+def ticket_note(body: str, title: str | None = None) -> str:
+    """Wrap one ticket frontmatter body in its note, under *title* when given."""
+    return f"---\n{body}---\n{title or TICKET_HEADING}\n"
 
 
 def candidate(

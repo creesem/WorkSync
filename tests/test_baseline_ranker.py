@@ -350,7 +350,8 @@ def test_end_to_end_ranks_the_candidates_eligibility_returns(vault, write_note) 
             "priority: P1\n"
             "due: 2026-10-12\n"
             'owners:\n  - "[[Myles Smith]]"\n'
-            'project: "[[Project - Eleos]]"\n'
+            'project: "[[Project - Eleos]]"\n',
+            "# Buy milk",
         ),
     )
     write_note(
@@ -365,7 +366,8 @@ def test_end_to_end_ranks_the_candidates_eligibility_returns(vault, write_note) 
             'project: "[[Project - Eleos]]"\n'
             "source_system: jira\n"
             "external_id: ELE-42\n"
-            "manager_attention: true\n"
+            "manager_attention: true\n",
+            "# Fix export",
         ),
     )
     write_note(
@@ -376,7 +378,8 @@ def test_end_to_end_ranks_the_candidates_eligibility_returns(vault, write_note) 
             "status: done\n"
             "action_id: already-done\n"
             'owners:\n  - "[[Myles Smith]]"\n'
-            'project: "[[Project - Eleos]]"\n'
+            'project: "[[Project - Eleos]]"\n',
+            "# Already done",
         ),
     )
     index = WorkIndex.from_vault(vault)

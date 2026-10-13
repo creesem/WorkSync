@@ -24,6 +24,7 @@ from worksync.work.render import render_attention, render_projects_review, rende
 from worksync.work.repository import WorkIndex
 from worksync.work.review import (
     AttentionKind,
+    attention_by_path,
     attention_items,
     person_workloads,
     project_reviews,
@@ -140,9 +141,7 @@ def _render_team(index: WorkIndex, today: date) -> str:
 
 def _render_tickets(index: WorkIndex, today: date) -> str:
     tickets = index.list_type(EntityType.TICKET.value)
-    by_path: dict[str, list] = {}
-    for item in attention_items(index, today):
-        by_path.setdefault(item.path, []).append(item)
+    by_path = attention_by_path(index, today)
     lines = [f"# Tickets ({len(tickets)})"]
     for ticket in tickets:
         lines.append(f"{ticket.status or '-':<12} {ticket.title} ({ticket.path})")
