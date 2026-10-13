@@ -33,6 +33,7 @@ OPEN_TICKET_STATUSES = {"open", "in_progress", "waiting", "blocked", "escalated"
 OPEN_ACTION_STATUSES = {"open", "in_progress", "waiting"}
 CLOSED_TICKET_STATUSES = {"resolved", "closed"}
 SEVERITY_RANK = {"high": 0, "medium": 1, "low": 2}
+MANAGER_ATTENTION_REASON = "Flagged for manager attention"
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,28 @@ def person_workloads(index: WorkIndex, today: date, config: WorkConfig = DEFAULT
     return tuple(build_person_workload(index, person, today, config) for person in active_people(index))
 
 
+def is_open_status(entity: EntityBase) -> bool:
+    """Return True when the entity's status leaves it in play.
+
+    Only actions and tickets have an open status; any other type is not in play.
+    """
+    if entity.entity_type is EntityType.ACTION:
+        return entity.status in OPEN_ACTION_STATUSES
+    if entity.entity_type is EntityType.TICKET:
+        return entity.status in OPEN_TICKET_STATUSES
+    return False
+
+
+def attention_by_path(
+    index: WorkIndex, today: date, config: WorkConfig = DEFAULT_CONFIG
+) -> dict[str, tuple[AttentionItem, ...]]:
+    """Group the attention pass by note path; each group keeps the pass's stable order."""
+    grouped: dict[str, list[AttentionItem]] = {}
+    for item in attention_items(index, today, config):
+        grouped.setdefault(item.path, []).append(item)
+    return {path: tuple(items) for path, items in grouped.items()}
+
+
 def _project_attention(project: EntityBase, today: date, config: WorkConfig) -> list[AttentionItem]:
     items: list[AttentionItem] = []
     if project.status == "blocked":
@@ -189,7 +212,7 @@ def _ticket_attention(ticket: EntityBase, today: date, config: WorkConfig) -> li
     if status == "blocked":
         items.append(_item(AttentionKind.BLOCKED, "high", ticket, "Ticket is blocked"))
     if getattr(ticket, "manager_attention", False) and status not in CLOSED_TICKET_STATUSES:
-        items.append(_item(AttentionKind.MANAGER_ATTENTION, "high", ticket, "Flagged for manager attention"))
+        items.append(_item(AttentionKind.MANAGER_ATTENTION, "high", ticket, MANAGER_ATTENTION_REASON))
     if status == "waiting":
         items.append(_item(AttentionKind.WAITING, "medium", ticket, "Waiting on another party"))
     if status in OPEN_TICKET_STATUSES:

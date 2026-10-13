@@ -11,11 +11,10 @@ from worksync.work.models import EntityBase, EntityType, entity_id_of
 from worksync.work.relationships import related_to
 from worksync.work.repository import WorkIndex
 from worksync.work.review import (
-    CLOSED_TICKET_STATUSES,
-    OPEN_ACTION_STATUSES,
-    OPEN_TICKET_STATUSES,
     AttentionItem,
+    attention_by_path,
     attention_items,
+    is_open_status,
 )
 from worksync.work.schema import priority_rank
 
@@ -165,20 +164,8 @@ def my_priorities(
         )
 
     relationships = related_to(index, person)
-    entities = tuple(
-        entity
-        for entity in (*relationships.actions, *relationships.tickets)
-        if (
-            entity.entity_type is EntityType.ACTION
-            and entity.status in OPEN_ACTION_STATUSES
-            or entity.entity_type is EntityType.TICKET
-            and entity.status in OPEN_TICKET_STATUSES
-            and entity.status not in CLOSED_TICKET_STATUSES
-        )
-    )
-    attention_by_path: dict[str, list] = {}
-    for item in attention_items(index, today, config):
-        attention_by_path.setdefault(item.path, []).append(item)
+    entities = tuple(entity for entity in (*relationships.actions, *relationships.tickets) if is_open_status(entity))
+    attention_groups = attention_by_path(index, today, config)
 
     section_items = tuple(
         sorted(
@@ -189,11 +176,11 @@ def my_priorities(
                     status=entity.status,
                     label=entity.title,
                     path=entity.path,
-                    reason=attention_by_path[entity.path][0].reason
-                    if attention_by_path.get(entity.path)
+                    reason=attention_groups[entity.path][0].reason
+                    if attention_groups.get(entity.path)
                     else entity.status,
                     priority=getattr(entity, "priority", None),
-                    attention=tuple(item.kind for item in attention_by_path.get(entity.path, ())),
+                    attention=tuple(item.kind for item in attention_groups.get(entity.path, ())),
                     timestamps=timestamps_for_entity(entity),
                 )
                 for entity in entities
