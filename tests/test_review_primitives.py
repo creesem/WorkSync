@@ -1,4 +1,4 @@
-"""Task 1: the review module's two shared primitives.
+"""The review module's two shared primitives.
 
 ``is_open_status`` and ``attention_by_path`` are the single owners of the
 open-status test and the attention grouping, so the Command Center sections and
@@ -70,7 +70,19 @@ def test_open_and_closed_ticket_statuses_are_disjoint() -> None:
 
 
 def test_only_actions_and_tickets_can_be_in_play() -> None:
+    """A type with no open statuses is out of play, even when it carries one."""
     assert is_open_status(Project(path="Projects/p.md", title="Project", status="active")) is False
+
+
+def test_a_non_ticket_that_carries_an_open_ticket_status_is_not_in_play() -> None:
+    """The type check is armed: ``blocked`` is an open ticket status, not a project one.
+
+    A project whose status happens to read ``blocked`` must stay out of play, so
+    a mutation that reads the status set without checking the type fails here.
+    """
+    assert "blocked" in OPEN_TICKET_STATUSES
+
+    assert is_open_status(Project(path="Projects/Blocked.md", title="Blocked", status="blocked")) is False
 
 
 def test_attention_by_path_groups_the_pass_by_note_path_in_the_pass_order(vault, write_note) -> None:

@@ -1,46 +1,18 @@
 """Ticket 06: deterministic candidate eligibility for Command Center ranking.
 
-Every assertion here goes through the public ``eligibility`` function over a real
-vault scan, and the fixed ``TODAY`` keeps the derived state reproducible.
+Every case runs the public ``eligibility`` function over a real vault scan, and
+the fixed ``TODAY`` keeps the derived state reproducible. One case then hands
+the resulting candidates to ``rank``, to pin that the blocker signal alone moves
+no score, reason, or row.
 """
 
 from __future__ import annotations
 
-from datetime import date
-
+from prioritization_fakes import TODAY, action_note, seed_person, seed_project, ticket_note
 from worksync.work.models import EntityType
 from worksync.work.prioritization import Eligibility, ExclusionReason, eligibility, rank
 from worksync.work.repository import WorkIndex
-from worksync.work.review import AttentionKind, attention_items
-
-TODAY = date(2026, 10, 12)
-PERSON = "---\ntype: person\nstatus: active\nperson_id: myles-smith\n---\n# Myles Smith\n"
-
-
-def _seed_person(vault, write_note) -> None:
-    write_note(vault, "People/Myles Smith.md", PERSON)
-
-
-def _seed_project(vault, write_note) -> None:
-    _seed_person(vault, write_note)
-    project_note = (
-        "---\n"
-        "type: project\n"
-        "status: active\n"
-        'owners:\n  - "[[Myles Smith]]"\n'
-        "project_id: eleos\n"
-        "---\n"
-        "# Project - Eleos\n"
-    )
-    write_note(vault, "Projects/Eleos.md", project_note)
-
-
-def _action(body: str) -> str:
-    return f"---\n{body}---\n# Action note\n"
-
-
-def _ticket(body: str) -> str:
-    return f"---\n{body}---\n# Ticket note\n"
+from worksync.work.review import AttentionKind, attention_by_path
 
 
 def _reason_for(result: Eligibility, path: str) -> str | None:
@@ -50,19 +22,16 @@ def _reason_for(result: Eligibility, path: str) -> str | None:
 
 def _attention_kinds(index: WorkIndex) -> dict[str, set[str]]:
     """Group the attention kinds the review module reports, by note path."""
-    kinds: dict[str, set[str]] = {}
-    for item in attention_items(index, TODAY):
-        kinds.setdefault(item.path, set()).add(item.kind)
-    return kinds
+    return {path: {item.kind for item in items} for path, items in attention_by_path(index, TODAY).items()}
 
 
 def test_open_action_with_owner_and_project_is_a_candidate(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     candidate_path = "Actions/Renew certificate.md"
     write_note(
         vault,
         candidate_path,
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: renew-certificate\n"
@@ -96,12 +65,12 @@ def test_open_action_with_owner_and_project_is_a_candidate(vault, write_note) ->
 
 
 def test_open_ticket_with_assignee_and_project_is_a_candidate(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     candidate_path = "Tickets/Fix export.md"
     write_note(
         vault,
         candidate_path,
-        _ticket(
+        ticket_note(
             "type: ticket\n"
             "status: blocked\n"
             "ticket_id: fix-export\n"
@@ -136,11 +105,11 @@ def test_open_ticket_with_assignee_and_project_is_a_candidate(vault, write_note)
 
 
 def test_waiting_ticket_records_the_waiting_signal(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Tickets/Awaiting vendor.md",
-        _ticket('type: ticket\nstatus: waiting\nassignee: "[[Myles Smith]]"\nproject: "[[Project - Eleos]]"\n'),
+        ticket_note('type: ticket\nstatus: waiting\nassignee: "[[Myles Smith]]"\nproject: "[[Project - Eleos]]"\n'),
     )
     index = WorkIndex.from_vault(vault)
 
@@ -152,7 +121,7 @@ def test_waiting_ticket_records_the_waiting_signal(vault, write_note) -> None:
 
 def test_a_waiting_action_carries_the_party_and_the_dependency_it_waits_on(vault, write_note) -> None:
     """A dependency target the note states is carried, resolved when the link resolves."""
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Tickets/Vendor.md",
@@ -168,7 +137,7 @@ def test_a_waiting_action_carries_the_party_and_the_dependency_it_waits_on(vault
     write_note(
         vault,
         "Actions/Awaiting vendor.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: waiting\n"
             "action_id: awaiting-vendor\n"
@@ -181,7 +150,7 @@ def test_a_waiting_action_carries_the_party_and_the_dependency_it_waits_on(vault
     write_note(
         vault,
         "Tickets/Awaiting.md",
-        _ticket(
+        ticket_note(
             "type: ticket\n"
             "status: waiting\n"
             "ticket_id: awaiting-ticket\n"
@@ -222,11 +191,11 @@ def test_an_unresolvable_related_ticket_is_no_dependency_id(vault, write_note) -
 
 
 def test_closed_records_are_excluded_with_closed_status(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Finished.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: done\n"
             "action_id: finished-action\n"
@@ -238,7 +207,7 @@ def test_closed_records_are_excluded_with_closed_status(vault, write_note) -> No
     write_note(
         vault,
         "Tickets/Shipped.md",
-        _ticket(
+        ticket_note(
             "type: ticket\n"
             "status: resolved\n"
             "ticket_id: shipped-ticket\n"
@@ -261,11 +230,11 @@ def test_closed_records_are_excluded_with_closed_status(vault, write_note) -> No
 
 def test_a_note_with_an_error_exclusion_beats_a_later_rule(vault, write_note) -> None:
     """First failure wins: a closed note that is also invalid reads as unauthorized."""
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Finished.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: done\n"
             "action_id: unfinished-action\n"
@@ -281,11 +250,11 @@ def test_a_note_with_an_error_exclusion_beats_a_later_rule(vault, write_note) ->
 
 
 def test_open_action_without_owner_is_excluded_as_unowned(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Orphan.md",
-        _action("type: action\nstatus: open\naction_id: orphan-action\nproject: '[[Project - Eleos]]'\n"),
+        action_note("type: action\nstatus: open\naction_id: orphan-action\nproject: '[[Project - Eleos]]'\n"),
     )
     index = WorkIndex.from_vault(vault)
 
@@ -299,11 +268,11 @@ def test_open_action_without_owner_is_excluded_as_unowned(vault, write_note) -> 
 
 
 def test_open_ticket_without_project_or_source_is_excluded_as_no_evidence(vault, write_note) -> None:
-    _seed_person(vault, write_note)
+    seed_person(vault, write_note)
     write_note(
         vault,
         "Tickets/Floating.md",
-        _ticket('type: ticket\nstatus: open\nticket_id: floating-ticket\nassignee: "[[Myles Smith]]"\n'),
+        ticket_note('type: ticket\nstatus: open\nticket_id: floating-ticket\nassignee: "[[Myles Smith]]"\n'),
     )
     index = WorkIndex.from_vault(vault)
 
@@ -317,11 +286,11 @@ def test_open_ticket_without_project_or_source_is_excluded_as_no_evidence(vault,
 
 
 def test_action_with_related_ticket_has_evidence_without_a_project(vault, write_note) -> None:
-    _seed_person(vault, write_note)
+    seed_person(vault, write_note)
     write_note(
         vault,
         "Actions/Chase vendor.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: chase-vendor\n"
@@ -339,12 +308,12 @@ def test_action_with_related_ticket_has_evidence_without_a_project(vault, write_
 
 
 def test_note_with_a_validation_error_is_excluded_as_unauthorized(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     path = "Actions/Bad priority.md"
     write_note(
         vault,
         path,
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: bad-priority\n"
@@ -367,7 +336,7 @@ def test_note_with_a_validation_error_is_excluded_as_unauthorized(vault, write_n
 
 
 def test_project_note_is_excluded_as_unsupported_type(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     index = WorkIndex.from_vault(vault)
 
     result = eligibility(index, today=TODAY)
@@ -385,11 +354,11 @@ def test_project_note_is_excluded_as_unsupported_type(vault, write_note) -> None
 
 
 def test_changed_on_is_the_latest_present_date_field(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Stale.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: stale-action\n"
@@ -409,11 +378,11 @@ def test_changed_on_is_the_latest_present_date_field(vault, write_note) -> None:
 
 
 def test_changed_on_is_none_when_no_date_field_parses(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Undated.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: undated-action\n"
@@ -436,11 +405,11 @@ def test_changed_on_same_day_tie_keeps_the_first_field_in_order(vault, write_not
     ``last_checked`` comes first in ``CHANGED_ON_FIELDS``, so the later timestamp
     written into ``updated`` must not win.
     """
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Tie.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: tie-action\n"
@@ -458,11 +427,11 @@ def test_changed_on_same_day_tie_keeps_the_first_field_in_order(vault, write_not
 
 
 def test_an_owner_link_that_resolves_to_nobody_falls_back_to_the_link_target(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Ghost owner.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: ghost-owner-action\n"
@@ -481,7 +450,7 @@ def test_an_owner_link_that_resolves_to_nobody_falls_back_to_the_link_target(vau
 
 
 def test_owner_ids_follow_input_order_and_drop_duplicates(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "People/Ada Lovelace.md",
@@ -490,7 +459,7 @@ def test_owner_ids_follow_input_order_and_drop_duplicates(vault, write_note) -> 
     write_note(
         vault,
         "Actions/Shared.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: shared-action\n"
@@ -508,12 +477,12 @@ def test_owner_ids_follow_input_order_and_drop_duplicates(vault, write_note) -> 
 
 def test_a_note_whose_only_issue_is_a_warning_is_still_a_candidate(vault, write_note) -> None:
     """``unauthorized`` is error-only: a warning never excludes a note."""
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     path = "Tickets/Warned.md"
     write_note(
         vault,
         path,
-        _ticket(
+        ticket_note(
             "type: ticket\n"
             "status: open\n"
             "ticket_id: warned-ticket\n"
@@ -535,11 +504,11 @@ def test_a_note_whose_only_issue_is_a_warning_is_still_a_candidate(vault, write_
 
 def _seed_blocker_scenarios(vault, write_note) -> None:
     """Seed every blocker shape: an overdue and a waiting action, and blocked, waiting, and flagged tickets."""
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Overdue.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: overdue-action\n"
@@ -552,7 +521,7 @@ def _seed_blocker_scenarios(vault, write_note) -> None:
     write_note(
         vault,
         "Actions/Awaiting.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: waiting\n"
             "action_id: awaiting-action\n"
@@ -564,7 +533,7 @@ def _seed_blocker_scenarios(vault, write_note) -> None:
     write_note(
         vault,
         "Tickets/Stuck.md",
-        _ticket(
+        ticket_note(
             "type: ticket\n"
             "status: blocked\n"
             "ticket_id: stuck-ticket\n"
@@ -575,7 +544,7 @@ def _seed_blocker_scenarios(vault, write_note) -> None:
     write_note(
         vault,
         "Tickets/Awaiting.md",
-        _ticket(
+        ticket_note(
             "type: ticket\n"
             "status: waiting\n"
             "ticket_id: awaiting-ticket\n"
@@ -586,7 +555,7 @@ def _seed_blocker_scenarios(vault, write_note) -> None:
     write_note(
         vault,
         "Tickets/Flagged.md",
-        _ticket(
+        ticket_note(
             "type: ticket\n"
             "status: open\n"
             "ticket_id: flagged-ticket\n"
@@ -598,7 +567,7 @@ def _seed_blocker_scenarios(vault, write_note) -> None:
     write_note(
         vault,
         "Tickets/Flagged and closed.md",
-        _ticket(
+        ticket_note(
             "type: ticket\n"
             "status: resolved\n"
             "ticket_id: flagged-closed-ticket\n"
@@ -612,9 +581,9 @@ def _seed_blocker_scenarios(vault, write_note) -> None:
 def test_blocker_signals_are_the_attention_kinds_the_review_module_reports(vault, write_note) -> None:
     """One owner for the blocker signal: eligibility mirrors ``work.review``.
 
-    The plan's global constraint binds this module to ``attention_items`` for the
-    blocker signal, so each candidate's three flags are exactly the kinds that
-    module reports for the same note, with no second derivation to drift.
+    The plan's global constraint binds this module to that module's attention
+    pass, so each candidate's three flags are exactly the kinds it reports for
+    the same note, with no second derivation to drift.
     """
     _seed_blocker_scenarios(vault, write_note)
     index = WorkIndex.from_vault(vault)
@@ -702,11 +671,11 @@ def test_the_blocker_signals_leave_the_scores_reasons_and_order_alone(vault, wri
 
 
 def test_eligibility_is_deterministic_and_ordered_for_the_same_index(vault, write_note) -> None:
-    _seed_project(vault, write_note)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Renew certificate.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: renew-certificate\n"
@@ -717,7 +686,7 @@ def test_eligibility_is_deterministic_and_ordered_for_the_same_index(vault, writ
     write_note(
         vault,
         "Actions/Buy domain.md",
-        _action(
+        action_note(
             "type: action\n"
             "status: open\n"
             "action_id: buy-domain\n"
@@ -728,7 +697,7 @@ def test_eligibility_is_deterministic_and_ordered_for_the_same_index(vault, writ
     write_note(
         vault,
         "Tickets/Unassigned.md",
-        _ticket("type: ticket\nstatus: open\nticket_id: unassigned-ticket\nsource_system: jira\n"),
+        ticket_note("type: ticket\nstatus: open\nticket_id: unassigned-ticket\nsource_system: jira\n"),
     )
     index = WorkIndex.from_vault(vault)
 

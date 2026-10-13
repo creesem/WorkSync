@@ -7,8 +7,9 @@ fixed ``TODAY`` keeps every score and order reproducible offline.
 
 from __future__ import annotations
 
-from prioritization_fakes import TODAY
+from prioritization_fakes import TODAY, action_note, seed_project, ticket_note
 from prioritization_fakes import candidate as _candidate
+from worksync.work import prioritization
 from worksync.work.models import EntityType
 from worksync.work.prioritization import (
     RankedItem,
@@ -20,6 +21,7 @@ from worksync.work.prioritization import (
     rank,
 )
 from worksync.work.repository import WorkIndex
+from worksync.work.review import MANAGER_ATTENTION_REASON
 
 FACTOR_ORDER = ["urgency", "impact", "dependency", "commitment", "readiness", "recent_change"]
 
@@ -276,7 +278,10 @@ def test_non_urgency_reason_codes_and_details() -> None:
 
     assert _codes(by_id["flagged"], "impact") == ["priority", "manager_attention"]
     assert _detail_for(by_id["flagged"], "priority") == "P2"
-    assert _detail_for(by_id["flagged"], "manager_attention") == "Flagged for manager attention"
+    # One owner of the wording: the ranker reads the review module's own constant
+    # object, so a second copy of the string cannot drift from it.
+    assert prioritization.MANAGER_ATTENTION_REASON is MANAGER_ATTENTION_REASON
+    assert _detail_for(by_id["flagged"], "manager_attention") == MANAGER_ATTENTION_REASON
     assert _codes(by_id["flagged"], "dependency") == ["independent"]
     assert _codes(by_id["flagged"], "commitment") == ["explicit_commitment"]
     assert _codes(by_id["flagged"], "readiness") == ["ready"]
@@ -333,33 +338,46 @@ def test_ranking_is_deterministic_for_the_same_candidates() -> None:
     assert rank(list(reversed(candidates)), today=TODAY) == rank(candidates, today=TODAY)
 
 
-PERSON = "---\ntype: person\nstatus: active\nperson_id: myles-smith\n---\n# Myles Smith\n"
-PROJECT = (
-    '---\ntype: project\nstatus: active\nowners:\n  - "[[Myles Smith]]"\nproject_id: eleos\n---\n# Project - Eleos\n'
-)
-
-
 def test_end_to_end_ranks_the_candidates_eligibility_returns(vault, write_note) -> None:
-    write_note(vault, "People/Myles Smith.md", PERSON)
-    write_note(vault, "Projects/Eleos.md", PROJECT)
+    seed_project(vault, write_note)
     write_note(
         vault,
         "Actions/Buy milk.md",
-        "---\ntype: action\nstatus: open\naction_id: buy-milk\npriority: P1\ndue: 2026-10-12\n"
-        'owners:\n  - "[[Myles Smith]]"\nproject: "[[Project - Eleos]]"\n---\n# Buy milk\n',
+        action_note(
+            "type: action\n"
+            "status: open\n"
+            "action_id: buy-milk\n"
+            "priority: P1\n"
+            "due: 2026-10-12\n"
+            'owners:\n  - "[[Myles Smith]]"\n'
+            'project: "[[Project - Eleos]]"\n'
+        ),
     )
     write_note(
         vault,
         "Tickets/Fix export.md",
-        "---\ntype: ticket\nstatus: blocked\nticket_id: fix-export\npriority: P3\n"
-        'assignee: "[[Myles Smith]]"\nproject: "[[Project - Eleos]]"\n'
-        "source_system: jira\nexternal_id: ELE-42\nmanager_attention: true\n---\n# Fix export\n",
+        ticket_note(
+            "type: ticket\n"
+            "status: blocked\n"
+            "ticket_id: fix-export\n"
+            "priority: P3\n"
+            'assignee: "[[Myles Smith]]"\n'
+            'project: "[[Project - Eleos]]"\n'
+            "source_system: jira\n"
+            "external_id: ELE-42\n"
+            "manager_attention: true\n"
+        ),
     )
     write_note(
         vault,
         "Actions/Already done.md",
-        "---\ntype: action\nstatus: done\naction_id: already-done\n"
-        'owners:\n  - "[[Myles Smith]]"\nproject: "[[Project - Eleos]]"\n---\n# Already done\n',
+        action_note(
+            "type: action\n"
+            "status: done\n"
+            "action_id: already-done\n"
+            'owners:\n  - "[[Myles Smith]]"\n'
+            'project: "[[Project - Eleos]]"\n'
+        ),
     )
     index = WorkIndex.from_vault(vault)
 

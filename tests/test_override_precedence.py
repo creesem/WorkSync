@@ -45,9 +45,9 @@ def _item(result: Ranking, entity_id: str) -> RankedItem:
     return next(item for item in result.items if item.candidate.entity_id == entity_id)
 
 
-# Task 2's own output for the candidates below, pinned as a literal order so the
+# Ticket 07's own output for the candidates below, pinned as a literal order so the
 # empty-override case cannot silently drift into a different baseline.
-TASK_2_ORDER = ("alpha", "bravo", "charlie")
+TICKET_7_ORDER = ("alpha", "bravo", "charlie")
 
 
 def test_empty_override_set_matches_ticket_07_output() -> None:
@@ -61,8 +61,8 @@ def test_empty_override_set_matches_ticket_07_output() -> None:
     result = rank(candidates, today=TODAY, overrides=())
 
     assert result == expected
-    assert tuple(_ids(result)) == TASK_2_ORDER
-    assert tuple(_ids(expected)) == TASK_2_ORDER
+    assert tuple(_ids(result)) == TICKET_7_ORDER
+    assert tuple(_ids(expected)) == TICKET_7_ORDER
     assert result.conflicts == ()
 
 

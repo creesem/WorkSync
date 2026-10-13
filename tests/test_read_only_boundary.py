@@ -29,6 +29,8 @@ RETRIEVAL_ENTRY_POINTS = ("worksync.context.registry", "worksync.context.project
 WRITE_HELPER = "worksync.inventory.index.connect"
 PROJECT_NOTE = "9. Project/Project - Eleos.md"
 MEETING_NOTE = "10. Meetings/2026-01-01 Kickoff.md"
+# The raw write primitives a read-only closure must reach only through a helper.
+FORBIDDEN_WRITE_LEAVES = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
 
 
 def _module_index() -> dict[str, Path]:
@@ -93,6 +95,16 @@ def _closure_targets(closure: set[str], modules: dict[str, Path]) -> set[str]:
     return targets
 
 
+def _assert_no_raw_write_imports(closure: set[str], modules: dict[str, Path], prefix: str) -> None:
+    """Assert no module in the closure under ``prefix`` reaches a raw write primitive."""
+    for name in (module for module in closure if module.startswith(prefix)):
+        for imported in _imports_of(name, modules[name]):
+            assert imported.rsplit(".", 1)[-1] not in FORBIDDEN_WRITE_LEAVES, (
+                f"{name} imports a raw write primitive: {imported}"
+            )
+            assert imported != "sqlite3", f"{name} opens a raw database connection"
+
+
 def test_retrieval_import_closure_reaches_no_write_helper() -> None:
     modules = _module_index()
     closure = _closure(RETRIEVAL_ENTRY_POINTS, modules)
@@ -141,13 +153,7 @@ def test_ingest_import_closure_stays_in_its_layers_and_writes_through_safety() -
     assert "worksync.safety.gateway" in targets
     assert "worksync.safety.derived" in targets
 
-    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
-    for name in (module for module in closure if module.startswith("worksync.ingest")):
-        for imported in _imports_of(name, modules[name]):
-            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
-                f"{name} imports a raw write primitive: {imported}"
-            )
-            assert imported != "sqlite3", f"{name} opens a raw database connection"
+    _assert_no_raw_write_imports(closure, modules, "worksync.ingest")
 
 
 def test_mcp_adapter_imports_only_context() -> None:
@@ -314,13 +320,7 @@ def test_review_queues_reach_safety_and_import_no_context_or_html() -> None:
     assert not any(name.startswith("worksync.context") for name in closure)
     assert not any(name.startswith("worksync.html") for name in closure)
 
-    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
-    for name in (module for module in closure if module.startswith("worksync.work.")):
-        for imported in _imports_of(name, modules[name]):
-            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
-                f"{name} imports a raw write primitive: {imported}"
-            )
-            assert imported != "sqlite3", f"{name} opens a raw database connection"
+    _assert_no_raw_write_imports(closure, modules, "worksync.work.")
 
 
 def test_krisp_source_reaches_safety_and_imports_no_context_or_html() -> None:
@@ -341,13 +341,7 @@ def test_krisp_source_reaches_safety_and_imports_no_context_or_html() -> None:
     assert "worksync.safety.files" in targets
     assert WRITE_HELPER not in targets
 
-    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
-    for name in (module for module in closure if module.startswith("worksync.ingest.krisp")):
-        for imported in _imports_of(name, modules[name]):
-            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
-                f"{name} imports a raw write primitive: {imported}"
-            )
-            assert imported != "sqlite3", f"{name} opens a raw database connection"
+    _assert_no_raw_write_imports(closure, modules, "worksync.ingest.krisp")
 
     promote = _closure(("worksync.ingest.apply",), modules)
     assert "worksync.safety.gateway" in _closure_targets(promote, modules)
@@ -383,13 +377,7 @@ def test_command_center_prioritization_reaches_no_write_helper() -> None:
     assert not any(target == "worksync.safety" or target.startswith("worksync.safety.") for target in targets)
     assert WRITE_HELPER not in targets
 
-    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
-    for name in (module for module in closure if module.startswith("worksync.")):
-        for imported in _imports_of(name, modules[name]):
-            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
-                f"{name} imports a raw write primitive: {imported}"
-            )
-            assert imported != "sqlite3", f"{name} opens a raw database connection"
+    _assert_no_raw_write_imports(closure, modules, "worksync.")
 
 
 LIFECYCLE_WRITE_MODULES = (
@@ -418,13 +406,7 @@ def test_lifecycle_write_modules_reach_safety_and_import_no_context_or_html() ->
     assert not any(name.startswith("worksync.context") for name in closure)
     assert not any(name.startswith("worksync.html") for name in closure)
 
-    forbidden_leaves = {"atomic_write_bytes", "atomic_write_text", "backed_up_write", "rollback_backed_up_write"}
-    for name in (module for module in closure if module.startswith("worksync.work.")):
-        for imported in _imports_of(name, modules[name]):
-            assert imported.rsplit(".", 1)[-1] not in forbidden_leaves, (
-                f"{name} imports a raw write primitive: {imported}"
-            )
-            assert imported != "sqlite3", f"{name} opens a raw database connection"
+    _assert_no_raw_write_imports(closure, modules, "worksync.work.")
 
 
 def test_lifecycle_read_modules_import_no_context_or_html() -> None:
