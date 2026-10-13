@@ -150,6 +150,77 @@ def test_waiting_ticket_records_the_waiting_signal(vault, write_note) -> None:
     assert candidate.blocked is False
 
 
+def test_a_waiting_action_carries_the_party_and_the_dependency_it_waits_on(vault, write_note) -> None:
+    """A dependency target the note states is carried, resolved when the link resolves."""
+    _seed_project(vault, write_note)
+    write_note(
+        vault,
+        "Tickets/Vendor.md",
+        "---\n"
+        "type: ticket\n"
+        "status: blocked\n"
+        "ticket_id: vendor-ticket\n"
+        'assignee: "[[Myles Smith]]"\n'
+        'project: "[[Project - Eleos]]"\n'
+        "---\n"
+        "# Ticket - Vendor\n",
+    )
+    write_note(
+        vault,
+        "Actions/Awaiting vendor.md",
+        _action(
+            "type: action\n"
+            "status: waiting\n"
+            "action_id: awaiting-vendor\n"
+            "waiting_on: vendor\n"
+            'related_ticket: "[[Ticket - Vendor]]"\n'
+            'owners:\n  - "[[Myles Smith]]"\n'
+            'project: "[[Project - Eleos]]"\n'
+        ),
+    )
+    write_note(
+        vault,
+        "Tickets/Awaiting.md",
+        _ticket(
+            "type: ticket\n"
+            "status: waiting\n"
+            "ticket_id: awaiting-ticket\n"
+            'assignee: "[[Myles Smith]]"\n'
+            'project: "[[Project - Eleos]]"\n'
+        ),
+    )
+    index = WorkIndex.from_vault(vault)
+
+    by_id = {candidate.entity_id: candidate for candidate in eligibility(index, today=TODAY).candidates}
+
+    named = by_id["awaiting-vendor"]
+    assert named.waiting is True
+    assert named.waiting_on == "vendor"
+    assert named.dependency_id == "vendor-ticket"
+    # A ticket waits on a party too, but carries no ``waiting_on`` target to name.
+    unnamed = by_id["awaiting-ticket"]
+    assert unnamed.waiting is True
+    assert unnamed.waiting_on is None
+    assert unnamed.dependency_id is None
+
+
+def test_an_unresolvable_related_ticket_is_no_dependency_id(vault, write_note) -> None:
+    _seed_blocker_scenarios(vault, write_note)
+    index = WorkIndex.from_vault(vault)
+
+    by_id = {candidate.entity_id: candidate for candidate in eligibility(index, today=TODAY).candidates}
+
+    # The waiting action names a party but links no ticket it can resolve.
+    awaiting = by_id["awaiting-action"]
+    assert awaiting.waiting_on == "vendor"
+    assert awaiting.dependency_id is None
+    # Tickets carry neither field: they wait on a party, never on a stated target.
+    for candidate in by_id.values():
+        if candidate.entity_type == EntityType.TICKET.value:
+            assert candidate.waiting_on is None
+            assert candidate.dependency_id is None
+
+
 def test_closed_records_are_excluded_with_closed_status(vault, write_note) -> None:
     _seed_project(vault, write_note)
     write_note(

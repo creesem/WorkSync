@@ -30,6 +30,7 @@ URGENCY_DELTAS = {
     "due_soon": 30,
     "due_scheduled": 0,
     "no_due_date": -8,
+    "due_unparseable": -8,
 }
 IMPACT_DELTAS = {"P1": 32, "P2": 24, "P3": 16, "P4": 8}
 FACTOR_DELTAS = {
@@ -218,6 +219,31 @@ def test_urgency_reason_codes_and_details() -> None:
         assert _codes(item, "urgency") == [code]
         assert _detail(item, "urgency") == detail
         assert item.score - _other_deltas(item) == delta
+
+
+def test_a_set_but_unparseable_due_is_named_rather_than_reported_absent() -> None:
+    """A due that is set but unreadable is named, and claims no overdue floor."""
+    item = rank((_candidate(entity_id="garbled", title="Garbled", due="not-a-date"),), today=TODAY).items[0]
+
+    assert _codes(item, "urgency") == ["due_unparseable"]
+    assert _detail(item, "urgency") == "Due date not understood: not-a-date"
+    assert item.score - _other_deltas(item) == URGENCY_DELTAS["due_unparseable"]
+    assert item.policies == ()
+    assert item.band == 2
+
+
+def test_the_waiting_reason_names_the_party_it_waits_on() -> None:
+    named = _candidate(entity_id="named", title="Named", status="waiting", waiting=True, waiting_on="vendor")
+    unnamed = _candidate(entity_id="unnamed", title="Unnamed", status="waiting", waiting=True)
+
+    result = rank((named, unnamed), today=TODAY)
+    by_id = {item.candidate.entity_id: item for item in result.items}
+
+    assert _codes(by_id["named"], "dependency") == ["waiting"]
+    assert _detail(by_id["named"], "dependency") == "Waiting on vendor"
+    assert _codes(by_id["unnamed"], "dependency") == ["waiting"]
+    assert _detail(by_id["unnamed"], "dependency") == "Waiting"
+    assert by_id["named"].score == by_id["unnamed"].score
 
 
 def _other_deltas(item: RankedItem) -> int:

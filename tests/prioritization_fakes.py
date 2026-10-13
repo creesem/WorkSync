@@ -27,8 +27,10 @@ def candidate(
     project_id: str | None = "eleos",
     blocked: bool = False,
     waiting: bool = False,
+    waiting_on: str | None = None,
     manager_attention: bool = False,
     changed_on: str | None = None,
+    dependency_id: str | None = None,
 ) -> Candidate:
     """Build one candidate, overriding only the fields a case is about."""
     return Candidate(
@@ -43,6 +45,8 @@ def candidate(
         project_id=project_id,
         blocked=blocked,
         waiting=waiting,
+        waiting_on=waiting_on,
         manager_attention=manager_attention,
         changed_on=changed_on,
+        dependency_id=dependency_id,
     )

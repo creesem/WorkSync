@@ -315,11 +315,44 @@ def test_ranking_with_overrides_is_deterministic() -> None:
     assert rank(candidates, today=TODAY, overrides=overrides) == rank(candidates, today=TODAY, overrides=overrides)
 
 
-def test_an_unknown_override_kind_fails_closed() -> None:
+def test_an_unknown_override_kind_is_ignored() -> None:
+    """A kind the ranker cannot honour is a bad record: skipped, never an abort."""
+    plain = _candidate(entity_id="plain", title="Plain", priority="P2", due="2026-12-01")
+    expected = rank((plain,), today=TODAY)
+
+    result = rank((plain,), today=TODAY, overrides=(_override("ov-1", "plain", "snooze"),))
+
+    assert result == expected
+    assert result.conflicts == ()
+
+
+def test_an_unknown_override_kind_for_an_unknown_target_is_ignored() -> None:
+    candidates = (
+        _candidate(entity_id="alpha", title="Alpha", priority="P1", due="2026-10-05"),
+        _candidate(entity_id="bravo", title="Bravo", priority="P3", status="blocked", blocked=True),
+    )
+    expected = rank(candidates, today=TODAY)
+
+    result = rank(candidates, today=TODAY, overrides=(_override("ov-1", "ghost", "snooze"),))
+
+    assert result == expected
+    assert result.conflicts == ()
+
+
+def test_an_unknown_kind_never_shadows_a_later_known_override() -> None:
     plain = _candidate(entity_id="plain", title="Plain", priority="P2", due="2026-12-01")
 
-    with pytest.raises(ValueError):
-        rank((plain,), today=TODAY, overrides=(_override("ov-1", "plain", "snooze"),))
+    result = rank(
+        (plain,),
+        today=TODAY,
+        overrides=(
+            _override("ov-1", "plain", "snooze"),
+            _override("ov-2", "plain", OverrideKind.PIN),
+        ),
+    )
+
+    assert _item(result, "plain").band == -1
+    assert result.conflicts == ()
 
 
 def test_override_kind_values_and_frozen_records() -> None:

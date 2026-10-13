@@ -17,9 +17,10 @@ not-relevant drops the row. A lowering override aimed at a record carrying
 material urgent evidence is refused and reported as a conflict instead, so the
 evidence a human already flagged stays in view.
 
-An override kind the ranker does not know raises ``ValueError`` rather than being
-ignored: a kind that cannot be honoured must fail closed, and CC-04 validates the
-kinds it persists before they ever reach this module.
+An override kind the ranker does not know is a bad record that is skipped, not a
+reason to abort the whole ranking, exactly as an override whose target matches no
+candidate is skipped: one unpersistable record must not fail a read. CC-04
+validates the kinds it persists before they ever reach this module.
 """
 
 from __future__ import annotations
@@ -34,20 +35,28 @@ from worksync.work.dates import parse_iso_date
 from worksync.work.models import EntityBase, EntityType, entity_id_of
 from worksync.work.repository import WorkIndex
 from worksync.work.review import (
-    CLOSED_TICKET_STATUSES,
-    OPEN_ACTION_STATUSES,
-    OPEN_TICKET_STATUSES,
+    MANAGER_ATTENTION_REASON,
     AttentionKind,
-    attention_items,
+    attention_by_path,
+    is_open_status,
 )
 from worksync.work.schema import link_target, priority_rank
 
 CANDIDATE_TYPES: tuple[EntityType, ...] = (EntityType.ACTION, EntityType.TICKET)
 CHANGED_ON_FIELDS: tuple[str, ...] = ("last_checked", "updated", "created", "source_date")
+UNKNOWN_PRIORITY_RANK = 99
+LATE_DUE_SENTINEL = "9999-99-99"
 
 
 class ExclusionReason(StrEnum):
-    """The single reason a note is not a rankable candidate."""
+    """The single reason a note is not a rankable candidate.
+
+    The membership is the exclusion's dimensions, one reason each: the note's
+    shape (type), its permissions, its lifecycle (status), its ownership, and its
+    evidence. ``UNAUTHORIZED`` is the permissions dimension: the validator
+    flagged the note, so it is absent from ``view_entities`` and is not
+    authorized for ranking, whatever the flag was.
+    """
 
     UNSUPPORTED_TYPE = "unsupported_type"
     UNAUTHORIZED = "unauthorized"
@@ -73,6 +82,8 @@ class Candidate:
     waiting: bool
     manager_attention: bool
     changed_on: str | None
+    waiting_on: str | None = None
+    dependency_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,20 +141,13 @@ def _exclusion_reason(index: WorkIndex, entity: EntityBase, visible_paths: set[s
         return ExclusionReason.UNSUPPORTED_TYPE
     if entity.path not in visible_paths:
         return ExclusionReason.UNAUTHORIZED
-    if not _status_is_open(entity):
+    if not is_open_status(entity):
         return ExclusionReason.CLOSED_STATUS
     if not entity.owners:
         return ExclusionReason.UNOWNED
     if not _has_evidence(entity, _project_id(index, entity)):
         return ExclusionReason.NO_EVIDENCE
     return None
-
-
-def _status_is_open(entity: EntityBase) -> bool:
-    """Return True when the entity's status leaves it in play."""
-    if entity.entity_type is EntityType.ACTION:
-        return entity.status in OPEN_ACTION_STATUSES
-    return entity.status in OPEN_TICKET_STATUSES and entity.status not in CLOSED_TICKET_STATUSES
 
 
 def _has_evidence(entity: EntityBase, project_id: str | None) -> bool:
@@ -164,21 +168,21 @@ def _is_set(value: object | None) -> bool:
     return value is not None and bool(str(value).strip())
 
 
-def _attention_kinds_by_path(index: WorkIndex, today: date, config: WorkConfig) -> dict[str, set[str]]:
+def _attention_kinds_by_path(index: WorkIndex, today: date, config: WorkConfig) -> dict[str, frozenset[str]]:
     """Reshape the review module's attention pass into a per-note kind lookup.
 
     The blocker signal has one owner. Deriving it a second time from raw status
     strings here is exactly the drift the global reuse constraint forbids, so
-    this pass only groups what ``attention_items`` already decided, keyed by the
-    note path the candidate carries.
+    this pass only groups the kinds ``attention_by_path`` already decided, keyed
+    by the note path the candidate carries.
     """
-    kinds_by_path: dict[str, set[str]] = {}
-    for item in attention_items(index, today, config):
-        kinds_by_path.setdefault(item.path, set()).add(item.kind)
+    kinds_by_path: dict[str, frozenset[str]] = {}
+    for path, items in attention_by_path(index, today, config).items():
+        kinds_by_path[path] = frozenset(item.kind for item in items)
     return kinds_by_path
 
 
-def _candidate(index: WorkIndex, entity: EntityBase, attention: dict[str, set[str]]) -> Candidate:
+def _candidate(index: WorkIndex, entity: EntityBase, attention: dict[str, frozenset[str]]) -> Candidate:
     """Project one eligible entity onto the fields ranking reads."""
     kinds = attention.get(entity.path, frozenset())
     return Candidate(
@@ -193,8 +197,10 @@ def _candidate(index: WorkIndex, entity: EntityBase, attention: dict[str, set[st
         project_id=_project_id(index, entity),
         blocked=AttentionKind.BLOCKED.value in kinds,
         waiting=AttentionKind.WAITING.value in kinds,
+        waiting_on=getattr(entity, "waiting_on", None) if entity.entity_type is EntityType.ACTION else None,
         manager_attention=AttentionKind.MANAGER_ATTENTION.value in kinds,
         changed_on=_changed_on(entity),
+        dependency_id=_dependency_id(index, entity),
     )
 
 
@@ -213,6 +219,18 @@ def _project_id(index: WorkIndex, entity: EntityBase) -> str | None:
     """Return the linked project's canonical id, or ``None`` when it does not resolve."""
     project = index.resolve(getattr(entity, "project", None) or "")
     return entity_id_of(project) if project is not None and project.entity_type is EntityType.PROJECT else None
+
+
+def _dependency_id(index: WorkIndex, entity: EntityBase) -> str | None:
+    """Return the canonical id of the record this one waits on, or ``None``.
+
+    The dependency is the ``related_ticket`` link, so an unresolved link stays
+    ``None`` rather than guessing at a target that is not in the index.
+    """
+    dependency = index.resolve(getattr(entity, "related_ticket", None) or "")
+    if dependency is None or dependency.entity_type not in CANDIDATE_TYPES:
+        return None
+    return entity_id_of(dependency)
 
 
 def _changed_on(entity: EntityBase) -> str | None:
@@ -341,7 +359,6 @@ def rank(
     *,
     today: date,
     overrides: Iterable[Override] = (),
-    config: WorkConfig = DEFAULT_CONFIG,
 ) -> Ranking:
     """Return the ranking with the overrides decided before the safety floors.
 
@@ -349,10 +366,9 @@ def rank(
     entirely; a lowering override aimed at a record holding material urgent
     evidence is refused and reported as an ``OverrideConflict`` instead, leaving
     the record at its safety band. With no overrides the result is the baseline
-    ranking and ``conflicts`` is empty. ``today`` is injected; nothing here reads a
-    clock. ``config`` is accepted so a caller passes the same context it passes
-    ``eligibility``; the weights and the safety floors are fixed constants, not
-    configuration.
+    ranking and ``conflicts`` is empty. ``today`` is injected; nothing here reads
+    a clock, and the weights and the safety floors are fixed constants rather
+    than configuration.
     """
     resolved = _resolve_overrides(overrides)
     items: list[RankedItem] = []
@@ -381,9 +397,12 @@ def _resolve_overrides(overrides: Iterable[Override]) -> dict[str, Override]:
     """Index the overrides by the record they target, the last one for a target winning."""
     resolved: dict[str, Override] = {}
     for override in overrides:
-        # Validated here, before any precedence is applied: a kind the ranker does not
-        # know is a caller bug even when the override is superseded or names no candidate.
-        _override_kind(override)
+        # A kind the ranker does not know is a bad record, skipped like one that
+        # names no candidate: one unpersistable override must not abort a read.
+        try:
+            _override_kind(override)
+        except ValueError:
+            continue
         resolved[override.target_id] = override
     return resolved
 
@@ -422,8 +441,8 @@ def _sort_key(item: RankedItem) -> tuple[int, int, int, str, str, str]:
     return (
         item.band,
         -item.score,
-        priority_rank(item.candidate.priority) or 99,
-        item.candidate.due or "9999-99-99",
+        priority_rank(item.candidate.priority) or UNKNOWN_PRIORITY_RANK,
+        item.candidate.due or LATE_DUE_SENTINEL,
         item.candidate.title.casefold(),
         item.candidate.path,
     )
@@ -468,10 +487,22 @@ def _band(policies: tuple[SafetyPolicy, ...]) -> int:
 
 
 def _urgency_reasons(candidate: Candidate, today: date) -> list[tuple[RankReason, int]]:
-    """Score how pressing the deadline is, or its absence."""
+    """Score how pressing the deadline is, or its absence.
+
+    An unset due and a due that is set but unreadable both score the same, because
+    neither can prove urgency; only the unreadable one is named, so a caller can
+    see that a date was written and lost rather than never set.
+    """
+    if not _is_set(candidate.due):
+        return [(_reason(RankFactor.URGENCY, "no_due_date", "No due date"), NO_DUE_DATE_DELTA)]
     due = _due_date(candidate)
     if due is None:
-        return [(_reason(RankFactor.URGENCY, "no_due_date", "No due date"), NO_DUE_DATE_DELTA)]
+        return [
+            (
+                _reason(RankFactor.URGENCY, "due_unparseable", f"Due date not understood: {candidate.due}"),
+                NO_DUE_DATE_DELTA,
+            )
+        ]
     if due < today:
         return [(_reason(RankFactor.URGENCY, "overdue", f"Overdue since {candidate.due}"), DUE_OVERDUE_DELTA)]
     if due == today:
@@ -496,7 +527,7 @@ def _impact_reasons(candidate: Candidate) -> list[tuple[RankReason, int]]:
         )
     if candidate.manager_attention:
         reasons.append(
-            (_reason(RankFactor.IMPACT, "manager_attention", "Flagged for manager attention"), MANAGER_ATTENTION_DELTA)
+            (_reason(RankFactor.IMPACT, "manager_attention", MANAGER_ATTENTION_REASON), MANAGER_ATTENTION_DELTA)
         )
     return reasons
 
@@ -506,7 +537,8 @@ def _dependency_reasons(candidate: Candidate) -> list[tuple[RankReason, int]]:
     if candidate.blocked:
         return [(_reason(RankFactor.DEPENDENCY, "blocked", "Blocked"), BLOCKED_DELTA)]
     if candidate.waiting:
-        return [(_reason(RankFactor.DEPENDENCY, "waiting", "Waiting"), WAITING_DELTA)]
+        detail = f"Waiting on {candidate.waiting_on}" if _is_set(candidate.waiting_on) else "Waiting"
+        return [(_reason(RankFactor.DEPENDENCY, "waiting", detail), WAITING_DELTA)]
     return [(_reason(RankFactor.DEPENDENCY, "independent", "Independent"), 0)]
 
 
