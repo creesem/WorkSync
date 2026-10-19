@@ -2,6 +2,7 @@
 
 const TOKEN = window.__GUI_TOKEN__ || "";
 const TOKEN_HEADER = "X-Gui-Token";
+const DEFAULT_SECTION = "command-center";
 
 const state = { triage: [], queueTab: "triage", duplicates: [], clarification: [], krisp: [], identity: [] };
 
@@ -728,7 +729,71 @@ function projectCard(review) {
   return lines.join("");
 }
 
+const commandCenterTitles = {
+  needs_attention: "Needs Attention",
+  my_priorities: "My Priorities",
+  since_last_check: "Since Last Check",
+};
+
+const commandCenterUnavailable = {
+  no_checkpoint: "No checkpoint yet — nothing to compare against.",
+  source_unavailable: "Source unavailable.",
+};
+
+function commandCenterItem(item) {
+  const label = item.label || item.title || item.entity_id || item.path || "(untitled)";
+  const kind = item.entity_type || item.kind || "";
+  const priority = item.priority === undefined || item.priority === null ? "" : `priority ${item.priority}`;
+  const meta = [priority, item.path || ""].filter(Boolean).join(" · ");
+  return `<div class="row cc-row ${escapeHtml(item.status || "")}">
+    <div class="who">${escapeHtml(label)}</div>
+    <div class="what">${kind ? `<span class="tag">${escapeHtml(kind)}</span>` : ""}${escapeHtml(
+      item.reason || ""
+    )}</div>
+    <div class="meta">${escapeHtml(meta)}</div>
+  </div>`;
+}
+
+function commandCenterBlock(section) {
+  const title = commandCenterTitles[section.section_id] || section.section_id || "Section";
+  const sectionState = section.state || "";
+  const items = section.items || [];
+  const count =
+    section.total_count === undefined || section.total_count === null ? items.length : section.total_count;
+  let body;
+  if (sectionState === "unavailable") {
+    body = `<div class="empty">${escapeHtml(
+      commandCenterUnavailable[section.error_state] || "Unavailable right now."
+    )}</div>`;
+  } else if (sectionState === "empty") {
+    body = empty("Nothing here.");
+  } else {
+    body = items.map(commandCenterItem).join("") || empty("Nothing here.");
+  }
+  return `<section class="cc-section" data-section-id="${escapeHtml(section.section_id || "")}">
+    <div class="cc-head">
+      <h2>${escapeHtml(title)}</h2>
+      <span class="cc-count">${escapeHtml(String(count))}</span>
+      <span class="cc-state ${escapeHtml(sectionState)}">${escapeHtml(sectionState || "unknown")}</span>
+    </div>
+    ${body}
+  </section>`;
+}
+
+function renderCommandCenter(sections) {
+  const blocks = (sections || []).map(commandCenterBlock).join("");
+  view.innerHTML =
+    heading("Command Center", "Needs attention, your priorities, and what changed since your last check") +
+    (blocks || empty("No sections."));
+}
+
 const sections = {
+  "command-center": async () => {
+    const data = await api("/api/command-center");
+    equivalent.textContent = data.equivalent_cli;
+    renderCommandCenter(data.sections);
+  },
+
   async today() {
     const data = await api("/api/today");
     equivalent.textContent = data.equivalent_cli;
@@ -871,11 +936,16 @@ const sections = {
   },
 };
 
-let current = "today";
+function activeSection() {
+  const button = document.querySelector(".rail button[data-section].active");
+  return button ? button.dataset.section : DEFAULT_SECTION;
+}
+
+let current = activeSection();
 
 async function show(name) {
   current = name;
-  for (const button of document.querySelectorAll(".nav button")) {
+  for (const button of document.querySelectorAll(".rail button[data-section]")) {
     button.classList.toggle("active", button.dataset.section === name);
   }
   try {
@@ -885,9 +955,23 @@ async function show(name) {
   }
 }
 
-document.getElementById("nav").addEventListener("click", (event) => {
+function navigate(name) {
+  if (name === current) return;
+  history.pushState({ section: name }, "");
+  show(name);
+}
+
+document.getElementById("rail").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-section]");
-  if (button) show(button.dataset.section);
+  if (button) navigate(button.dataset.section);
+});
+
+document.getElementById("back").addEventListener("click", () => history.back());
+document.getElementById("forward").addEventListener("click", () => history.forward());
+
+window.addEventListener("popstate", (event) => {
+  const name = event.state && event.state.section ? event.state.section : DEFAULT_SECTION;
+  show(name);
 });
 
 view.addEventListener("click", (event) => {
@@ -947,4 +1031,5 @@ async function showPerson(name) {
     heading(workload.person.title, workload.person.role || "") + attentionRows(workload.attention);
 }
 
+history.replaceState({ section: current }, "");
 show(current);

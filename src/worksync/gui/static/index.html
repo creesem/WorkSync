@@ -8,33 +8,55 @@
   </head>
   <body>
     <div class="frame">
-      <header class="masthead">
-        <div class="brand">
-          <span class="brand-mark">WorkSync</span>
-          <span class="brand-sub" id="vault-name">&nbsp;</span>
-        </div>
-        <nav class="nav" id="nav" aria-label="Sections">
-          <button type="button" data-section="today" class="active">Today</button>
-          <button type="button" data-section="triage">Review</button>
-          <button type="button" data-section="projects">Projects</button>
-          <button type="button" data-section="team">Team</button>
-          <button type="button" data-section="tickets">Tickets</button>
-          <button type="button" data-section="review">Board</button>
-          <button type="button" data-section="search">Search</button>
-          <button type="button" data-section="settings">Settings</button>
-        </nav>
-      </header>
+      <nav class="rail" id="rail" aria-label="Sections">
+        <div class="rail-group">Home</div>
+        <button type="button" data-section="command-center" class="active">Command Center</button>
 
-      <main class="ledger" id="view" aria-live="polite">
-        <p class="muted">Loading…</p>
-      </main>
+        <div class="rail-group">Work</div>
+        <button type="button" data-section="today">Today</button>
+        <button type="button" data-section="triage">Review</button>
+        <button type="button" data-section="review">Board</button>
 
-      <div class="write-result" id="write-result" aria-live="polite"></div>
+        <div class="rail-group">Projects</div>
+        <button type="button" data-section="projects">Projects</button>
 
-      <footer class="colophon">
-        <span class="colophon-label">Equivalent command</span>
-        <code id="equivalent">—</code>
-      </footer>
+        <div class="rail-group">People</div>
+        <button type="button" data-section="team">Team</button>
+
+        <div class="rail-group">Meetings</div>
+        <button type="button" class="rail-placeholder" disabled>Meeting Follow-ups — soon</button>
+
+        <div class="rail-group">Actions</div>
+        <button type="button" data-section="tickets">Tickets</button>
+
+        <div class="rail-group">More</div>
+        <button type="button" data-section="search">Search</button>
+        <button type="button" data-section="settings">Settings</button>
+      </nav>
+
+      <div class="column">
+        <header class="topbar">
+          <div class="topbar-nav">
+            <button type="button" id="back" aria-label="Back" title="Back">&#8592;</button>
+            <button type="button" id="forward" aria-label="Forward" title="Forward">&#8594;</button>
+          </div>
+          <div class="brand">
+            <span class="brand-mark">WorkSync</span>
+            <span class="brand-sub" id="vault-name">&nbsp;</span>
+          </div>
+        </header>
+
+        <main class="content" id="view" aria-live="polite">
+          <p class="muted">Loading…</p>
+        </main>
+
+        <div class="write-result" id="write-result" aria-live="polite"></div>
+
+        <footer class="colophon">
+          <span class="colophon-label">Equivalent command</span>
+          <code id="equivalent">—</code>
+        </footer>
+      </div>
     </div>
 
     <script>

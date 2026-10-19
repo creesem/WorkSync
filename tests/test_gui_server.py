@@ -376,6 +376,13 @@ def test_static_shell_is_self_contained_and_injects_the_token(gui_server: tuple[
     assert 'src="http' not in text
     assert 'href="http' not in text
 
+    # Ticket 10: the Command Center is the rail's default entry and the topbar carries the
+    # back/forward controls; no "task" noun (ADR-0002) appears in the shell.
+    assert 'data-section="command-center"' in text
+    assert 'id="back"' in text
+    assert 'id="forward"' in text
+    assert "task" not in text.lower()
+
     assert _get(base, "/styles.css", TOKEN)[0] == 200
     assert _get(base, "/app.js", TOKEN)[0] == 200
 

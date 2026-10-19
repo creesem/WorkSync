@@ -31,24 +31,108 @@ input {
 .frame {
   display: flex;
   min-height: 100vh;
+}
+
+.rail {
+  flex: 0 0 240px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 1.1rem 0.85rem;
+  background: var(--ink);
+}
+
+.rail-group {
+  margin: 1rem 0 0.3rem;
+  padding: 0 0.6rem;
+  color: #8fa096;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.rail-group:first-child {
+  margin-top: 0;
+}
+
+.rail button {
+  text-align: left;
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: 0.35rem 0.6rem;
+  color: #c9d2cc;
+  cursor: pointer;
+}
+
+.rail button:hover {
+  color: var(--surface);
+}
+
+.rail button.active {
+  color: var(--surface);
+  border-left-color: var(--brass);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rail button:disabled {
+  color: #6f7d75;
+  font-style: italic;
+  cursor: default;
+}
+
+.column {
+  flex: 1;
+  min-width: 0;
+  min-height: 100vh;
+  display: flex;
   flex-direction: column;
 }
 
-.masthead {
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem 1.5rem;
-  padding: 0.9rem 1.4rem;
-  background: var(--ink);
-  color: var(--surface);
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1.4rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+
+.topbar-nav {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.topbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.topbar button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
 }
 
 .brand {
   display: flex;
   align-items: baseline;
   gap: 0.6rem;
+  margin-left: auto;
 }
 
 .brand-mark {
@@ -58,39 +142,57 @@ input {
 }
 
 .brand-sub {
-  color: #b9c4be;
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
-.nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.1rem;
-}
-
-.nav button {
-  background: none;
-  border: none;
-  padding: 0.3rem 0.6rem;
-  color: #c9d2cc;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-}
-
-.nav button:hover {
-  color: var(--surface);
-}
-
-.nav button.active {
-  color: var(--surface);
-  border-bottom-color: var(--brass);
-}
-
-.ledger {
+.content {
   flex: 1;
   width: 100%;
+  max-width: 60rem;
   margin: 0 auto;
   padding: 1.6rem 1.4rem 3rem;
+}
+
+.cc-section {
+  margin-bottom: 1.6rem;
+}
+
+.cc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cc-head h2 {
+  margin: 0;
+  font-family: Georgia, "Iowan Old Style", serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.cc-count {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.cc-state {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.cc-state.unavailable,
+.cc-state.stale {
+  color: var(--oxblood);
+}
+
+.cc-row .who {
+  flex-basis: 14rem;
 }
 
 h1 {
@@ -274,6 +376,9 @@ button.complete:hover {
 }
 
 .write-result {
+  width: 100%;
+  max-width: 60rem;
+  margin: 0 auto;
   padding: 0 1.4rem;
 }
 
@@ -398,6 +503,18 @@ button.complete:hover {
 }
 
 @media (max-width: 640px) {
+  .frame {
+    flex-direction: column;
+  }
+
+  .rail {
+    position: static;
+    flex-basis: auto;
+    width: 100%;
+    height: auto;
+    overflow-y: visible;
+  }
+
   .row {
     flex-direction: column;
     gap: 0.2rem;
