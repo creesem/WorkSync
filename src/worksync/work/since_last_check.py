@@ -57,10 +57,14 @@ def checkpoint_path(runtime_root: str | Path) -> Path:
 def read_checkpoint(runtime_root: str | Path) -> Checkpoint | None:
     """Return the acknowledged checkpoint, or None when none has been written.
 
-    A present-but-malformed file fails closed: raise ``ValueError`` (unreadable JSON or an
-    unexpected shape). A missing file is the normal "not yet acknowledged" state, not an error.
+    A present-but-malformed file fails closed: raise ``ValueError`` (unreadable JSON, an
+    unexpected shape, or a schema version this build does not know). So does a present path
+    that is not a regular file (e.g. a directory). A missing file is the normal "not yet
+    acknowledged" state, not an error.
     """
     path = checkpoint_path(runtime_root)
+    if path.exists() and not path.is_file():
+        raise ValueError(f"Checkpoint is not a regular file: {path}")
     if not path.is_file():
         return None
     try:
@@ -69,6 +73,8 @@ def read_checkpoint(runtime_root: str | Path) -> Checkpoint | None:
         raise ValueError(f"Checkpoint could not be read: {path}") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"Checkpoint is not an object: {path}")
+    if payload.get("version") != 1:
+        raise ValueError(f"Checkpoint has an unsupported schema version: {path}")
     acknowledged_at = payload.get("acknowledged_at")
     notes = payload.get("notes")
     if not isinstance(acknowledged_at, str) or not isinstance(notes, dict):

@@ -188,6 +188,49 @@ def test_items_are_sorted_by_path(vault: Path, write_note: Callable[[Path, str, 
     assert [item.path for item in result.items] == ["alpha.md", "nested/mid.md", "zeta.md"]
 
 
+def test_mixed_changes_report_added_changed_and_removed_sorted_by_path(
+    vault: Path, write_note: Callable[[Path, str, str], Path]
+) -> None:
+    write_note(vault, "b.md", _titled("Bravo", "first\n"))
+    write_note(vault, "c.md", _titled("Charlie"))
+    checkpoint = _checkpoint(vault)
+    previous_b = checkpoint.notes["b.md"]
+    previous_c = checkpoint.notes["c.md"]
+
+    write_note(vault, "a.md", _titled("Alpha"))
+    write_note(vault, "b.md", _titled("Bravo", "second\n"))
+    (vault / "c.md").unlink()
+    current = current_hashes(vault)
+
+    result = since_last_check(vault, checkpoint, generated_at=GENERATED_AT)
+
+    assert result.total_count == 3
+    assert [item.path for item in result.items] == ["a.md", "b.md", "c.md"]
+    assert result.items == (
+        NoteChange(
+            path="a.md",
+            kind=ChangeKind.ADDED,
+            title="Alpha",
+            current_hash=current["a.md"],
+            previous_hash=None,
+        ),
+        NoteChange(
+            path="b.md",
+            kind=ChangeKind.CHANGED,
+            title="Bravo",
+            current_hash=current["b.md"],
+            previous_hash=previous_b,
+        ),
+        NoteChange(
+            path="c.md",
+            kind=ChangeKind.REMOVED,
+            title="",
+            current_hash=None,
+            previous_hash=previous_c,
+        ),
+    )
+
+
 def test_result_is_deterministic(vault: Path, write_note: Callable[[Path, str, str], Path]) -> None:
     write_note(vault, "a.md", _titled("Alpha", "first\n"))
     write_note(vault, "b.md", _titled("Bravo"))

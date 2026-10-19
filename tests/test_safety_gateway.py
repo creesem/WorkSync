@@ -583,7 +583,7 @@ def test_user_state_multi_op_rollback_restores_prior_state(
     real = gateway.atomic_write_text
 
     def flaky(path, content, **kwargs):
-        if str(path).endswith("b.json"):
+        if Path(path).name == "b.json":
             raise RuntimeError("disk full")
         return real(path, content, **kwargs)
 

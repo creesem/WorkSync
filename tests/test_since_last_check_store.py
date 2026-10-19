@@ -99,6 +99,35 @@ def test_read_checkpoint_raises_on_wrong_shape(tmp_path: Path) -> None:
         read_checkpoint(tmp_path / "runtime")
 
 
+def test_read_checkpoint_raises_on_unknown_schema_version(tmp_path: Path) -> None:
+    path = checkpoint_path(tmp_path / "runtime")
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({"version": 999, "acknowledged_at": "x", "notes": {}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        read_checkpoint(tmp_path / "runtime")
+
+
+def test_read_checkpoint_raises_when_version_is_missing(tmp_path: Path) -> None:
+    path = checkpoint_path(tmp_path / "runtime")
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"acknowledged_at": "x", "notes": {}}), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        read_checkpoint(tmp_path / "runtime")
+
+
+def test_read_checkpoint_raises_when_the_path_is_not_a_file(tmp_path: Path) -> None:
+    path = checkpoint_path(tmp_path / "runtime")
+    path.mkdir(parents=True)
+
+    with pytest.raises(ValueError):
+        read_checkpoint(tmp_path / "runtime")
+
+
 def test_acknowledge_repairs_a_malformed_checkpoint(
     vault: Path, write_note: Callable[[Path, str, str], Path], tmp_path: Path
 ) -> None:
