@@ -11,10 +11,10 @@ import pytest
 
 from worksync.inventory.parse import scan_vault
 from worksync.safety.files import sha256_file
+from worksync.work.checkpoint import acknowledge_checkpoint
 from worksync.work.since_last_check import (
     CHECKPOINT_FILENAME,
     Checkpoint,
-    acknowledge_checkpoint,
     checkpoint_path,
     current_hashes,
     read_checkpoint,

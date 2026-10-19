@@ -209,3 +209,38 @@ def section_state(result: SectionResult) -> str:
     if not result.items:
         return "empty"
     return "items"
+
+
+def section_item_to_dict(item: SectionItem) -> dict:
+    """Serialize one section item; the tuple sequences become JSON lists."""
+    return {
+        "entity_id": item.entity_id,
+        "entity_type": item.entity_type,
+        "status": item.status,
+        "label": item.label,
+        "path": item.path,
+        "reason": item.reason,
+        "priority": item.priority,
+        "attention": list(item.attention),
+        "timestamps": [list(timestamp) for timestamp in item.timestamps],
+    }
+
+
+def section_result_to_dict(result: SectionResult) -> dict:
+    """Serialize a section result for the read seam.
+
+    Every ``SectionResult`` field is carried, plus the derived ``state`` so the frontend can
+    render empty vs stale vs unavailable without re-deriving it.
+    """
+    return {
+        "section_id": result.section_id,
+        "query_version": result.query_version,
+        "generated_at": result.generated_at,
+        "effective_filters": dict(result.effective_filters),
+        "items": [section_item_to_dict(item) for item in result.items],
+        "total_count": result.total_count,
+        "source_freshness": result.source_freshness,
+        "availability": result.availability,
+        "error_state": result.error_state,
+        "state": section_state(result),
+    }

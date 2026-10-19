@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import fields
 from pathlib import Path
 
 from worksync.work.since_last_check import (
@@ -12,6 +13,7 @@ from worksync.work.since_last_check import (
     SinceLastCheckResult,
     current_hashes,
     since_last_check,
+    since_last_check_to_dict,
 )
 
 GENERATED_AT = "2026-10-18T13:00:00+00:00"
@@ -242,3 +244,64 @@ def test_result_is_deterministic(vault: Path, write_note: Callable[[Path, str, s
     second = since_last_check(vault, checkpoint, generated_at=GENERATED_AT)
 
     assert first == second
+
+
+def test_to_dict_carries_every_field_and_note_row_fields(
+    vault: Path, write_note: Callable[[Path, str, str], Path]
+) -> None:
+    write_note(vault, "a.md", _titled("Alpha", "first\n"))
+    checkpoint = _checkpoint(vault)
+    write_note(vault, "a.md", _titled("Alpha", "second\n"))
+
+    result = since_last_check(vault, checkpoint, generated_at=GENERATED_AT)
+    data = since_last_check_to_dict(result)
+    item = result.items[0]
+
+    assert set(data) == {field.name for field in fields(result)} | {"section_id", "state"}
+    assert data["section_id"] == "since_last_check"
+    assert data["state"] == "items"
+    assert data["availability"] == "available"
+    assert data["error_state"] is None
+    assert data["acknowledged_at"] == ACKNOWLEDGED_AT
+    assert data["generated_at"] == GENERATED_AT
+    assert data["total_count"] == 1
+    assert data["items"] == [
+        {
+            "path": "a.md",
+            "kind": "changed",
+            "title": "Alpha",
+            "current_hash": item.current_hash,
+            "previous_hash": item.previous_hash,
+        },
+    ]
+
+
+def test_to_dict_reports_the_unavailable_section_with_no_items() -> None:
+    result = SinceLastCheckResult(
+        availability="unavailable",
+        error_state="no_checkpoint",
+        acknowledged_at=None,
+        generated_at=GENERATED_AT,
+        items=(),
+        total_count=0,
+    )
+
+    data = since_last_check_to_dict(result)
+
+    assert set(data) == {field.name for field in fields(result)} | {"section_id", "state"}
+    assert data["error_state"] == "no_checkpoint"
+    assert data["state"] == "unavailable"
+    assert data["items"] == []
+
+
+def test_to_dict_reports_an_empty_available_section_as_empty(
+    vault: Path, write_note: Callable[[Path, str, str], Path]
+) -> None:
+    write_note(vault, "a.md", _titled("Alpha"))
+    checkpoint = _checkpoint(vault)
+
+    data = since_last_check_to_dict(since_last_check(vault, checkpoint, generated_at=GENERATED_AT))
+
+    assert data["availability"] == "available"
+    assert data["total_count"] == 0
+    assert data["state"] == "empty"

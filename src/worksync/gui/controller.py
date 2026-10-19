@@ -40,6 +40,13 @@ class GuiService:
             "attention": service.attention(self.vault, today),
         }
 
+    def command_center(self, today: date) -> dict:
+        """The Command Center: the three default sections, assembled by the read seam."""
+        return {
+            "equivalent_cli": "worksync command-center",
+            **service.command_center(self.vault, self.runtime_root, today),
+        }
+
     def review(self, today: date) -> dict:
         """The manager review board: one rollup per active project."""
         return {

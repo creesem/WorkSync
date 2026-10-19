@@ -131,6 +131,8 @@ class GuiHandler(BaseHTTPRequestHandler):
 
     def _dispatch(self, path: str, params: dict[str, str]) -> dict | None:
         service = self.server.service
+        if path == "/api/command-center":
+            return service.command_center(_today(params))
         if path == "/api/today":
             return service.today(_today(params))
         if path == "/api/review":

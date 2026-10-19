@@ -1,13 +1,14 @@
-"""The since-last-check checkpoint store and read model.
+"""The "Since Last Check" read model over the acknowledged checkpoint.
 
 A checkpoint is the acknowledged baseline for "Since Last Check": the content hash of
 every vault note at the moment the user acknowledged. It lives in the ``user_state``
-zone (``runtime/user_state/checkpoint.json``), so the one write here is journaled and
-backed up but never touches a note — acknowledging can never complete an action.
+zone (``runtime/user_state/checkpoint.json``). The write half —
+``acknowledge_checkpoint`` — lives in ``worksync.work.checkpoint``, so this module stays
+free of the safety layer and the read-only GUI seam can import it.
 
 The stored shape is ruling R2: ``{"version": 1, "acknowledged_at": "<iso>", "notes":
-{path: sha256}}``. A malformed file fails closed on read (ruling R3), while acknowledging
-never parses the old file — it creates or sha-preconditioned-updates by presence alone,
+{path: sha256}}``. A malformed file fails closed on read (ruling R3), while the acknowledge
+write never parses the old file — it creates or sha-preconditioned-updates by presence alone,
 so a corrupt checkpoint is repaired rather than blocking (ruling R4).
 
 ``since_last_check`` diffs the scanner's per-note hashes against a checkpoint and reports
@@ -24,18 +25,12 @@ render this section from ``SinceLastCheckResult`` rather than ``SectionResult``.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
 from worksync.inventory.parse import scan_vault
-from worksync.safety.files import sha256_file
-from worksync.safety.gateway import commit
-from worksync.safety.models import ChangeSet, CommitResult, FileOp
-from worksync.safety.zones import write_zones
 
 CHECKPOINT_FILENAME = "checkpoint.json"
 USER_STATE_ZONE = "user_state"
@@ -92,48 +87,6 @@ def read_checkpoint(runtime_root: str | Path) -> Checkpoint | None:
 def current_hashes(vault_root: str | Path) -> dict[str, str]:
     """Return every vault note's current content hash, keyed by path, from one scan."""
     return {record.path: record.content_hash for record in scan_vault(vault_root)}
-
-
-def acknowledge_checkpoint(
-    vault_root: str | Path,
-    runtime_root: str | Path,
-    snapshot: Mapping[str, str],
-    *,
-    now: datetime | None = None,
-) -> CommitResult:
-    """Write *snapshot* (path -> sha256) as the acknowledged checkpoint, atomically.
-
-    Creates the file on first acknowledge and sha-preconditioned-updates it thereafter. Writes
-    only ``checkpoint.json`` in the ``user_state`` zone — never a note — so acknowledging can
-    never complete an action.
-    """
-    when = now or datetime.now(UTC)
-    target = checkpoint_path(runtime_root)
-    content = json.dumps(
-        {
-            "version": 1,
-            "acknowledged_at": when.isoformat(),
-            "notes": dict(sorted(snapshot.items())),
-        },
-        sort_keys=True,
-        ensure_ascii=False,
-    )
-    if target.is_file():
-        op = FileOp(
-            "update",
-            Path(CHECKPOINT_FILENAME),
-            USER_STATE_ZONE,
-            content=content,
-            expected=sha256_file(target),
-        )
-    else:
-        op = FileOp("create", Path(CHECKPOINT_FILENAME), USER_STATE_ZONE, content=content)
-    changeset = ChangeSet(
-        verb="acknowledge",
-        ops=(op,),
-        reason="Acknowledge the current vault as the since-last-check checkpoint",
-    )
-    return commit(changeset, write_zones(vault_root, runtime_root), now=when)
 
 
 class ChangeKind(StrEnum):
@@ -211,3 +164,46 @@ def since_last_check(
         items=tuple(items),
         total_count=len(items),
     )
+
+
+def since_last_check_state(result: SinceLastCheckResult) -> str:
+    """Return the single display state represented by a since-last-check result.
+
+    Mirrors ``command_center.section_state``'s vocabulary. This section carries no
+    ``source_freshness`` (its rows are plain notes, not entities), so it never reports
+    ``stale``: an available checkpoint with nothing changed is ``empty``.
+    """
+    if result.availability == "unavailable":
+        return "unavailable"
+    if not result.items:
+        return "empty"
+    return "items"
+
+
+def since_last_check_to_dict(result: SinceLastCheckResult) -> dict:
+    """Serialize the since-last-check result for the read seam.
+
+    Rows are plain notes, not work entities, so this section does not use the
+    entity-shaped ``SectionResult`` serialization: each item carries only the diff fields.
+    The section id and the derived ``state`` are carried so the frontend can order and
+    render every Command Center section the same way.
+    """
+    return {
+        "section_id": "since_last_check",
+        "availability": result.availability,
+        "error_state": result.error_state,
+        "acknowledged_at": result.acknowledged_at,
+        "generated_at": result.generated_at,
+        "items": [
+            {
+                "path": item.path,
+                "kind": str(item.kind),
+                "title": item.title,
+                "current_hash": item.current_hash,
+                "previous_hash": item.previous_hash,
+            }
+            for item in result.items
+        ],
+        "total_count": result.total_count,
+        "state": since_last_check_state(result),
+    }

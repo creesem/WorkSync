@@ -7,7 +7,7 @@ no write helper is reachable from here.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from worksync.context.projection import get_staleness as _get_staleness
@@ -19,6 +19,9 @@ from worksync.context.retrieval import read_evidence as _read_evidence
 from worksync.context.retrieval import search_evidence as _search_evidence
 from worksync.core.config import ConfigError, load_config
 from worksync.inventory.index import index_path
+from worksync.work.command_center import my_priorities as _my_priorities
+from worksync.work.command_center import needs_attention as _needs_attention
+from worksync.work.command_center import section_result_to_dict as _section_result_to_dict
 from worksync.work.control_center import build_control_center
 from worksync.work.lifecycle.loader import load_project_records
 from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
@@ -43,6 +46,9 @@ from worksync.work.review import (
 from worksync.work.review import (
     project_reviews as _project_reviews,
 )
+from worksync.work.since_last_check import read_checkpoint as _read_checkpoint
+from worksync.work.since_last_check import since_last_check as _since_last_check
+from worksync.work.since_last_check import since_last_check_to_dict as _since_last_check_to_dict
 
 ENTITY_TYPES = ("project", "person", "ticket", "meeting", "action")
 
@@ -66,6 +72,32 @@ def _project_entity(index: WorkIndex, name: str):
         return None
     project_id = resolved["project_id"]
     return next((entity for entity in index.list_type("project") if entity.project_id == project_id), None)
+
+
+def command_center(
+    vault: str | Path,
+    runtime_root: str | Path,
+    today: date,
+    *,
+    owner_id: str | None = None,
+    generated_at: str | None = None,
+) -> dict:
+    """Assemble the Command Center's three sections from one index build, read-only.
+
+    ``generated_at`` is injectable so a fixed vault and checkpoint yield a deterministic
+    payload. ``owner_id`` stays optional: without it My Priorities reports unavailable.
+    """
+    index = _index(vault)
+    when = generated_at or datetime.now(UTC).isoformat()
+    checkpoint = _read_checkpoint(runtime_root)
+    return {
+        "generated_at": when,
+        "sections": [
+            _section_result_to_dict(_needs_attention(index, today, generated_at=when)),
+            _section_result_to_dict(_my_priorities(index, owner_id, today, generated_at=when)),
+            _since_last_check_to_dict(_since_last_check(vault, checkpoint, generated_at=when)),
+        ],
+    }
 
 
 def resolve_project(vault: str | Path, hint: dict | None) -> dict:

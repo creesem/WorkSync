@@ -21,9 +21,17 @@ from worksync.gui.server import TOKEN_HEADER, create_server
 from worksync.inventory.index import index_vault
 
 TODAY = "2026-02-01"
+# A day before any attention trigger in the fixture vault (project review due 2026-01-10,
+# action A1 due 2026-01-05), so Needs Attention is genuinely empty.
+QUIET_TODAY = "2026-01-05"
 TOKEN = "test-run-token"
 PROJECT_NOTE = "9. Project/Project - Alpha.md"
 A_PATH = "Actions/A1.md"
+BLOCKED_TICKET = "Tickets/blocked.md"
+BLOCKED_TICKET_NOTE = (
+    '---\ntype: ticket\nstatus: blocked\nticket_id: blocked-ticket\nowners:\n  - "[[Myles]]"\n---\n# Blocked ticket\n'
+)
+OWNER_PERSON_NOTE = "---\ntype: person\nstatus: active\nperson_id: dana\n---\n# Dana\n"
 
 
 def _seed(vault: Path, write_note: Callable[..., Path]) -> None:
@@ -75,6 +83,11 @@ def _json(body: bytes) -> dict:
     return json.loads(body.decode("utf-8"))
 
 
+def _snapshot(root: Path) -> dict[Path, bytes]:
+    """Every file under *root* keyed by its relative path, for write detectors."""
+    return {path.relative_to(root): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
 def _post(base: str, path: str, payload: dict | None, token: str | None = None) -> tuple[int, str, bytes]:
     data = json.dumps(payload if payload is not None else {}).encode("utf-8")
     request = urllib.request.Request(base + path, data=data, method="POST")
@@ -112,6 +125,7 @@ def test_every_section_carries_an_equivalent_command(gui_server: tuple[str, GuiS
     base, _gui = gui_server
     endpoints = [
         f"/api/today?today={TODAY}",
+        f"/api/command-center?today={TODAY}",
         f"/api/review?today={TODAY}",
         "/api/projects",
         f"/api/project?name=Alpha&today={TODAY}",
@@ -134,6 +148,7 @@ def test_gui_read_surface_does_not_write(gui_server: tuple[str, GuiService], vau
     before_db = gui.db_path.read_bytes()
     endpoints = [
         f"/api/today?today={TODAY}",
+        f"/api/command-center?today={TODAY}",
         f"/api/review?today={TODAY}",
         "/api/projects",
         f"/api/project?name=Alpha&today={TODAY}",
@@ -148,6 +163,84 @@ def test_gui_read_surface_does_not_write(gui_server: tuple[str, GuiService], vau
         assert _get(base, endpoint, TOKEN)[0] == 200, endpoint
     assert {path: path.read_bytes() for path in vault.rglob("*.md")} == before_vault
     assert gui.db_path.read_bytes() == before_db
+
+
+def test_command_center_endpoint_returns_the_three_sections(
+    gui_server: tuple[str, GuiService], vault: Path, write_note: Callable[..., Path]
+) -> None:
+    base, _gui = gui_server
+    write_note(vault, "People/Dana.md", OWNER_PERSON_NOTE)
+    write_note(vault, BLOCKED_TICKET, BLOCKED_TICKET_NOTE)
+
+    status, content_type, body = _get(base, f"/api/command-center?today={TODAY}", TOKEN)
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = _json(body)
+    assert payload["equivalent_cli"] == "worksync command-center"
+    assert payload["generated_at"]
+    sections = payload["sections"]
+    assert [section["section_id"] for section in sections] == [
+        "needs_attention",
+        "my_priorities",
+        "since_last_check",
+    ]
+    for section in sections:
+        assert section["state"], section["section_id"]
+        assert isinstance(section["total_count"], int)
+        assert isinstance(section["items"], list)
+        assert section["total_count"] == len(section["items"]), section["section_id"]
+
+    blocked = next(item for item in sections[0]["items"] if item["path"] == BLOCKED_TICKET)
+    assert blocked["entity_type"] == "ticket"
+    assert blocked["status"] == "blocked"
+    assert blocked["label"] == "Blocked ticket"
+    assert "blocked" in blocked["attention"]
+    assert sections[0]["state"] == "items"
+    assert "state" not in sections[0]["items"][0]  # state is a section-level derivation, not an item field
+
+
+def test_command_center_states_are_distinct(
+    gui_server: tuple[str, GuiService], vault: Path, write_note: Callable[..., Path]
+) -> None:
+    base, _gui = gui_server
+
+    status, _content_type, body = _get(base, f"/api/command-center?today={QUIET_TODAY}", TOKEN)
+    assert status == 200
+    quiet = {section["section_id"]: section for section in _json(body)["sections"]}
+
+    assert quiet["needs_attention"]["availability"] == "available"
+    assert quiet["needs_attention"]["total_count"] == 0
+    assert quiet["needs_attention"]["state"] == "empty"
+    assert quiet["my_priorities"]["availability"] == "unavailable"
+    assert quiet["my_priorities"]["error_state"] == "source_unavailable"
+    assert quiet["my_priorities"]["state"] == "unavailable"
+    assert quiet["since_last_check"]["availability"] == "unavailable"
+    assert quiet["since_last_check"]["error_state"] == "no_checkpoint"
+    assert quiet["since_last_check"]["state"] == "unavailable"
+
+    write_note(vault, BLOCKED_TICKET, BLOCKED_TICKET_NOTE)
+    status, _content_type, body = _get(base, f"/api/command-center?today={TODAY}", TOKEN)
+    assert status == 200
+    populated = {section["section_id"]: section for section in _json(body)["sections"]}
+
+    assert populated["needs_attention"]["state"] == "items"
+    assert populated["needs_attention"]["total_count"] >= 1
+    assert any(item["path"] == BLOCKED_TICKET for item in populated["needs_attention"]["items"])
+
+
+def test_command_center_route_does_not_write(
+    gui_server: tuple[str, GuiService], vault: Path, write_note: Callable[..., Path]
+) -> None:
+    """No Command Center section item writes to a canonical note (or anywhere else)."""
+    base, gui = gui_server
+    write_note(vault, BLOCKED_TICKET, BLOCKED_TICKET_NOTE)
+    before = _snapshot(vault)
+
+    assert _get(base, f"/api/command-center?today={TODAY}", TOKEN)[0] == 200
+
+    assert _snapshot(vault) == before
+    assert not (gui.runtime_root / "user_state").exists()
 
 
 def test_action_endpoint_requires_the_token(gui_server: tuple[str, GuiService]) -> None:
