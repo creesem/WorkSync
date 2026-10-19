@@ -1,9 +1,10 @@
-"""Shared write-zone mapping for canonical and derived writes.
+"""Shared write-zone mapping for canonical, derived, and user-state writes.
 
-A write zone pairs a named root with its policy (see ``safety.models``): ``trusted``
-is the vault, ``runtime`` is the runtime root, and the derived zones live under the
-runtime root. Building zones in one place keeps every writer's containment and write
-class consistent.
+A write zone pairs a named root with its write class (see ``safety.models``):
+``trusted`` is the vault, ``runtime`` is the runtime root, the derived zones live
+under the runtime root, and ``user_state`` is the user-owned state root, also under
+the runtime root. Building zones in one place keeps every writer's containment and
+write class consistent.
 """
 
 from __future__ import annotations
@@ -31,4 +32,5 @@ def write_zones(vault_root: str | Path, runtime_root: str | Path) -> dict[str, P
         "views": runtime / "views",
         "generated": vault / GENERATED_INTERFACE_REL,
         "runtime": runtime,
+        "user_state": runtime / "user_state",
     }

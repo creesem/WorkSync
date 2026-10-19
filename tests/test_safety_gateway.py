@@ -12,10 +12,11 @@ from pathlib import Path
 import pytest
 
 import worksync.safety
-from worksync.safety import activity, gateway
+from worksync.safety import activity, gateway, models
 from worksync.safety.files import sha256_file
 from worksync.safety.gateway import commit, recover
 from worksync.safety.models import ChangeSet, FileOp, MutationError
+from worksync.safety.zones import write_zones
 
 
 @pytest.fixture
@@ -25,6 +26,7 @@ def zones(tmp_path: Path) -> dict[str, Path]:
         "views": tmp_path / "views",
         "staging": tmp_path / "staging",
         "runtime": tmp_path / "var",
+        "user_state": tmp_path / "var" / "user_state",
     }
     for root in roots.values():
         root.mkdir(parents=True)
@@ -492,4 +494,114 @@ def test_recovery_reconciles_after_a_process_restart(zones: dict[str, Path]) -> 
     recovered = _run(_RECOVER_SCRIPT, str(zones["runtime"]))
     assert recovered.returncode == 0, recovered.stderr
     assert target.read_text(encoding="utf-8") == "original"
+    assert json.loads(journals[0].read_text(encoding="utf-8"))["rolled_back"] is True
+
+
+def test_user_state_is_its_own_write_class() -> None:
+    assert "user_state" in models.USER_STATE_ZONES
+    assert "user_state" not in models.CANONICAL_ZONES
+    assert "user_state" not in models.DERIVED_ZONES
+
+
+def test_write_zones_includes_the_user_state_root(vault: Path, tmp_path: Path) -> None:
+    zones = write_zones(vault, tmp_path / "var")
+    assert zones["user_state"] == (tmp_path / "var" / "user_state").resolve()
+    assert zones["user_state"].is_relative_to(zones["runtime"])
+
+
+def test_user_state_create_commits_without_force_reviewer_or_reason(zones: dict[str, Path]) -> None:
+    result = commit(
+        ChangeSet(
+            "acknowledge_checkpoint",
+            (FileOp("create", Path("checkpoint.json"), "user_state", content="{}\n"),),
+        ),
+        zones,
+    )
+    assert result.committed is True
+    target = zones["user_state"] / "checkpoint.json"
+    assert target.read_text(encoding="utf-8") == "{}\n"
+    record = json.loads(result.journal.read_text(encoding="utf-8"))
+    assert record["class"] == "user_state"
+    assert record["committed"] is True
+
+
+def test_user_state_update_commits_without_force_and_fails_closed_on_a_stale_hash(zones: dict[str, Path]) -> None:
+    target = _write(zones["user_state"] / "checkpoint.json", "old")
+    commit(
+        ChangeSet(
+            "acknowledge_checkpoint",
+            (FileOp("update", Path("checkpoint.json"), "user_state", content="new", expected=sha256_file(target)),),
+        ),
+        zones,
+    )
+    assert target.read_text(encoding="utf-8") == "new"
+
+    with pytest.raises(MutationError) as excinfo:
+        commit(
+            ChangeSet(
+                "acknowledge_checkpoint",
+                (FileOp("update", Path("checkpoint.json"), "user_state", content="stale", expected="0" * 64),),
+            ),
+            zones,
+        )
+    assert _code(excinfo) == "stale_hash"
+    assert target.read_text(encoding="utf-8") == "new"
+
+
+def test_derived_runtime_update_still_requires_force(zones: dict[str, Path]) -> None:
+    target = _write(zones["runtime"] / "state.json", "old")
+    changeset = ChangeSet(
+        "regen_view",
+        (FileOp("update", Path("state.json"), "runtime", content="new", expected=sha256_file(target)),),
+    )
+    with pytest.raises(MutationError) as excinfo:
+        commit(changeset, zones)
+    assert _code(excinfo) == "needs_force"
+    assert target.read_text(encoding="utf-8") == "old"
+    assert commit(changeset, zones, force=True).committed is True
+
+
+def test_user_state_write_records_the_class_in_the_activity_log(zones: dict[str, Path]) -> None:
+    commit(
+        ChangeSet(
+            "acknowledge_checkpoint",
+            (FileOp("create", Path("checkpoint.json"), "user_state", content="{}\n"),),
+        ),
+        zones,
+    )
+    events = activity.list_events(zones["runtime"])
+    assert events[-1]["type"] == "write"
+    assert events[-1]["class"] == "user_state"
+    assert events[-1]["result"] == "ok"
+
+
+def test_user_state_multi_op_rollback_restores_prior_state(
+    zones: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = _write(zones["user_state"] / "a.json", "a-old")
+    second = _write(zones["user_state"] / "b.json", "b-old")
+    real = gateway.atomic_write_text
+
+    def flaky(path, content, **kwargs):
+        if str(path).endswith("b.json"):
+            raise RuntimeError("disk full")
+        return real(path, content, **kwargs)
+
+    monkeypatch.setattr("worksync.safety.gateway.atomic_write_text", flaky)
+    with pytest.raises(MutationError) as excinfo:
+        commit(
+            ChangeSet(
+                "acknowledge_checkpoint",
+                (
+                    FileOp("update", Path("a.json"), "user_state", content="a-new", expected=sha256_file(first)),
+                    FileOp("update", Path("b.json"), "user_state", content="b-new", expected=sha256_file(second)),
+                ),
+            ),
+            zones,
+        )
+    assert _code(excinfo) == "rolled_back"
+    assert first.read_text(encoding="utf-8") == "a-old"
+    assert second.read_text(encoding="utf-8") == "b-old"
+    journals = list((zones["runtime"] / "journal").glob("*.json"))
+    assert len(journals) == 1
     assert json.loads(journals[0].read_text(encoding="utf-8"))["rolled_back"] is True

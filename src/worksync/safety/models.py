@@ -7,6 +7,7 @@ from pathlib import Path
 
 CANONICAL_ZONES = frozenset({"trusted"})
 DERIVED_ZONES = frozenset({"staging", "ingest", "views", "generated", "runtime"})
+USER_STATE_ZONES = frozenset({"user_state"})
 CONFIRM_VERBS = frozenset({"drop", "merge", "redirect", "archive", "supersede", "reassign", "reclassify"})
 
 

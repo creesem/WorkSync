@@ -30,6 +30,7 @@ from worksync.safety.files import (
 from worksync.safety.models import (
     CANONICAL_ZONES,
     CONFIRM_VERBS,
+    USER_STATE_ZONES,
     ChangeSet,
     CommitResult,
     FileOp,
@@ -336,7 +337,8 @@ def commit(
     recover(zones, now=when)
 
     canonical = any(op.zone in CANONICAL_ZONES for op in changeset.ops)
-    class_ = "canonical" if canonical else "derived"
+    user_state = any(op.zone in USER_STATE_ZONES for op in changeset.ops)
+    class_ = "canonical" if canonical else ("user_state" if user_state else "derived")
     event = {
         "type": "write",
         "verb": changeset.verb,
@@ -345,7 +347,7 @@ def commit(
         "reason": changeset.reason,
     }
     try:
-        _validate(changeset, canonical=canonical, confirmed=confirmed, force=force)
+        _validate(changeset, canonical=canonical, user_state=user_state, confirmed=confirmed, force=force)
         planned = [_precondition(zones, op) for op in changeset.ops]
     except MutationError as exc:
         outcome = "needs_confirmation" if exc.code == "needs_confirmation" else "error"
@@ -382,7 +384,7 @@ def commit(
     )
 
 
-def _validate(changeset: ChangeSet, *, canonical: bool, confirmed: bool, force: bool) -> None:
+def _validate(changeset: ChangeSet, *, canonical: bool, user_state: bool, confirmed: bool, force: bool) -> None:
     if not changeset.ops:
         raise MutationError("invalid_op", "A change set requires at least one operation.")
     if canonical:
@@ -392,7 +394,7 @@ def _validate(changeset: ChangeSet, *, canonical: bool, confirmed: bool, force: 
             raise MutationError("missing_reason", "A canonical write requires a human-readable reason.")
     if canonical and changeset.verb in CONFIRM_VERBS and not confirmed:
         raise MutationError("needs_confirmation", f"Verb '{changeset.verb}' requires explicit confirmation.")
-    if not canonical and not force and any(op.kind == "update" for op in changeset.ops):
+    if not canonical and not user_state and not force and any(op.kind == "update" for op in changeset.ops):
         raise MutationError("needs_force", "Regenerating a derived artifact requires explicit force.")
 
 
