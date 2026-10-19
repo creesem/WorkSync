@@ -561,6 +561,68 @@ def test_derived_runtime_update_still_requires_force(zones: dict[str, Path]) -> 
     assert commit(changeset, zones, force=True).committed is True
 
 
+def test_mixed_user_state_and_derived_update_still_requires_force(zones: dict[str, Path]) -> None:
+    """The force guard is per-op: a user_state op does not exempt a derived update in the same set."""
+    checkpoint = _write(zones["user_state"] / "checkpoint.json", "old")
+    derived = _write(zones["views"] / "Today.md", "old")
+    changeset = ChangeSet(
+        "acknowledge_checkpoint",
+        (
+            FileOp(
+                "update",
+                Path("checkpoint.json"),
+                "user_state",
+                content="new",
+                expected=sha256_file(checkpoint),
+            ),
+            FileOp("update", Path("Today.md"), "views", content="new", expected=sha256_file(derived)),
+        ),
+    )
+    with pytest.raises(MutationError) as excinfo:
+        commit(changeset, zones)
+    assert _code(excinfo) == "needs_force"
+    assert checkpoint.read_text(encoding="utf-8") == "old"
+    assert derived.read_text(encoding="utf-8") == "old"
+    assert commit(changeset, zones, force=True).committed is True
+    assert checkpoint.read_text(encoding="utf-8") == "new"
+    assert derived.read_text(encoding="utf-8") == "new"
+
+
+def test_user_state_only_update_still_commits_without_force(zones: dict[str, Path]) -> None:
+    """A change set whose only update is user_state needs no force."""
+    target = _write(zones["user_state"] / "checkpoint.json", "old")
+    result = commit(
+        ChangeSet(
+            "acknowledge_checkpoint",
+            (FileOp("update", Path("checkpoint.json"), "user_state", content="new", expected=sha256_file(target)),),
+        ),
+        zones,
+    )
+    assert result.committed is True
+    assert target.read_text(encoding="utf-8") == "new"
+
+
+def test_canonical_update_with_a_derived_sidecar_needs_no_force(zones: dict[str, Path]) -> None:
+    """A reviewed trusted write may carry its derived sidecars (manifest/redirect) in one transaction."""
+    note = _write(zones["trusted"] / "note.md", "old")
+    manifest = _write(zones["staging"] / "manifest.json", "old")
+    result = commit(
+        ChangeSet(
+            "update_status",
+            (
+                FileOp("update", Path("note.md"), "trusted", content="new", expected=sha256_file(note)),
+                FileOp("update", Path("manifest.json"), "staging", content="new", expected=sha256_file(manifest)),
+            ),
+            reviewer="Myles",
+            reason="Reviewed the action",
+        ),
+        zones,
+    )
+    assert result.committed is True
+    assert note.read_text(encoding="utf-8") == "new"
+    assert manifest.read_text(encoding="utf-8") == "new"
+
+
 def test_user_state_write_records_the_class_in_the_activity_log(zones: dict[str, Path]) -> None:
     commit(
         ChangeSet(

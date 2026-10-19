@@ -347,7 +347,7 @@ def commit(
         "reason": changeset.reason,
     }
     try:
-        _validate(changeset, canonical=canonical, user_state=user_state, confirmed=confirmed, force=force)
+        _validate(changeset, canonical=canonical, confirmed=confirmed, force=force)
         planned = [_precondition(zones, op) for op in changeset.ops]
     except MutationError as exc:
         outcome = "needs_confirmation" if exc.code == "needs_confirmation" else "error"
@@ -384,7 +384,7 @@ def commit(
     )
 
 
-def _validate(changeset: ChangeSet, *, canonical: bool, user_state: bool, confirmed: bool, force: bool) -> None:
+def _validate(changeset: ChangeSet, *, canonical: bool, confirmed: bool, force: bool) -> None:
     if not changeset.ops:
         raise MutationError("invalid_op", "A change set requires at least one operation.")
     if canonical:
@@ -394,7 +394,18 @@ def _validate(changeset: ChangeSet, *, canonical: bool, user_state: bool, confir
             raise MutationError("missing_reason", "A canonical write requires a human-readable reason.")
     if canonical and changeset.verb in CONFIRM_VERBS and not confirmed:
         raise MutationError("needs_confirmation", f"Verb '{changeset.verb}' requires explicit confirmation.")
-    if not canonical and not user_state and not force and any(op.kind == "update" for op in changeset.ops):
+    if (
+        not canonical
+        and not force
+        and any(
+            op.kind == "update" and op.zone not in CANONICAL_ZONES and op.zone not in USER_STATE_ZONES
+            for op in changeset.ops
+        )
+    ):
+        # The exemption is per-op: a user_state op no longer exempts a derived update in the
+        # same set. A canonical change set is exempt whole-changeset because an explicit,
+        # reviewed trusted write legitimately carries its derived sidecars (manifest in
+        # ``staging``, redirects in ``runtime``, generated views) in the same transaction.
         raise MutationError("needs_force", "Regenerating a derived artifact requires explicit force.")
 
 

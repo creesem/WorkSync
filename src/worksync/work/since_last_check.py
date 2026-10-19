@@ -14,6 +14,11 @@ so a corrupt checkpoint is repaired rather than blocking (ruling R4).
 each difference once as ``added`` / ``changed`` / ``removed``; with no checkpoint it reports
 ``unavailable`` / ``no_checkpoint`` rather than listing every note as added (ruling R3), and
 sorts items by path (ruling R5). It is read-only: the diff never writes.
+
+Deliberate deviation (ticket 05, I2): this module's result type is ``SinceLastCheckResult``,
+not the entity-shaped ``SectionResult`` of ticket 02. "Since Last Check" rows are arbitrary
+notes (not work entities), so the section carries no entity shape; the CC-02 GUI route must
+render this section from ``SinceLastCheckResult`` rather than ``SectionResult``.
 """
 
 from __future__ import annotations
@@ -59,13 +64,13 @@ def read_checkpoint(runtime_root: str | Path) -> Checkpoint | None:
 
     A present-but-malformed file fails closed: raise ``ValueError`` (unreadable JSON, an
     unexpected shape, or a schema version this build does not know). So does a present path
-    that is not a regular file (e.g. a directory). A missing file is the normal "not yet
-    acknowledged" state, not an error.
+    that is not a regular file (e.g. a directory or a dangling symlink). A missing file is
+    the normal "not yet acknowledged" state, not an error.
     """
     path = checkpoint_path(runtime_root)
-    if path.exists() and not path.is_file():
-        raise ValueError(f"Checkpoint is not a regular file: {path}")
     if not path.is_file():
+        if path.exists() or path.is_symlink():
+            raise ValueError(f"Checkpoint is not a regular file: {path}")
         return None
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))

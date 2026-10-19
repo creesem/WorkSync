@@ -128,6 +128,18 @@ def test_read_checkpoint_raises_when_the_path_is_not_a_file(tmp_path: Path) -> N
         read_checkpoint(tmp_path / "runtime")
 
 
+def test_read_checkpoint_raises_when_the_path_is_a_dangling_symlink(tmp_path: Path) -> None:
+    path = checkpoint_path(tmp_path / "runtime")
+    path.parent.mkdir(parents=True)
+    try:
+        path.symlink_to(path.parent / "missing-target.json")
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available on this platform")
+
+    with pytest.raises(ValueError):
+        read_checkpoint(tmp_path / "runtime")
+
+
 def test_acknowledge_repairs_a_malformed_checkpoint(
     vault: Path, write_note: Callable[[Path, str, str], Path], tmp_path: Path
 ) -> None:
