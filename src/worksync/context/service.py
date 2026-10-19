@@ -89,7 +89,13 @@ def command_center(
     """
     index = _index(vault)
     when = generated_at or datetime.now(UTC).isoformat()
-    checkpoint = _read_checkpoint(runtime_root)
+    try:
+        checkpoint = _read_checkpoint(runtime_root)
+    except ValueError:
+        # A present-but-malformed checkpoint must not brick the default screen: degrade the
+        # Since Last Check section to "unavailable" / "no_checkpoint" and keep the other two
+        # sections rendering. The next acknowledge repairs the corrupt file (ruling R4).
+        checkpoint = None
     return {
         "generated_at": when,
         "sections": [

@@ -334,7 +334,7 @@ async function renderTriageTab(bar) {
   state.triage = data.proposals || [];
   const rows = state.triage.map(proposalCard).join("");
   view.innerHTML =
-    heading("Review", "Triage queue") +
+    heading("Triage queue", "") +
     bar +
     `<div class="triage-actions"><button type="button" id="apply-triage">Apply selected</button></div>` +
     (rows || empty("Nothing to triage."));

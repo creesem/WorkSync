@@ -229,6 +229,28 @@ def test_command_center_states_are_distinct(
     assert any(item["path"] == BLOCKED_TICKET for item in populated["needs_attention"]["items"])
 
 
+def test_command_center_degrades_on_a_malformed_checkpoint(
+    gui_server: tuple[str, GuiService], vault: Path, write_note: Callable[..., Path]
+) -> None:
+    """A corrupt checkpoint must not brick the route: Since Last Check degrades, the rest renders."""
+    base, gui = gui_server
+    write_note(vault, BLOCKED_TICKET, BLOCKED_TICKET_NOTE)
+    checkpoint = gui.runtime_root / "user_state" / "checkpoint.json"
+    checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint.write_text("{not valid json", encoding="utf-8")
+
+    status, content_type, body = _get(base, f"/api/command-center?today={TODAY}", TOKEN)
+
+    assert status == 200
+    assert content_type == "application/json"
+    sections = {section["section_id"]: section for section in _json(body)["sections"]}
+    assert sections["since_last_check"]["availability"] == "unavailable"
+    assert sections["since_last_check"]["error_state"] == "no_checkpoint"
+    assert sections["needs_attention"]["availability"] == "available"
+    assert any(item["path"] == BLOCKED_TICKET for item in sections["needs_attention"]["items"])
+    assert sections["my_priorities"]["availability"] == "unavailable"
+
+
 def test_command_center_route_does_not_write(
     gui_server: tuple[str, GuiService], vault: Path, write_note: Callable[..., Path]
 ) -> None:
