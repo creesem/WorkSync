@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any, Protocol
@@ -30,6 +31,8 @@ from worksync.work import reviewer as reviewer_store
 from worksync.work.capture import capture_text
 from worksync.work.clarification import ClarificationError
 from worksync.work.duplicates import DuplicatesError
+from worksync.work.layout_profile import KNOWN_SECTIONS, default_profile, read_profile
+from worksync.work.layout_profile_store import reset_profile, save_profile
 from worksync.work.lifecycle.transitions import apply_lifecycle_transition
 from worksync.work.merge import apply_merge as run_identity_apply
 from worksync.work.queue import QueueError
@@ -226,6 +229,80 @@ def _set_reviewer(service: WriteContext, payload: dict, *, confirmed: bool, toda
         "changes": (),
         "equivalent_cli": None,
     }
+
+
+def _save_layout_profile(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Persist the Command Center layout: section order, visibility, and the "Me" owner.
+
+    Only the ``user_state`` profile record is written — never a note. ``reset`` restores
+    the defaults instead. The profile is read back after the commit so the client caches
+    the stored revision and timestamp rather than the pre-save values.
+    """
+    reset = payload.get("reset", False)
+    if type(reset) is not bool:
+        raise ActionError("bad_request", "reset must be a boolean.", 400)
+    if reset:
+        result = reset_profile(service.vault, service.runtime_root)
+    else:
+        section_order = _layout_section_order(payload.get("section_order"))
+        visibility = _layout_visibility(payload.get("visibility"))
+        try:
+            current = read_profile(service.runtime_root)
+        except ValueError:
+            # Mirror the route's graceful degradation: a corrupt profile is replaced by the
+            # defaults plus this payload rather than blocking the save (store ruling R5).
+            current = default_profile()
+        owner_id = _layout_owner_id(payload.get("owner_id", current.owner_id))
+        profile = replace(current, section_order=section_order, visibility=visibility, owner_id=owner_id)
+        result = save_profile(service.vault, service.runtime_root, profile)
+    try:
+        stored = read_profile(service.runtime_root)
+    except ValueError as exc:
+        raise ActionError(
+            "write_failed", f"The layout profile was written but could not be read back: {exc}", 500
+        ) from exc
+    return {
+        "state": "ok",
+        "action": "save-layout-profile",
+        "committed": result.committed,
+        "profile": stored.to_dict(),
+        "equivalent_cli": None,
+    }
+
+
+def _layout_section_order(value: object) -> tuple[str, ...]:
+    """Return the section order, rejecting anything but the known ids exactly once."""
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ActionError("bad_request", "section_order must be a list of section ids.", 400)
+    if len(value) != len(KNOWN_SECTIONS) or set(value) != set(KNOWN_SECTIONS):
+        raise ActionError(
+            "bad_request",
+            "section_order must list each Command Center section exactly once.",
+            400,
+        )
+    return tuple(value)
+
+
+def _layout_visibility(value: object) -> dict[str, bool]:
+    """Return the visibility map, rejecting anything but a boolean per known section."""
+    if not isinstance(value, dict) or set(value) != set(KNOWN_SECTIONS):
+        raise ActionError(
+            "bad_request",
+            "visibility must set every Command Center section to true or false.",
+            400,
+        )
+    if any(type(flag) is not bool for flag in value.values()):
+        raise ActionError("bad_request", "visibility values must be booleans.", 400)
+    return {section: value[section] for section in KNOWN_SECTIONS}
+
+
+def _layout_owner_id(value: object) -> str | None:
+    """Return the "Me" person id, treating a blank string as no owner."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ActionError("bad_request", "owner_id must be a person id string or null.", 400)
+    return value.strip() or None
 
 
 def _apply_batch(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
@@ -667,6 +744,7 @@ ACTIONS: dict[str, ActionHandler] = {
     "update-action": _update_action,
     "complete-action": _complete_action,
     "set-reviewer": _set_reviewer,
+    "save-layout-profile": _save_layout_profile,
     "apply-batch": _apply_batch,
     "capture": _capture,
     "ingest-scan": _ingest_scan,

@@ -555,6 +555,95 @@ button.complete:hover {
 .krisp-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem 1rem;margin:0 0 .6rem}
 .krisp-bar button{padding:.4rem .9rem;border:1px solid var(--ink);background:var(--ink);color:var(--surface);cursor:pointer}
 
+/* Ticket 15: the Command Center layout toolbar (Me, hide/show, reorder, reset). */
+.layout-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  width: 100%;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0.7rem 1.4rem 0;
+}
+
+.layout-bar[hidden] {
+  display: none;
+}
+
+.layout-me {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.layout-me select {
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.layout-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.layout-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+}
+
+.layout-row .layout-title {
+  font-size: 0.82rem;
+}
+
+.layout-row button {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.layout-row button[data-layout-visibility] {
+  width: auto;
+  padding: 0 0.45rem;
+  font-size: 0.78rem;
+}
+
+.layout-row button:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.layout-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#layout-reset {
+  margin-left: auto;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--oxblood);
+  background: transparent;
+  color: var(--oxblood);
+  cursor: pointer;
+}
+
+#layout-reset:hover {
+  background: var(--oxblood);
+  color: var(--surface);
+}
+
 /* Ticket 11: the on-demand detail pane. Fixed to the right edge so opening and closing it
    never reflows the content column and never changes its scroll position. */
 .detail {

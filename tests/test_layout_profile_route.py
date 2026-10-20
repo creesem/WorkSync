@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import replace
@@ -80,6 +81,21 @@ def _get(base: str, path: str) -> tuple[int, str, dict]:
         return response.status, response.headers.get_content_type(), json.loads(response.read().decode("utf-8"))
 
 
+def _post(base: str, path: str, payload: dict) -> tuple[int, dict]:
+    request = urllib.request.Request(base + path, data=json.dumps(payload).encode("utf-8"), method="POST")
+    request.add_header(TOKEN_HEADER, TOKEN)
+    request.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read().decode("utf-8"))
+
+
+def _snapshot(root: Path) -> dict[str, bytes]:
+    return {path.relative_to(root).as_posix(): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
 def test_command_center_route_returns_the_default_profile_and_section_order(
     route: tuple[str, GuiService],
 ) -> None:
@@ -135,6 +151,34 @@ def test_command_center_route_owner_makes_my_priorities_available(route: tuple[s
         OWNER_ACTION,
         OWNER_TICKET,
     }
+
+
+def test_save_layout_profile_action_changes_the_next_route_read(route: tuple[str, GuiService], vault: Path) -> None:
+    """Ticket 15: the GUI's save action drives the next route read, without touching a note."""
+    base, _gui = route
+    before = _snapshot(vault)
+    visibility = {"needs_attention": False, "my_priorities": True, "since_last_check": False}
+
+    status, payload = _post(
+        base,
+        "/api/action/save-layout-profile",
+        {
+            "section_order": ["my_priorities", "since_last_check", "needs_attention"],
+            "visibility": visibility,
+            "owner_id": OWNER,
+        },
+    )
+
+    assert status == 200
+    assert payload["committed"] is True
+    assert payload["profile"]["revision"] == 2
+
+    status, _content_type, command_center = _get(base, f"/api/command-center?today={TODAY}")
+    assert status == 200
+    assert [section["section_id"] for section in command_center["sections"]] == ["my_priorities"]
+    assert command_center["profile"]["owner_id"] == OWNER
+    assert command_center["sections"][0]["effective_filters"] == {"owner_id": OWNER}
+    assert _snapshot(vault) == before
 
 
 def test_command_center_route_degrades_on_a_malformed_profile(route: tuple[str, GuiService], vault: Path) -> None:

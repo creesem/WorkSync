@@ -46,6 +46,20 @@
           </div>
         </header>
 
+        <!-- CC-03: the Command Center layout toolbar. The per-section hide/show and reorder
+             rows are rendered from the route's profile by app.js; the bar is hidden on every
+             other view. -->
+        <aside class="layout-bar" id="layout-bar" aria-label="Layout" hidden>
+          <label class="layout-me">
+            <span>Me</span>
+            <select id="me-select" aria-label="Me">
+              <option value="">(nobody)</option>
+            </select>
+          </label>
+          <div class="layout-sections" id="layout-sections"></div>
+          <button type="button" id="layout-reset">Reset layout</button>
+        </aside>
+
         <main class="content" id="view" aria-live="polite">
           <p class="muted">Loading…</p>
         </main>

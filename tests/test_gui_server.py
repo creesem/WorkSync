@@ -21,6 +21,14 @@ from worksync.gui.controller import GuiService
 from worksync.gui.server import TOKEN_HEADER, create_server
 from worksync.inventory.index import index_vault
 from worksync.safety.files import sha256_bytes
+from worksync.work.layout_profile import (
+    DEFAULT_VIEW,
+    KNOWN_SECTIONS,
+    PROFILE_FILENAME,
+    default_profile,
+    profile_path,
+    read_profile,
+)
 
 TODAY = "2026-02-01"
 # A day before any attention trigger in the fixture vault (project review due 2026-01-10,
@@ -330,6 +338,159 @@ def test_set_reviewer_action_persists(gui_server: tuple[str, GuiService]) -> Non
     assert (gui.runtime_root / "reviewer.json").is_file()
 
 
+def test_save_layout_profile_rejects_an_invalid_payload(gui_server: tuple[str, GuiService]) -> None:
+    """Ticket 15: a bad order/visibility/owner is a 400 and writes nothing at all."""
+    base, gui = gui_server
+    before = _snapshot(gui.vault)
+    visible = {section: True for section in KNOWN_SECTIONS}
+    invalid = [
+        {"section_order": ["needs_attention", "my_priorities"], "visibility": visible, "owner_id": None},
+        {
+            "section_order": ["needs_attention", "needs_attention", "my_priorities"],
+            "visibility": visible,
+            "owner_id": None,
+        },
+        {"section_order": [*KNOWN_SECTIONS, "extra"], "visibility": visible, "owner_id": None},
+        {"section_order": "needs_attention", "visibility": visible, "owner_id": None},
+        {"section_order": list(KNOWN_SECTIONS), "visibility": {"needs_attention": True}, "owner_id": None},
+        {
+            "section_order": list(KNOWN_SECTIONS),
+            "visibility": {"needs_attention": "yes", "my_priorities": True, "since_last_check": True},
+            "owner_id": None,
+        },
+        {"section_order": list(KNOWN_SECTIONS), "owner_id": None},
+        {"section_order": list(KNOWN_SECTIONS), "visibility": visible, "owner_id": 7},
+        {"section_order": list(KNOWN_SECTIONS), "visibility": visible, "owner_id": None, "reset": "yes"},
+    ]
+
+    for payload in invalid:
+        status, content_type, body = _post(base, "/api/action/save-layout-profile", payload, TOKEN)
+        assert status == 400, payload
+        assert content_type == "application/json", payload
+        assert _json(body)["error"] == "bad_request", payload
+
+    assert _snapshot(gui.vault) == before
+    assert not profile_path(gui.runtime_root).exists()
+
+
+def test_save_layout_profile_persists_order_visibility_and_owner(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """Ticket 15: the action saves the layout and bumps the revision on each save."""
+    base, gui = gui_server
+    before = _snapshot(gui.vault)
+    order = ["since_last_check", "needs_attention", "my_priorities"]
+    visibility = {"needs_attention": False, "my_priorities": True, "since_last_check": True}
+
+    status, content_type, body = _post(
+        base,
+        "/api/action/save-layout-profile",
+        {"section_order": order, "visibility": visibility, "owner_id": "dana"},
+        TOKEN,
+    )
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = _json(body)
+    assert payload["state"] == "ok"
+    assert payload["action"] == "save-layout-profile"
+    assert payload["committed"] is True
+    assert payload["equivalent_cli"] is None
+    assert payload["profile"]["section_order"] == order
+    assert payload["profile"]["visibility"] == visibility
+    assert payload["profile"]["owner_id"] == "dana"
+    assert payload["profile"]["default_view"] == DEFAULT_VIEW
+    assert payload["profile"]["revision"] == 2
+    assert payload["profile"]["updated_at"]
+
+    stored = read_profile(gui.runtime_root)
+    assert stored.section_order == tuple(order)
+    assert stored.visibility == visibility
+    assert stored.owner_id == "dana"
+    assert stored.revision == 2
+
+    # A second save reads the stored revision back, so the revision keeps climbing.
+    swapped = ["needs_attention", "since_last_check", "my_priorities"]
+    status, _content_type, body = _post(
+        base,
+        "/api/action/save-layout-profile",
+        {"section_order": swapped, "visibility": visibility, "owner_id": "dana"},
+        TOKEN,
+    )
+    assert status == 200
+    assert _json(body)["profile"]["revision"] == 3
+    assert read_profile(gui.runtime_root).section_order == tuple(swapped)
+
+    # No canonical write: the vault is byte-identical and the only user_state file is the
+    # profile itself (the journal and backups live outside it).
+    assert _snapshot(gui.vault) == before
+    user_state = gui.runtime_root / "user_state"
+    assert [path.name for path in user_state.iterdir()] == [PROFILE_FILENAME]
+
+
+def test_save_layout_profile_reset_restores_the_defaults(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """Ticket 15: ``reset`` writes the default profile (revision 1) and no note."""
+    base, gui = gui_server
+    custom = {
+        "section_order": ["since_last_check", "needs_attention", "my_priorities"],
+        "visibility": {"needs_attention": False, "my_priorities": True, "since_last_check": True},
+        "owner_id": "dana",
+    }
+    assert _post(base, "/api/action/save-layout-profile", custom, TOKEN)[0] == 200
+    before = _snapshot(gui.vault)
+
+    status, content_type, body = _post(base, "/api/action/save-layout-profile", {"reset": True}, TOKEN)
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = _json(body)
+    assert payload["state"] == "ok"
+    assert payload["action"] == "save-layout-profile"
+    assert payload["committed"] is True
+    expected = default_profile()
+    assert payload["profile"]["section_order"] == list(expected.section_order)
+    assert payload["profile"]["visibility"] == expected.visibility
+    assert payload["profile"]["owner_id"] is None
+    assert payload["profile"]["revision"] == expected.revision
+    assert payload["profile"]["updated_at"]
+
+    stored = read_profile(gui.runtime_root)
+    assert stored.owner_id is None
+    assert stored.section_order == KNOWN_SECTIONS
+    assert stored.visibility == {section: True for section in KNOWN_SECTIONS}
+    assert stored.revision == 1
+    assert _snapshot(gui.vault) == before
+
+
+def test_save_layout_profile_repairs_a_corrupt_profile(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """A corrupt profile degrades the read; the next save replaces it instead of failing."""
+    base, gui = gui_server
+    target = profile_path(gui.runtime_root)
+    target.parent.mkdir(parents=True)
+    target.write_text("{not valid json", encoding="utf-8")
+    before = _snapshot(gui.vault)
+
+    status, _content_type, body = _post(
+        base,
+        "/api/action/save-layout-profile",
+        {
+            "section_order": ["my_priorities", "needs_attention", "since_last_check"],
+            "visibility": {section: True for section in KNOWN_SECTIONS},
+            "owner_id": "dana",
+        },
+        TOKEN,
+    )
+
+    assert status == 200
+    assert _json(body)["committed"] is True
+    assert read_profile(gui.runtime_root).owner_id == "dana"
+    assert _snapshot(gui.vault) == before
+
+
 def test_capture_action_requires_text(gui_server: tuple[str, GuiService]) -> None:
     base, _gui = gui_server
     for payload in ({}, {"text": ""}, {"text": "   "}):
@@ -546,6 +707,33 @@ def test_static_shell_pins_the_detail_pane_and_canonical_link(gui_server: tuple[
     assert "vaultNameOnce" in app_js  # the vault name is cached from /api/settings
     assert "detailGeneration" in app_js  # a selection that lost a section change bails
     assert "task" not in app_js.lower()
+
+
+def test_static_shell_pins_the_layout_controls(gui_server: tuple[str, GuiService]) -> None:
+    """Ticket 15: the "Me" picker, the hide/show and reorder buttons, and reset are served.
+
+    No JS test harness exists, so the markup and the action wiring are asserted by string;
+    the behaviour is verified by hand.
+    """
+    base, _gui = gui_server
+    html = _get(base, "/")[2].decode("utf-8")
+    assert 'id="layout-bar"' in html
+    assert 'id="me-select"' in html
+    assert 'aria-label="Me"' in html
+    assert 'id="layout-sections"' in html
+    assert "Reset layout" in html
+    assert "task" not in html.lower()
+
+    app_js = _get(base, "/app.js", TOKEN)[2].decode("utf-8")
+    assert 'postAction("save-layout-profile"' in app_js
+    assert "data-layout-visibility" in app_js  # per-section hide/show
+    assert "data-layout-move" in app_js  # per-section up/down reorder
+    assert "layout-reset" in app_js
+    assert "state.profile" in app_js  # the route's profile is the controls' source
+    assert "task" not in app_js.lower()
+
+    css = _get(base, "/styles.css", TOKEN)[2].decode("utf-8")
+    assert ".layout-bar" in css
 
 
 def test_server_refuses_a_non_loopback_host(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:

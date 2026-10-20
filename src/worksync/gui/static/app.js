@@ -12,6 +12,9 @@ const state = {
   krisp: [],
   identity: [],
   detailKey: null,
+  // CC-03: the layout profile the Command Center route returned, and the source of truth
+  // for the "Me", hide/show, and reorder controls.
+  profile: null,
 };
 
 const view = document.getElementById("view");
@@ -22,6 +25,9 @@ const captureInput = document.getElementById("capture-input");
 const captureSubmit = document.getElementById("capture-submit");
 const captureStatus = document.getElementById("capture-status");
 const detail = document.getElementById("detail");
+const layoutBar = document.getElementById("layout-bar");
+const layoutSections = document.getElementById("layout-sections");
+const meSelect = document.getElementById("me-select");
 
 // Ticket 11: the vault name for canonical links is read once from /api/settings and cached,
 // so opening a detail pane never blocks on a second settings read.
@@ -931,11 +937,143 @@ function renderCommandCenter(sections) {
     (blocks || empty("No sections."));
 }
 
+// CC-03: the layout toolbar. The route returns the profile and already renders the sections
+// in its order with hidden ones dropped, so the toolbar only edits the profile and re-reads
+// the route; it never re-sorts the DOM itself.
+
+let layoutInFlight = false;
+let meOptionsLoaded = false;
+let peoplePromise = null;
+
+function peopleOnce() {
+  // The "Me" options are stable person ids; /api/team is the one read that carries them,
+  // and it is fetched at most once per page load. A person without a person_id cannot be
+  // an owner, so they are left out of the picker.
+  if (!peoplePromise) {
+    peoplePromise = api("/api/team")
+      .then((data) => (data.workloads || []).map((workload) => workload.person || {}))
+      .catch(() => []);
+  }
+  return peoplePromise;
+}
+
+function layoutRow(sectionId, index, total) {
+  const title = commandCenterTitles[sectionId] || sectionId;
+  const visible = state.profile.visibility[sectionId] !== false;
+  const up = index === 0 ? " disabled" : "";
+  const down = index === total - 1 ? " disabled" : "";
+  return `<div class="layout-row">
+    <span class="layout-title">${escapeHtml(title)}</span>
+    <button type="button" data-layout-visibility="${escapeHtml(sectionId)}" aria-pressed="${visible}"
+      title="${visible ? "Hide" : "Show"} ${escapeHtml(title)}">${visible ? "Hide" : "Show"}</button>
+    <button type="button" data-layout-move="up" data-layout-id="${escapeHtml(sectionId)}"
+      aria-label="Move ${escapeHtml(title)} up"${up}>&uarr;</button>
+    <button type="button" data-layout-move="down" data-layout-id="${escapeHtml(sectionId)}"
+      aria-label="Move ${escapeHtml(title)} down"${down}>&darr;</button>
+  </div>`;
+}
+
+function renderLayoutBar() {
+  if (!state.profile) {
+    layoutBar.hidden = true;
+    return;
+  }
+  const order = state.profile.section_order || [];
+  layoutSections.innerHTML = order.map((sectionId, index) => layoutRow(sectionId, index, order.length)).join("");
+  meSelect.value = state.profile.owner_id || "";
+  layoutBar.hidden = false;
+}
+
+async function fillMeOptions() {
+  const people = await peopleOnce();
+  const current = (state.profile && state.profile.owner_id) || "";
+  const seen = new Set([""]);
+  const options = ['<option value="">(nobody)</option>'];
+  for (const person of people) {
+    const id = person.person_id;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    options.push(`<option value="${escapeHtml(id)}">${escapeHtml(person.title || id)}</option>`);
+  }
+  // A stored owner who is no longer on the team stays selectable, so the picker never
+  // silently reports a different "Me" than the profile holds.
+  if (current && !seen.has(current)) {
+    options.push(`<option value="${escapeHtml(current)}">${escapeHtml(current)}</option>`);
+  }
+  meSelect.innerHTML = options.join("");
+  meSelect.value = current;
+}
+
+async function refreshCommandCenter() {
+  const data = await api("/api/command-center");
+  equivalent.textContent = data.equivalent_cli;
+  state.profile = data.profile || null;
+  renderLayoutBar();
+  renderCommandCenter(data.sections);
+  if (!meOptionsLoaded) {
+    meOptionsLoaded = true;
+    fillMeOptions();
+  }
+}
+
+function layoutPayload(profile, changes) {
+  return {
+    section_order: profile.section_order,
+    visibility: profile.visibility,
+    owner_id: profile.owner_id,
+    ...changes,
+  };
+}
+
+async function saveLayout(payload) {
+  // One save in flight at a time: a second click would build its payload from the same
+  // cached profile and silently drop the first change.
+  if (layoutInFlight) return;
+  layoutInFlight = true;
+  try {
+    const result = await postAction("save-layout-profile", payload);
+    state.profile = result.profile;
+    showWriteResult(result, false);
+    // The user may have navigated away while the save was in flight; only the Command
+    // Center should have its sections re-read.
+    if (current === "command-center") await refreshCommandCenter();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+    // The toolbar was left showing the attempted change; snap it back to the stored profile.
+    renderLayoutBar();
+  } finally {
+    layoutInFlight = false;
+  }
+}
+
+function toggleSection(sectionId) {
+  if (!state.profile) return;
+  const visibility = { ...state.profile.visibility, [sectionId]: !state.profile.visibility[sectionId] };
+  saveLayout(layoutPayload(state.profile, { visibility }));
+}
+
+function moveSection(sectionId, direction) {
+  if (!state.profile) return;
+  const order = [...state.profile.section_order];
+  const index = order.indexOf(sectionId);
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (index < 0 || target < 0 || target >= order.length) return;
+  [order[index], order[target]] = [order[target], order[index]];
+  saveLayout(layoutPayload(state.profile, { section_order: order }));
+}
+
+function setOwner(ownerId) {
+  if (!state.profile) return;
+  saveLayout(layoutPayload(state.profile, { owner_id: ownerId || null }));
+}
+
+function resetLayout() {
+  saveLayout({ reset: true });
+}
+
 const sections = {
   "command-center": async () => {
-    const data = await api("/api/command-center");
-    equivalent.textContent = data.equivalent_cli;
-    renderCommandCenter(data.sections);
+    await refreshCommandCenter();
   },
 
   async today() {
@@ -1091,6 +1229,8 @@ async function show(name) {
   current = name;
   // A section change retires the selection context, so the on-demand pane closes with it.
   closeDetail();
+  // The layout toolbar belongs to the Command Center; renderLayoutBar re-shows it there.
+  layoutBar.hidden = name !== "command-center";
   for (const button of document.querySelectorAll(".rail button[data-section]")) {
     button.classList.toggle("active", button.dataset.section === name);
   }
@@ -1111,6 +1251,24 @@ document.getElementById("rail").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-section]");
   if (button) navigate(button.dataset.section);
 });
+
+// CC-03: the layout toolbar edits the cached profile and saves it through the action; a
+// successful save re-reads the route, so the sections below reflect the new layout.
+layoutBar.addEventListener("click", (event) => {
+  const toggle = event.target.closest("[data-layout-visibility]");
+  if (toggle) {
+    toggleSection(toggle.dataset.layoutVisibility);
+    return;
+  }
+  const move = event.target.closest("[data-layout-move]");
+  if (move) {
+    moveSection(move.dataset.layoutId, move.dataset.layoutMove);
+    return;
+  }
+  if (event.target.closest("#layout-reset")) resetLayout();
+});
+
+meSelect.addEventListener("change", () => setOwner(meSelect.value));
 
 document.getElementById("back").addEventListener("click", () => history.back());
 document.getElementById("forward").addEventListener("click", () => history.forward());
