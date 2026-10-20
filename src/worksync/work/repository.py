@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from worksync.inventory.parse import scan_vault
+from worksync.inventory.parse import IndexRecord, scan_vault
 from worksync.inventory.validate import structural_issues
 from worksync.work.models import EntityBase
 from worksync.work.schema import OPERATOR_TYPE_VALUES, entity_from_record, link_target, normalize_target
@@ -33,9 +33,18 @@ class WorkIndex:
     def from_vault(cls, vault_root: str | Path) -> WorkIndex:
         """Build an index by scanning *vault_root* with the shared inventory scanner."""
         root = Path(vault_root).expanduser().resolve()
-        records = scan_vault(root)
+        return cls.from_records(scan_vault(root), root)
+
+    @classmethod
+    def from_records(cls, records: Iterable[IndexRecord], root: str | Path) -> WorkIndex:
+        """Build an index from already-scanned records (entities + structural issues).
+
+        Callers that already hold a scan (e.g. the read seam's cache) pass the records here
+        instead of re-scanning; the result is identical to :meth:`from_vault`.
+        """
+        root_path = Path(root)
         entities = [entity for record in records if (entity := entity_from_record(record)) is not None]
-        index = cls.from_entities(entities, root=root)
+        index = cls.from_entities(entities, root=root_path)
         structural = [
             ValidationIssue(path=item["path"], message=item["message"], severity=item["severity"], rule=item["code"])
             for item in structural_issues(records)

@@ -25,6 +25,7 @@ render this section from ``SinceLastCheckResult`` rather than ``SectionResult``.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -135,6 +136,20 @@ def since_last_check(
     note as added. Items are sorted by path and each path appears at most once, so duplicate
     imports do not multiply events.
     """
+    return since_last_check_from_records(scan_vault(vault_root), checkpoint, generated_at=generated_at)
+
+
+def since_last_check_from_records(
+    records: Iterable,
+    checkpoint: Checkpoint | None,
+    *,
+    generated_at: str,
+) -> SinceLastCheckResult:
+    """Diff already-scanned records against *checkpoint* (see :func:`since_last_check`).
+
+    Each record must expose ``path``, ``title``, and ``content_hash``; callers that already
+    hold a scan (e.g. the read seam's cache) pass it here instead of re-scanning.
+    """
     if checkpoint is None:
         return SinceLastCheckResult(
             availability="unavailable",
@@ -144,7 +159,7 @@ def since_last_check(
             items=(),
             total_count=0,
         )
-    scanned = {record.path: (record.title, record.content_hash) for record in scan_vault(vault_root)}
+    scanned = {record.path: (record.title, record.content_hash) for record in records}
     items: list[NoteChange] = []
     for path, (title, content_hash) in scanned.items():
         previous_hash = checkpoint.notes.get(path)
