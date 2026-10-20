@@ -21,11 +21,13 @@ from worksync.ingest import dismiss as ingest_dismiss
 from worksync.ingest import scan as ingest_scan
 from worksync.ingest.krisp import KrispAPIError, build_client, sync_status
 from worksync.ingest.krisp import pull as run_krisp_pull
+from worksync.safety.files import sha256_bytes
 from worksync.safety.models import MutationError
 from worksync.work import clarification as clarification_service
 from worksync.work import duplicates as duplicates_service
 from worksync.work import identity as identity_service
 from worksync.work import reviewer as reviewer_store
+from worksync.work.capture import capture_text
 from worksync.work.clarification import ClarificationError
 from worksync.work.duplicates import DuplicatesError
 from worksync.work.lifecycle.transitions import apply_lifecycle_transition
@@ -285,6 +287,22 @@ def _apply_batch(service: WriteContext, payload: dict, *, confirmed: bool, today
         "reason": reason,
         "changes": [dict(change) for change in committed.changes],
         "items": equivalents,
+        "equivalent_cli": None,
+    }
+
+
+def _capture(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        raise ActionError("bad_request", "Captured text must not be empty.", 400)
+    manifest = capture_text(service.runtime_root, text)
+    digest = sha256_bytes(text.encode("utf-8"))
+    proposal = next(proposal for proposal in manifest.proposals if proposal.source_sha256 == digest)
+    return {
+        "state": "ok",
+        "action": "capture",
+        "committed": False,
+        "proposal": proposal.to_dict(),
         "equivalent_cli": None,
     }
 
@@ -648,6 +666,7 @@ ACTIONS: dict[str, ActionHandler] = {
     "complete-action": _complete_action,
     "set-reviewer": _set_reviewer,
     "apply-batch": _apply_batch,
+    "capture": _capture,
     "ingest-scan": _ingest_scan,
     "ingest-apply": _ingest_apply,
     "ingest-dismiss": _ingest_dismiss,

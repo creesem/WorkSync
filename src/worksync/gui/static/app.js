@@ -10,6 +10,9 @@ const view = document.getElementById("view");
 const equivalent = document.getElementById("equivalent");
 const vaultName = document.getElementById("vault-name");
 const writeResult = document.getElementById("write-result");
+const captureInput = document.getElementById("capture-input");
+const captureSubmit = document.getElementById("capture-submit");
+const captureStatus = document.getElementById("capture-status");
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -59,6 +62,37 @@ function showWriteResult(result, isError) {
     ${changes ? `<ul>${changes}</ul>` : ""}
     ${result.equivalent_cli ? `<code>${escapeHtml(result.equivalent_cli)}</code>` : ""}
   </div>`;
+}
+
+let captureStatusTimer = null;
+
+function showCaptureStatus(message, isError) {
+  captureStatus.textContent = message;
+  captureStatus.classList.toggle("error", Boolean(isError));
+  if (captureStatusTimer) clearTimeout(captureStatusTimer);
+  if (!isError) {
+    captureStatusTimer = setTimeout(() => {
+      captureStatus.textContent = "";
+    }, 4000);
+  }
+}
+
+async function submitCapture() {
+  const text = captureInput.value.trim();
+  if (!text) {
+    showCaptureStatus("Captured text must not be empty.", true);
+    return;
+  }
+  captureSubmit.disabled = true;
+  try {
+    await postAction("capture", { text });
+    captureInput.value = "";
+    showCaptureStatus("Captured to review queue", false);
+  } catch (error) {
+    showCaptureStatus(String(error.message || error), true);
+  } finally {
+    captureSubmit.disabled = false;
+  }
 }
 
 function bareName(value) {
@@ -968,6 +1002,14 @@ document.getElementById("rail").addEventListener("click", (event) => {
 
 document.getElementById("back").addEventListener("click", () => history.back());
 document.getElementById("forward").addEventListener("click", () => history.forward());
+
+captureSubmit.addEventListener("click", submitCapture);
+captureInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    submitCapture();
+  }
+});
 
 window.addEventListener("popstate", (event) => {
   const name = event.state && event.state.section ? event.state.section : DEFAULT_SECTION;

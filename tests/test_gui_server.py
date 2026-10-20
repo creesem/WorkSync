@@ -19,6 +19,7 @@ from worksync.context.association import index_associations
 from worksync.gui.controller import GuiService
 from worksync.gui.server import TOKEN_HEADER, create_server
 from worksync.inventory.index import index_vault
+from worksync.safety.files import sha256_bytes
 
 TODAY = "2026-02-01"
 # A day before any attention trigger in the fixture vault (project review due 2026-01-10,
@@ -328,6 +329,43 @@ def test_set_reviewer_action_persists(gui_server: tuple[str, GuiService]) -> Non
     assert (gui.runtime_root / "reviewer.json").is_file()
 
 
+def test_capture_action_requires_text(gui_server: tuple[str, GuiService]) -> None:
+    base, _gui = gui_server
+    for payload in ({}, {"text": ""}, {"text": "   "}):
+        status, _content_type, body = _post(base, "/api/action/capture", payload, TOKEN)
+        assert status == 400, payload
+        assert _json(body)["error"] == "bad_request"
+
+
+def test_capture_action_queues_a_proposal_without_touching_the_vault(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    base, gui = gui_server
+    text = "Follow up with Dana about the Alpha handoff."
+    before = _snapshot(gui.vault)
+
+    status, _content_type, body = _post(base, "/api/action/capture", {"text": text}, TOKEN)
+
+    assert status == 200
+    payload = _json(body)
+    assert payload["state"] == "ok"
+    assert payload["action"] == "capture"
+    assert payload["committed"] is False
+    assert payload["equivalent_cli"] is None
+    proposal = payload["proposal"]
+    digest = sha256_bytes(text.encode("utf-8"))
+    assert proposal["id"] == digest[:12]
+    assert proposal["action"] == "capture"
+    assert proposal["source_path"] == ""
+    assert proposal["source_sha256"] == digest
+    assert proposal["fields"] == {"text": text}
+    assert proposal["provenance"] == ["capture"]
+    assert proposal["status"] == "pending"
+
+    assert _snapshot(gui.vault) == before
+    assert (gui.runtime_root / "staging" / "capture" / "manifest.json").is_file()
+
+
 def test_action_endpoint_applies_a_batch(gui_server: tuple[str, GuiService]) -> None:
     base, gui = gui_server
     second = gui.vault / "Actions/A2.md"
@@ -405,8 +443,15 @@ def test_static_shell_is_self_contained_and_injects_the_token(gui_server: tuple[
     assert 'id="forward"' in text
     assert "task" not in text.lower()
 
+    # Ticket 12: a single-line capture bar sits at the bottom of every section.
+    assert 'class="capture-bar"' in text
+    assert 'id="capture-input"' in text
+    assert 'id="capture-submit"' in text
+
     assert _get(base, "/styles.css", TOKEN)[0] == 200
-    assert _get(base, "/app.js", TOKEN)[0] == 200
+    app_js = _get(base, "/app.js", TOKEN)[2].decode("utf-8")
+    assert 'postAction("capture"' in app_js
+    assert "Captured to review queue" in app_js
 
 
 def test_server_refuses_a_non_loopback_host(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
