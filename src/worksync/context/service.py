@@ -23,6 +23,7 @@ from worksync.work.command_center import my_priorities as _my_priorities
 from worksync.work.command_center import needs_attention as _needs_attention
 from worksync.work.command_center import section_result_to_dict as _section_result_to_dict
 from worksync.work.control_center import build_control_center
+from worksync.work.layout_profile import apply_profile, default_profile, read_profile
 from worksync.work.lifecycle.loader import load_project_records
 from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
 from worksync.work.relationships import related_to
@@ -85,7 +86,9 @@ def command_center(
     """Assemble the Command Center's three sections from one index build, read-only.
 
     ``generated_at`` is injectable so a fixed vault and checkpoint yield a deterministic
-    payload. ``owner_id`` stays optional: without it My Priorities reports unavailable.
+    payload. The layout profile supplies the section order, per-section visibility, and the
+    "Me" owner; an explicit ``owner_id`` overrides the profile's for programmatic callers.
+    Without an owner My Priorities reports unavailable.
     """
     index = _index(vault)
     when = generated_at or datetime.now(UTC).isoformat()
@@ -96,13 +99,22 @@ def command_center(
         # Since Last Check section to "unavailable" / "no_checkpoint" and keep the other two
         # sections rendering. The next acknowledge repairs the corrupt file (ruling R4).
         checkpoint = None
+    try:
+        profile = read_profile(runtime_root)
+    except ValueError:
+        # Mirror the checkpoint wrap (ruling R3): a corrupt profile falls back to the
+        # defaults instead of failing the read; the save path repairs the file.
+        profile = default_profile()
+    owner = owner_id if owner_id is not None else profile.owner_id
+    sections = [
+        _section_result_to_dict(_needs_attention(index, today, generated_at=when)),
+        _section_result_to_dict(_my_priorities(index, owner, today, generated_at=when)),
+        _since_last_check_to_dict(_since_last_check(vault, checkpoint, generated_at=when)),
+    ]
     return {
         "generated_at": when,
-        "sections": [
-            _section_result_to_dict(_needs_attention(index, today, generated_at=when)),
-            _section_result_to_dict(_my_priorities(index, owner_id, today, generated_at=when)),
-            _since_last_check_to_dict(_since_last_check(vault, checkpoint, generated_at=when)),
-        ],
+        "profile": profile.to_dict(),
+        "sections": apply_profile(sections, profile),
     }
 
 
