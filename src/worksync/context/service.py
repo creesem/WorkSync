@@ -7,6 +7,8 @@ no write helper is reachable from here.
 
 from __future__ import annotations
 
+import hashlib
+import threading
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from worksync.context.retrieval import read_evidence as _read_evidence
 from worksync.context.retrieval import search_evidence as _search_evidence
 from worksync.core.config import ConfigError, load_config
 from worksync.inventory.index import index_path
+from worksync.inventory.parse import iter_markdown, scan_vault
 from worksync.work.command_center import my_priorities as _my_priorities
 from worksync.work.command_center import needs_attention as _needs_attention
 from worksync.work.command_center import section_result_to_dict as _section_result_to_dict
@@ -48,7 +51,7 @@ from worksync.work.review import (
     project_reviews as _project_reviews,
 )
 from worksync.work.since_last_check import read_checkpoint as _read_checkpoint
-from worksync.work.since_last_check import since_last_check as _since_last_check
+from worksync.work.since_last_check import since_last_check_from_records as _since_last_check_from_records
 from worksync.work.since_last_check import since_last_check_to_dict as _since_last_check_to_dict
 
 ENTITY_TYPES = ("project", "person", "ticket", "meeting", "action")
@@ -63,8 +66,44 @@ def default_paths() -> tuple[Path, Path]:
     return config.vault_path, index_path(config.runtime_root)
 
 
+_scan_lock = threading.RLock()
+_scan_cache: dict[str, tuple[str, tuple]] = {}
+
+
+def _vault_signature(vault: Path) -> str:
+    """A cheap, content-and-name-sensitive signature of the vault's markdown set.
+
+    Hashes each note's relative path, mtime (ns), and size in deterministic order, so an
+    edit, add, remove, or rename all change the signature. This is the invalidation key for
+    the scan cache; it uses the same ``iter_markdown``/``EXCLUDED_DIRS`` walk as ``scan_vault``.
+    """
+    digest = hashlib.sha256()
+    for path in iter_markdown(vault):
+        stat = path.stat()
+        relative = path.relative_to(vault).as_posix()
+        digest.update(f"{relative}:{stat.st_mtime_ns}:{stat.st_size}\0".encode())
+    return digest.hexdigest()
+
+
+def _cached_scan(vault: str | Path) -> tuple:
+    """Return the vault's scan, reused across requests until the vault changes.
+
+    The GUI is long-running, but every read was re-scanning the whole vault per request.
+    This caches the scan per resolved vault and re-scanning only on a signature change.
+    """
+    root = Path(vault).expanduser().resolve()
+    with _scan_lock:
+        signature = _vault_signature(root)
+        cached = _scan_cache.get(str(root))
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        records = tuple(scan_vault(root))
+        _scan_cache[str(root)] = (signature, records)
+        return records
+
+
 def _index(vault: str | Path) -> WorkIndex:
-    return WorkIndex.from_vault(vault)
+    return WorkIndex.from_records(_cached_scan(vault), Path(vault).expanduser().resolve())
 
 
 def _project_entity(index: WorkIndex, name: str):
@@ -90,7 +129,9 @@ def command_center(
     "Me" owner; an explicit ``owner_id`` overrides the profile's for programmatic callers.
     Without an owner My Priorities reports unavailable.
     """
-    index = _index(vault)
+    root = Path(vault).expanduser().resolve()
+    records = _cached_scan(vault)
+    index = WorkIndex.from_records(records, root)
     when = generated_at or datetime.now(UTC).isoformat()
     try:
         checkpoint = _read_checkpoint(runtime_root)
@@ -109,7 +150,7 @@ def command_center(
     sections = [
         _section_result_to_dict(_needs_attention(index, today, generated_at=when)),
         _section_result_to_dict(_my_priorities(index, owner, today, generated_at=when)),
-        _since_last_check_to_dict(_since_last_check(vault, checkpoint, generated_at=when)),
+        _since_last_check_to_dict(_since_last_check_from_records(records, checkpoint, generated_at=when)),
     ]
     return {
         "generated_at": when,
