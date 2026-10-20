@@ -644,6 +644,13 @@ def test_missing_parameter_and_unknown_endpoint_fail_cleanly(gui_server: tuple[s
     assert _json(body)["error"] == "not_found"
 
 
+def test_static_responses_are_never_cached(gui_server: tuple[str, GuiService]) -> None:
+    """The shell and assets change during development; the browser must not cache them."""
+    base, _gui = gui_server
+    with urllib.request.urlopen(base + "/app.js", timeout=5) as response:
+        assert response.headers.get("Cache-Control") == "no-store"
+
+
 def test_static_shell_is_self_contained_and_injects_the_token(gui_server: tuple[str, GuiService]) -> None:
     base, _gui = gui_server
     status, content_type, body = _get(base, "/")

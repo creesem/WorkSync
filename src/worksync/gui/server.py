@@ -180,6 +180,9 @@ class GuiHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        # The shell and static assets change under active development; never let a browser
+        # cache them, or a stale app.js/styles.css keeps an old layout on screen.
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
