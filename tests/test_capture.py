@@ -133,6 +133,22 @@ def test_a_corrupt_manifest_fails_closed_without_overwriting_it(tmp_path: Path) 
     assert manifest_path.read_text(encoding="utf-8") == "{not json"
 
 
+def test_a_wrong_typed_manifest_surfaces_as_corrupt_manifest(tmp_path: Path) -> None:
+    """JSON that parses but rebuilds a bad dataclass is corrupt state, not a dropped request."""
+    runtime = tmp_path / "var"
+    manifest_path = QueueStore(runtime, CAPTURE_REL).path()
+    manifest_path.parent.mkdir(parents=True)
+    raw = '{"version": "not-a-number"}'
+    manifest_path.write_text(raw, encoding="utf-8")
+
+    with pytest.raises(QueueError) as excinfo:
+        capture_text(runtime, TEXT, now=NOW)
+
+    assert excinfo.value.code == "corrupt_manifest"
+    assert excinfo.value.affected == (str(manifest_path),)
+    assert manifest_path.read_text(encoding="utf-8") == raw
+
+
 def test_recapturing_the_same_text_keeps_a_retained_decision(tmp_path: Path) -> None:
     runtime = tmp_path / "var"
     manifest = capture_text(runtime, TEXT, now=NOW)

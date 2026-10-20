@@ -94,6 +94,35 @@ def test_store_lives_in_the_staging_zone(tmp_path: Path) -> None:
     assert store.path().name == "manifest.json"
 
 
+@pytest.mark.parametrize(
+    "raw",
+    (
+        '{"version": "not-a-number"}',
+        '{"proposals": [{"confidence": "x"}]}',
+    ),
+)
+def test_a_wrong_typed_manifest_loads_as_unreadable(tmp_path: Path, raw: str) -> None:
+    """Valid JSON with wrong-typed fields is malformed state, not an exception for callers."""
+    store = QueueStore(tmp_path / "var", REL)
+    store.path().parent.mkdir(parents=True)
+    store.path().write_text(raw, encoding="utf-8")
+
+    assert store.load_with_hash() is None
+    assert store.load() is None
+
+
+def test_a_valid_manifest_still_loads_with_its_hash(tmp_path: Path) -> None:
+    store = QueueStore(tmp_path / "var", REL)
+    manifest = Manifest(scan_token="token").with_proposals((_proposal(),))
+    store.save(manifest, expected_absent=True)
+
+    loaded = store.load_with_hash()
+
+    assert loaded is not None
+    assert loaded[0] == manifest
+    assert loaded[1] == store.sha256()
+
+
 def test_manifest_update_op_is_a_staging_operation(tmp_path: Path) -> None:
     store = QueueStore(tmp_path / "var", REL)
     op = store.manifest_op(Manifest(scan_token="t"), expected="abc")

@@ -219,7 +219,13 @@ class QueueStore:
             return None
         if not isinstance(data, dict):
             return None
-        return Manifest.from_dict(data), digest
+        try:
+            return Manifest.from_dict(data), digest
+        except (ValueError, TypeError):
+            # Valid JSON with wrong-typed fields ("version": "not-a-number", a non-numeric
+            # "confidence") raises while rebuilding the dataclass. "Absent or unreadable"
+            # includes malformed state, so fail closed here rather than at every caller.
+            return None
 
     def load(self) -> Manifest | None:
         """Load the manifest, or ``None`` when it is absent or unreadable."""

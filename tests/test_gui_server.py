@@ -404,6 +404,25 @@ def test_capture_action_reports_a_failed_staging_write_as_a_server_error(
     assert _json(body)["message"]
 
 
+def test_capture_action_reports_a_wrong_typed_manifest_as_a_server_error(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """A manifest that parses but has wrong-typed fields is a 500, not a dropped connection."""
+    base, gui = gui_server
+    manifest = gui.runtime_root / "staging" / "capture" / "manifest.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    raw = '{"version": "not-a-number"}'
+    manifest.write_text(raw, encoding="utf-8")
+
+    status, content_type, body = _post(base, "/api/action/capture", {"text": "Still here"}, TOKEN)
+
+    assert status == 500
+    assert content_type == "application/json"
+    assert _json(body)["error"] == "corrupt_manifest"
+    assert _json(body)["message"]
+    assert manifest.read_text(encoding="utf-8") == raw
+
+
 def test_action_endpoint_applies_a_batch(gui_server: tuple[str, GuiService]) -> None:
     base, gui = gui_server
     second = gui.vault / "Actions/A2.md"
