@@ -473,6 +473,28 @@ def test_static_shell_is_self_contained_and_injects_the_token(gui_server: tuple[
     assert "Captured to review queue" in app_js
 
 
+def test_static_shell_pins_the_detail_pane_and_canonical_link(gui_server: tuple[str, GuiService]) -> None:
+    """Ticket 11: the on-demand detail pane and the client-side obsidian:// link are pinned.
+
+    No JS test harness exists, so this mirrors Block 3's static-shell assertion for the rail:
+    the markup and the canonical-link construction are asserted by string, the behaviour is
+    verified by hand.
+    """
+    base, _gui = gui_server
+    html = _get(base, "/")[2].decode("utf-8")
+    assert 'id="detail"' in html
+    assert 'class="detail"' in html
+    assert 'id="detail" aria-label="Item detail" hidden' in html  # on demand, not always visible
+    assert "task" not in html.lower()
+
+    app_js = _get(base, "/app.js", TOKEN)[2].decode("utf-8")
+    assert "obsidian://open" in app_js
+    assert "Open in Obsidian" in app_js
+    assert "data-cc-item" in app_js  # Command Center rows are selectable
+    assert "vaultNameOnce" in app_js  # the vault name is cached from /api/settings
+    assert "task" not in app_js.lower()
+
+
 def test_server_refuses_a_non_loopback_host(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:
     _seed(vault, write_note)
     gui = GuiService(vault=vault, db_path=tmp_path / "i.sqlite3", runtime_root=tmp_path / "var", vault_name="vault")

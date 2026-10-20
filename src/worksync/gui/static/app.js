@@ -4,7 +4,15 @@ const TOKEN = window.__GUI_TOKEN__ || "";
 const TOKEN_HEADER = "X-Gui-Token";
 const DEFAULT_SECTION = "command-center";
 
-const state = { triage: [], queueTab: "triage", duplicates: [], clarification: [], krisp: [], identity: [] };
+const state = {
+  triage: [],
+  queueTab: "triage",
+  duplicates: [],
+  clarification: [],
+  krisp: [],
+  identity: [],
+  detailKey: null,
+};
 
 const view = document.getElementById("view");
 const equivalent = document.getElementById("equivalent");
@@ -13,6 +21,13 @@ const writeResult = document.getElementById("write-result");
 const captureInput = document.getElementById("capture-input");
 const captureSubmit = document.getElementById("capture-submit");
 const captureStatus = document.getElementById("capture-status");
+const detail = document.getElementById("detail");
+
+// Ticket 11: the vault name for canonical links is read once from /api/settings and cached,
+// so opening a detail pane never blocks on a second settings read.
+const vaultNameOnce = api("/api/settings")
+  .then((data) => data.vault_name || "")
+  .catch(() => "");
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -93,6 +108,72 @@ async function submitCapture() {
   } finally {
     captureSubmit.disabled = false;
   }
+}
+
+// Ticket 11: the on-demand detail pane and the canonical obsidian:// link.
+
+function quoteForUrl(value) {
+  // Reproduces html/links.py's urllib.parse.quote(str(value), safe="/"): "/" stays literal
+  // and "!'()*" are percent-encoded, which bare encodeURIComponent would leave alone. Keeps
+  // the frontend's link byte-identical to note_url without importing the html package.
+  return String(value ?? "")
+    .split("/")
+    .map((segment) =>
+      encodeURIComponent(segment).replace(
+        /[!'()*]/g,
+        (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+      )
+    )
+    .join("/");
+}
+
+function noteUrl(name, path) {
+  // Mirrors html/links.py::note_url: normalize "\" to "/", strip a trailing .md.
+  const file = String(path || "")
+    .replace(/\\/g, "/")
+    .replace(/\.md$/i, "");
+  return `obsidian://open?vault=${quoteForUrl(name || "")}&file=${quoteForUrl(file)}`;
+}
+
+function detailField(label, value) {
+  if (value === undefined || value === null || value === "") return "";
+  return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`;
+}
+
+async function selectItem(node) {
+  const item = node.dataset;
+  const key = `${item.path || ""}\u0000${item.label || ""}`;
+  if (!detail.hidden && state.detailKey === key) {
+    closeDetail();
+    return;
+  }
+  const name = await vaultNameOnce;
+  const url = item.path ? noteUrl(name, item.path) : "";
+  detail.innerHTML = `
+    <div class="detail-head">
+      <h2>${escapeHtml(item.label || item.path || "(untitled)")}</h2>
+      <button type="button" id="detail-close" aria-label="Close detail" title="Close">&times;</button>
+    </div>
+    <dl class="detail-fields">
+      ${detailField("Kind", item.kind)}
+      ${detailField("Status", item.status)}
+      ${detailField("Priority", item.priority)}
+      ${detailField("Path", item.path)}
+    </dl>
+    ${item.reason ? `<p class="detail-reason">${escapeHtml(item.reason)}</p>` : ""}
+    ${
+      url
+        ? `<a class="note-link" id="detail-link" href="${escapeHtml(url)}">Open in Obsidian</a>`
+        : `<p class="muted">No canonical note for this item.</p>`
+    }`;
+  state.detailKey = key;
+  detail.hidden = false;
+}
+
+function closeDetail() {
+  detail.hidden = true;
+  detail.innerHTML = "";
+  state.detailKey = null;
 }
 
 function bareName(value) {
@@ -779,7 +860,20 @@ function commandCenterItem(item) {
   const kind = item.entity_type || item.kind || "";
   const priority = item.priority === undefined || item.priority === null ? "" : `priority ${item.priority}`;
   const meta = [priority, item.path || ""].filter(Boolean).join(" · ");
-  return `<div class="row cc-row ${escapeHtml(item.status || "")}">
+  // Ticket 11: every Command Center row is selectable and carries its fields so the detail
+  // pane can render without another request (state is front-end only).
+  const attrs = [
+    "data-cc-item",
+    'role="button"',
+    'tabindex="0"',
+    `data-path="${escapeHtml(item.path || "")}"`,
+    `data-label="${escapeHtml(label)}"`,
+    `data-kind="${escapeHtml(kind)}"`,
+    `data-status="${escapeHtml(item.status || "")}"`,
+    `data-priority="${escapeHtml(item.priority === undefined || item.priority === null ? "" : String(item.priority))}"`,
+    `data-reason="${escapeHtml(item.reason || "")}"`,
+  ].join(" ");
+  return `<div class="row cc-row ${escapeHtml(item.status || "")}" ${attrs}>
     <div class="who">${escapeHtml(label)}</div>
     <div class="what">${kind ? `<span class="tag">${escapeHtml(kind)}</span>` : ""}${escapeHtml(
       item.reason || ""
@@ -979,6 +1073,8 @@ let current = activeSection();
 
 async function show(name) {
   current = name;
+  // A section change retires the selection context, so the on-demand pane closes with it.
+  closeDetail();
   for (const button of document.querySelectorAll(".rail button[data-section]")) {
     button.classList.toggle("active", button.dataset.section === name);
   }
@@ -1048,11 +1144,32 @@ view.addEventListener("click", (event) => {
     dismissProposal(dismiss.dataset.dismiss);
     return;
   }
+  const ccItem = event.target.closest("[data-cc-item]");
+  if (ccItem) {
+    selectItem(ccItem);
+    return;
+  }
   const node = event.target.closest("[data-target]");
   if (!node) return;
   const { target: kind, name } = node.dataset;
   if (kind === "project") showProject(name);
   if (kind === "person") showPerson(name);
+});
+
+view.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const ccItem = event.target.closest("[data-cc-item]");
+  if (!ccItem) return;
+  event.preventDefault();
+  selectItem(ccItem);
+});
+
+detail.addEventListener("click", (event) => {
+  if (event.target.closest("#detail-close")) closeDetail();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !detail.hidden) closeDetail();
 });
 
 async function showProject(name) {
