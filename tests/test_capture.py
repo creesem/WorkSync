@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+
+import worksync.work.capture as capture_module
 from worksync.safety.files import sha256_bytes
 from worksync.work.capture import CAPTURE_REL, capture_text
-from worksync.work.queue import Manifest, QueueStore
+from worksync.work.queue import Manifest, QueueError, QueueStore
 
 TEXT = "Follow up with Dana about the Alpha handoff."
 NOW = "2026-02-01T09:00:00+00:00"
@@ -73,6 +76,27 @@ def test_capture_never_writes_to_the_vault(tmp_path: Path, vault: Path, write_no
     capture_text(tmp_path / "var", TEXT, now=NOW)
 
     assert _snapshot(vault) == before
+
+
+def test_a_concurrent_manifest_change_fails_closed_as_stale_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = tmp_path / "var"
+    capture_text(runtime, TEXT, now=NOW)
+    manifest_path = runtime.resolve() / "staging" / "capture" / "manifest.json"
+    real_merge = capture_module.merge_manifest
+
+    def racing_merge(previous, fresh, *, token):
+        manifest_path.write_bytes(manifest_path.read_bytes() + b"\n")
+        return real_merge(previous, fresh, token=token)
+
+    monkeypatch.setattr(capture_module, "merge_manifest", racing_merge)
+
+    with pytest.raises(QueueError) as excinfo:
+        capture_text(runtime, "Second capture while another tab writes.", now=NOW)
+
+    assert excinfo.value.code == "stale_hash"
+    assert excinfo.value.affected == (str(manifest_path),)
 
 
 def test_recapturing_the_same_text_keeps_a_retained_decision(tmp_path: Path) -> None:

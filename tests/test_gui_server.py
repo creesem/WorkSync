@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 import worksync
+import worksync.work.capture as capture_module
 from worksync.context import service
 from worksync.context.association import index_associations
 from worksync.gui.controller import GuiService
@@ -364,6 +365,24 @@ def test_capture_action_queues_a_proposal_without_touching_the_vault(
 
     assert _snapshot(gui.vault) == before
     assert (gui.runtime_root / "staging" / "capture" / "manifest.json").is_file()
+
+
+def test_capture_action_maps_a_stale_queue_to_conflict(
+    gui_server: tuple[str, GuiService], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base, _gui = gui_server
+
+    def stale_save(self, manifest, *, expected=None, expected_absent=False):
+        raise RuntimeError("File changed during processing.")
+
+    monkeypatch.setattr(capture_module.QueueStore, "save", stale_save)
+
+    status, content_type, body = _post(base, "/api/action/capture", {"text": "Race"}, TOKEN)
+
+    assert status == 409
+    assert content_type == "application/json"
+    assert _json(body)["error"] == "stale_hash"
+    assert _json(body)["message"]
 
 
 def test_action_endpoint_applies_a_batch(gui_server: tuple[str, GuiService]) -> None:

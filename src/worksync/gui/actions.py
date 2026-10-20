@@ -32,6 +32,7 @@ from worksync.work.clarification import ClarificationError
 from worksync.work.duplicates import DuplicatesError
 from worksync.work.lifecycle.transitions import apply_lifecycle_transition
 from worksync.work.merge import apply_merge as run_identity_apply
+from worksync.work.queue import QueueError
 from worksync.work.reviewer import ReviewerError
 from worksync.work.writer import (
     ActionWriteError,
@@ -145,6 +146,7 @@ def dispatch_action(
         DuplicatesError,
         ClarificationError,
         KrispAPIError,
+        QueueError,
     ) as exc:
         raise _as_action_error(exc) from exc
 
