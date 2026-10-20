@@ -1,8 +1,9 @@
 """Turn typed text into a pending review-queue proposal.
 
 Capture is the one GUI write: it appends a proposal to the capture manifest under the
-derived staging zone. It never touches a canonical note and has no apply path yet, so a
-captured thought is reviewed through the shared queue like any other proposal.
+derived staging zone. It never touches a canonical note, and capture review/apply is
+deferred to CC-05, so a captured thought lands on ``work.queue`` with no review surface
+reading it yet.
 """
 
 from __future__ import annotations
@@ -34,6 +35,15 @@ def capture_text(runtime_root: str | Path, text: str, *, now: str | None = None)
     # retire earlier pending captures as obsolete). A concurrent capture changes the
     # manifest hash and makes this save fail closed rather than drop its proposal.
     loaded = store.load_with_hash()
+    if loaded is None and store.path().is_file():
+        # The manifest exists but cannot be read or parsed. Treating that as "absent" would
+        # fail closed inside the guarded create with a misleading stale-hash retry loop, so
+        # report it as its own failure (the GUI transport answers 500, not a retryable 409).
+        raise QueueError(
+            "corrupt_manifest",
+            "The capture queue manifest is unreadable; repair or remove it before capturing.",
+            affected=(str(store.path()),),
+        )
     previous = loaded[0] if loaded is not None else None
     carried = tuple(item for item in (previous.proposals if previous else ()) if item.id != proposal.id)
     manifest = merge_manifest(previous, (*carried, proposal), token=digest)
@@ -52,6 +62,15 @@ def capture_text(runtime_root: str | Path, text: str, *, now: str | None = None)
         raise QueueError(
             "stale_hash",
             "The review queue changed; capture again.",
+            affected=(str(store.path()),),
+        ) from exc
+    except OSError as exc:
+        # A staging write can fail on the filesystem itself (full disk, permissions, a locked
+        # temp file). Without this the request would drop with a bare traceback; report it as
+        # a queue failure so the transport answers 500 with a message.
+        raise QueueError(
+            "write_failed",
+            "The capture queue could not be written; check the runtime root and try again.",
             affected=(str(store.path()),),
         ) from exc
     return manifest

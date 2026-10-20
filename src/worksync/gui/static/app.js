@@ -80,6 +80,7 @@ function showWriteResult(result, isError) {
 }
 
 let captureStatusTimer = null;
+let captureInFlight = false;
 
 function showCaptureStatus(message, isError) {
   captureStatus.textContent = message;
@@ -93,19 +94,27 @@ function showCaptureStatus(message, isError) {
 }
 
 async function submitCapture() {
+  // Ticket 12: Enter and the button both land here, so a single guard keeps one capture in
+  // flight; a second Enter would otherwise race the first and overwrite its status text.
+  if (captureInFlight) return;
   const text = captureInput.value.trim();
   if (!text) {
     showCaptureStatus("Captured text must not be empty.", true);
     return;
   }
+  captureInFlight = true;
   captureSubmit.disabled = true;
   try {
-    await postAction("capture", { text });
+    const result = await postAction("capture", { text });
     captureInput.value = "";
-    showCaptureStatus("Captured to review queue", false);
+    // Ticket 12: recapturing text that was already decided returns that proposal rather than
+    // a fresh pending one, so report the status the queue actually holds.
+    const status = (result.proposal && result.proposal.status) || "pending";
+    showCaptureStatus(status === "pending" ? "Captured" : `Already captured (${status})`, false);
   } catch (error) {
     showCaptureStatus(String(error.message || error), true);
   } finally {
+    captureInFlight = false;
     captureSubmit.disabled = false;
   }
 }
@@ -140,6 +149,10 @@ function detailField(label, value) {
   return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`;
 }
 
+// Ticket 11: a selection can await the cached vault name, and a section change closes the
+// pane in that window; this counter lets the stale selection notice it lost and bail.
+let detailGeneration = 0;
+
 async function selectItem(node) {
   const item = node.dataset;
   const key = `${item.path || ""}\u0000${item.label || ""}`;
@@ -147,7 +160,9 @@ async function selectItem(node) {
     closeDetail();
     return;
   }
+  const generation = ++detailGeneration;
   const name = await vaultNameOnce;
+  if (generation !== detailGeneration) return;
   const url = item.path ? noteUrl(name, item.path) : "";
   detail.innerHTML = `
     <div class="detail-head">
@@ -171,6 +186,7 @@ async function selectItem(node) {
 }
 
 function closeDetail() {
+  detailGeneration += 1;
   detail.hidden = true;
   detail.innerHTML = "";
   state.detailKey = null;

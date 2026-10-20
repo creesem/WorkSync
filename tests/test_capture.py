@@ -99,6 +99,40 @@ def test_a_concurrent_manifest_change_fails_closed_as_stale_hash(
     assert excinfo.value.affected == (str(manifest_path),)
 
 
+def test_a_failed_staging_write_surfaces_as_write_failed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An OSError must not escape as a bare traceback; the transport maps it to a 500."""
+    runtime = tmp_path / "var"
+    manifest_path = QueueStore(runtime, CAPTURE_REL).path()
+
+    def failing_save(self, manifest, *, expected=None, expected_absent=False):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(capture_module.QueueStore, "save", failing_save)
+
+    with pytest.raises(QueueError) as excinfo:
+        capture_text(runtime, TEXT, now=NOW)
+
+    assert excinfo.value.code == "write_failed"
+    assert excinfo.value.affected == (str(manifest_path),)
+    assert str(excinfo.value)
+    assert not manifest_path.exists()
+
+
+def test_a_corrupt_manifest_fails_closed_without_overwriting_it(tmp_path: Path) -> None:
+    """Unreadable state is not "absent": retrying would loop, so it reports its own code."""
+    runtime = tmp_path / "var"
+    manifest_path = QueueStore(runtime, CAPTURE_REL).path()
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(QueueError) as excinfo:
+        capture_text(runtime, TEXT, now=NOW)
+
+    assert excinfo.value.code == "corrupt_manifest"
+    assert excinfo.value.affected == (str(manifest_path),)
+    assert manifest_path.read_text(encoding="utf-8") == "{not json"
+
+
 def test_recapturing_the_same_text_keeps_a_retained_decision(tmp_path: Path) -> None:
     runtime = tmp_path / "var"
     manifest = capture_text(runtime, TEXT, now=NOW)

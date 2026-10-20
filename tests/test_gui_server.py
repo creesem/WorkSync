@@ -385,6 +385,25 @@ def test_capture_action_maps_a_stale_queue_to_conflict(
     assert _json(body)["message"]
 
 
+def test_capture_action_reports_a_failed_staging_write_as_a_server_error(
+    gui_server: tuple[str, GuiService], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A filesystem failure is a 500 with a message, not a dropped connection or a 409 retry."""
+    base, _gui = gui_server
+
+    def failing_save(self, manifest, *, expected=None, expected_absent=False):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(capture_module.QueueStore, "save", failing_save)
+
+    status, content_type, body = _post(base, "/api/action/capture", {"text": "Notice me"}, TOKEN)
+
+    assert status == 500
+    assert content_type == "application/json"
+    assert _json(body)["error"] == "write_failed"
+    assert _json(body)["message"]
+
+
 def test_action_endpoint_applies_a_batch(gui_server: tuple[str, GuiService]) -> None:
     base, gui = gui_server
     second = gui.vault / "Actions/A2.md"
@@ -468,9 +487,23 @@ def test_static_shell_is_self_contained_and_injects_the_token(gui_server: tuple[
     assert 'id="capture-submit"' in text
 
     assert _get(base, "/styles.css", TOKEN)[0] == 200
+    css = _get(base, "/styles.css", TOKEN)[2].decode("utf-8")
+    # Ticket 12: one shared height keeps the fixed bar, the detail pane's bottom edge, and the
+    # content column's bottom padding from drifting apart.
+    assert "--bar-height: 3.4rem" in css
+    assert css.count("3.4rem") == 1
+    assert "padding-bottom: var(--bar-height)" in css
+    assert "bottom: var(--bar-height)" in css
+    assert "min-height: var(--bar-height)" in css
+
     app_js = _get(base, "/app.js", TOKEN)[2].decode("utf-8")
     assert 'postAction("capture"' in app_js
-    assert "Captured to review queue" in app_js
+    # Ticket 12: nothing reads the capture manifest yet (review/apply is CC-05), so the bar
+    # reports only that the text was captured, and reports a decided proposal's own status.
+    assert '"Captured"' in app_js
+    assert "Already captured (" in app_js
+    assert "to review queue" not in app_js
+    assert "if (captureInFlight) return;" in app_js  # one capture in flight at a time
 
 
 def test_static_shell_pins_the_detail_pane_and_canonical_link(gui_server: tuple[str, GuiService]) -> None:
@@ -492,6 +525,7 @@ def test_static_shell_pins_the_detail_pane_and_canonical_link(gui_server: tuple[
     assert "Open in Obsidian" in app_js
     assert "data-cc-item" in app_js  # Command Center rows are selectable
     assert "vaultNameOnce" in app_js  # the vault name is cached from /api/settings
+    assert "detailGeneration" in app_js  # a selection that lost a section change bails
     assert "task" not in app_js.lower()
 
 

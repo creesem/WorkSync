@@ -7,6 +7,8 @@
   --muted: #5e6b64;
   --rule: #cdd3ca;
   --rail-width: 240px;
+  /* The fixed capture bar's height; the content column and detail pane offset by it. */
+  --bar-height: 3.4rem;
 }
 
 * {
@@ -93,7 +95,7 @@ input {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  padding-bottom: 3.4rem;
+  padding-bottom: var(--bar-height);
 }
 
 .topbar {
@@ -559,7 +561,7 @@ button.complete:hover {
   position: fixed;
   top: 0;
   right: 0;
-  bottom: 3.4rem;
+  bottom: var(--bar-height);
   z-index: 4;
   width: 22rem;
   max-width: 100%;
@@ -634,6 +636,7 @@ button.complete:hover {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  min-height: var(--bar-height);
   padding: 0.55rem 1.4rem;
   background: var(--surface);
   border-top: 1px solid var(--rule);
