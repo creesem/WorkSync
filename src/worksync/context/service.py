@@ -29,6 +29,7 @@ from worksync.work.control_center import build_control_center
 from worksync.work.layout_profile import apply_profile, default_profile, read_profile
 from worksync.work.lifecycle.loader import load_project_records
 from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
+from worksync.work.override import read_overrides as _read_overrides
 from worksync.work.relationships import related_to
 from worksync.work.render import (
     attention_to_dict,
@@ -146,10 +147,17 @@ def command_center(
         # Mirror the checkpoint wrap (ruling R3): a corrupt profile falls back to the
         # defaults instead of failing the read; the save path repairs the file.
         profile = default_profile()
+    try:
+        overrides = _read_overrides(runtime_root)
+    except ValueError:
+        # Overrides fail closed on read (ruling R2), but that must not brick the default
+        # screen (ruling R6): a malformed file degrades My Priorities to the baseline
+        # ranking, and the next save repairs the record.
+        overrides = ()
     owner = owner_id if owner_id is not None else profile.owner_id
     sections = [
         _section_result_to_dict(_needs_attention(index, today, generated_at=when)),
-        _section_result_to_dict(_my_priorities(index, owner, today, generated_at=when)),
+        _section_result_to_dict(_my_priorities(index, owner, today, generated_at=when, overrides=overrides)),
         _since_last_check_to_dict(_since_last_check_from_records(records, checkpoint, generated_at=when)),
     ]
     return {

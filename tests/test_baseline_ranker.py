@@ -17,6 +17,7 @@ from worksync.work.prioritization import (
     Ranking,
     RankReason,
     SafetyPolicy,
+    build_candidates,
     eligibility,
     rank,
 )
@@ -389,6 +390,61 @@ def test_end_to_end_ranks_the_candidates_eligibility_returns(vault, write_note) 
     assert [item.candidate.entity_id for item in result.items] == ["fix-export", "buy-milk"]
     assert result.conflicts == ()
     assert all(item.band in (0, 1, 2) for item in result.items)
+
+
+def test_build_candidates_projects_the_given_entities_without_exclusions(vault, write_note) -> None:
+    """Ticket 17: My Priorities ranks exactly the entities it hands the builder."""
+    seed_project(vault, write_note)
+    write_note(
+        vault,
+        "Tickets/Blocked.md",
+        ticket_note(
+            "type: ticket\n"
+            "status: blocked\n"
+            "ticket_id: blocked-ticket\n"
+            'assignee: "[[Myles Smith]]"\n'
+            'project: "[[Project - Eleos]]"\n',
+            "# Blocked ticket",
+        ),
+    )
+    write_note(
+        vault,
+        "Actions/Already done.md",
+        action_note(
+            "type: action\n"
+            "status: done\n"
+            "action_id: already-done\n"
+            'owners:\n  - "[[Myles Smith]]"\n'
+            'project: "[[Project - Eleos]]"\n',
+            "# Already done",
+        ),
+    )
+    write_note(
+        vault,
+        "Tickets/Not passed.md",
+        ticket_note(
+            "type: ticket\n"
+            "status: open\n"
+            "ticket_id: not-passed\n"
+            'assignee: "[[Myles Smith]]"\n'
+            'project: "[[Project - Eleos]]"\n',
+            "# Not passed",
+        ),
+    )
+    index = WorkIndex.from_vault(vault)
+    entities = {entity.path: entity for entity in index.entities}
+
+    candidates = build_candidates(
+        index,
+        (entities["Tickets/Blocked.md"], entities["Actions/Already done.md"]),
+        today=TODAY,
+    )
+
+    assert [candidate.entity_id for candidate in candidates] == ["blocked-ticket", "already-done"]
+    assert [candidate.status for candidate in candidates] == ["blocked", "done"]
+    assert candidates[0].blocked is True
+    assert candidates[1].blocked is False
+    assert build_candidates(index, (), today=TODAY) == ()
 
 
 def test_rank_factor_and_safety_policy_enum_values() -> None:

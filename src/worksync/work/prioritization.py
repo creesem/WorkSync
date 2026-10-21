@@ -136,6 +136,24 @@ def eligibility(index: WorkIndex, *, today: date, config: WorkConfig = DEFAULT_C
     )
 
 
+def build_candidates(
+    index: WorkIndex,
+    entities: Iterable[EntityBase],
+    *,
+    today: date,
+    config: WorkConfig = DEFAULT_CONFIG,
+) -> tuple[Candidate, ...]:
+    """Project *entities* onto candidates without applying the eligibility exclusions.
+
+    The caller has already decided which records belong in view, so a closed or
+    unowned note handed in here still becomes a candidate rather than an exclusion.
+    The attention pass runs once for the whole batch, and the candidates keep the
+    order the entities arrive in; the ranker decides the display order.
+    """
+    attention = _attention_kinds_by_path(index, today, config)
+    return tuple(_candidate(index, entity, attention) for entity in entities)
+
+
 def _exclusion_reason(index: WorkIndex, entity: EntityBase, visible_paths: set[str]) -> ExclusionReason | None:
     """Return the first failing rule for *entity*, or ``None`` when it is eligible."""
     if entity.entity_type not in CANDIDATE_TYPES:

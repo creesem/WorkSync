@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
 from worksync.work.config import DEFAULT_CONFIG, WorkConfig
 from worksync.work.models import EntityBase, EntityType, entity_id_of
+from worksync.work.prioritization import (
+    Override,
+    OverrideConflict,
+    RankedItem,
+    build_candidates,
+    rank,
+)
 from worksync.work.relationships import related_to
 from worksync.work.repository import WorkIndex
 from worksync.work.review import (
@@ -16,7 +24,6 @@ from worksync.work.review import (
     attention_items,
     is_open_status,
 )
-from worksync.work.schema import priority_rank
 
 QUERY_VERSION = 1
 
@@ -34,6 +41,8 @@ class SectionItem:
     priority: str | None
     attention: tuple[str, ...]
     timestamps: tuple[tuple[str, str], ...] = ()
+    override_kind: str | None = None
+    band: int | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +58,7 @@ class SectionResult:
     source_freshness: Literal["fresh", "stale", "unknown"]
     availability: Literal["available", "unavailable"]
     error_state: Literal["source_unavailable"] | None
+    conflicts: tuple[OverrideConflict, ...] = ()
 
 
 def build_section(
@@ -60,6 +70,7 @@ def build_section(
     source_freshness: Literal["fresh", "stale", "unknown"] = "unknown",
     availability: Literal["available", "unavailable"] = "available",
     error_state: Literal["source_unavailable"] | None = None,
+    conflicts: tuple[OverrideConflict, ...] = (),
 ) -> SectionResult:
     """Build a consistent section result and derive its item count."""
     item_tuple = tuple(items)
@@ -73,6 +84,7 @@ def build_section(
         source_freshness=source_freshness,
         availability=availability,
         error_state=error_state,
+        conflicts=tuple(conflicts),
     )
 
 
@@ -141,9 +153,18 @@ def my_priorities(
     today: date,
     *,
     generated_at: str,
+    overrides: Iterable[Override] = (),
     config: WorkConfig = DEFAULT_CONFIG,
 ) -> SectionResult:
-    """Build the My Priorities section for an explicitly selected person."""
+    """Build the My Priorities section for an explicitly selected person.
+
+    The rows are ordered by the ranker, with the caller's overrides decided before the
+    safety floors: pin, focus-today, and always-prioritize lift a row, defer sinks it,
+    and not-relevant drops it. A lowering override refused because of urgent evidence is
+    reported in ``conflicts`` and its row stays at its safety band. With no overrides the
+    output is the baseline ranking. ``overrides`` are passed in, never read here, so the
+    section stays a pure function of its input.
+    """
     person = next(
         (
             candidate
@@ -165,38 +186,49 @@ def my_priorities(
 
     relationships = related_to(index, person)
     entities = tuple(entity for entity in (*relationships.actions, *relationships.tickets) if is_open_status(entity))
+    override_tuple = tuple(overrides)
+    ranking = rank(
+        build_candidates(index, entities, today=today, config=config),
+        today=today,
+        overrides=override_tuple,
+    )
     attention_groups = attention_by_path(index, today, config)
+    entities_by_path = {entity.path: entity for entity in entities}
+    override_kinds = {override.target_id: override.kind for override in override_tuple}
 
     section_items = tuple(
-        sorted(
-            (
-                SectionItem(
-                    entity_id=entity_id_of(entity),
-                    entity_type=entity.entity_type.value,
-                    status=entity.status,
-                    label=entity.title,
-                    path=entity.path,
-                    reason=attention_groups[entity.path][0].reason
-                    if attention_groups.get(entity.path)
-                    else entity.status,
-                    priority=getattr(entity, "priority", None),
-                    attention=tuple(item.kind for item in attention_groups.get(entity.path, ())),
-                    timestamps=timestamps_for_entity(entity),
-                )
-                for entity in entities
-            ),
-            key=lambda item: (
-                priority_rank(item.priority) if priority_rank(item.priority) is not None else float("inf"),
-                item.label.casefold(),
-                item.path,
-            ),
-        )
+        _ranked_section_item(ranked, entities_by_path, attention_groups, override_kinds) for ranked in ranking.items
     )
     return build_section(
         "my_priorities",
         section_items,
         generated_at=generated_at,
         effective_filters=effective_filters,
+        conflicts=ranking.conflicts,
+    )
+
+
+def _ranked_section_item(
+    ranked: RankedItem,
+    entities_by_path: dict[str, EntityBase],
+    attention_groups: dict[str, tuple[AttentionItem, ...]],
+    override_kinds: dict[str, str],
+) -> SectionItem:
+    """Fold one ranked candidate into a row carrying its band and requested override."""
+    candidate = ranked.candidate
+    kept = attention_groups.get(candidate.path, ())
+    return SectionItem(
+        entity_id=candidate.entity_id,
+        entity_type=candidate.entity_type,
+        status=candidate.status,
+        label=candidate.title,
+        path=candidate.path,
+        reason=kept[0].reason if kept else candidate.status,
+        priority=candidate.priority,
+        attention=tuple(item.kind for item in kept),
+        timestamps=timestamps_for_entity(entities_by_path[candidate.path]),
+        override_kind=override_kinds.get(candidate.entity_id),
+        band=ranked.band,
     )
 
 
@@ -223,6 +255,19 @@ def section_item_to_dict(item: SectionItem) -> dict:
         "priority": item.priority,
         "attention": list(item.attention),
         "timestamps": [list(timestamp) for timestamp in item.timestamps],
+        "override_kind": item.override_kind,
+        "band": item.band,
+    }
+
+
+def _conflict_to_dict(conflict: OverrideConflict) -> dict:
+    """Serialize one refused override with the evidence that refused it."""
+    return {
+        "override_id": conflict.override_id,
+        "entity_id": conflict.entity_id,
+        "kind": conflict.kind,
+        "evidence": conflict.evidence,
+        "detail": conflict.detail,
     }
 
 
@@ -230,7 +275,8 @@ def section_result_to_dict(result: SectionResult) -> dict:
     """Serialize a section result for the read seam.
 
     Every ``SectionResult`` field is carried, plus the derived ``state`` so the frontend can
-    render empty vs stale vs unavailable without re-deriving it.
+    render empty vs stale vs unavailable without re-deriving it. ``conflicts`` is a list of
+    records so the view can surface a refused override without parsing the ranker's objects.
     """
     return {
         "section_id": result.section_id,
@@ -242,5 +288,6 @@ def section_result_to_dict(result: SectionResult) -> dict:
         "source_freshness": result.source_freshness,
         "availability": result.availability,
         "error_state": result.error_state,
+        "conflicts": [_conflict_to_dict(conflict) for conflict in result.conflicts],
         "state": section_state(result),
     }
