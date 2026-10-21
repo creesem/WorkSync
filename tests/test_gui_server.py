@@ -281,6 +281,40 @@ def test_command_center_route_does_not_write(
     assert not (gui.runtime_root / "user_state").exists()
 
 
+def test_command_center_route_lists_an_override_whose_row_left_every_section(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """F1: a not_relevant override keeps its label and Clear target on the route payload."""
+    base, _gui = gui_server
+    status, _content_type, _body = _post(
+        base, "/api/action/save-override", {"target_id": A_PATH, "kind": "not_relevant"}, TOKEN
+    )
+    assert status == 200
+
+    status, _content_type, body = _get(base, f"/api/command-center?today={TODAY}", TOKEN)
+
+    assert status == 200
+    overrides = _json(body)["overrides"]
+    assert overrides == [
+        {
+            "target_id": A_PATH,
+            "kind": "not_relevant",
+            "reason": "",
+            "label": "Action One",
+            "path": A_PATH,
+        }
+    ]
+
+
+def test_command_center_route_has_no_overrides_by_default(gui_server: tuple[str, GuiService]) -> None:
+    base, _gui = gui_server
+
+    status, _content_type, body = _get(base, f"/api/command-center?today={TODAY}", TOKEN)
+
+    assert status == 200
+    assert _json(body)["overrides"] == []
+
+
 def test_action_endpoint_requires_the_token(gui_server: tuple[str, GuiService]) -> None:
     base, _gui = gui_server
     assert _post(base, "/api/action/complete-action", {"path": A_PATH, "reason": "x"})[0] == 401
@@ -599,6 +633,22 @@ def test_clear_override_soft_clears_without_touching_the_vault(
     assert _snapshot(gui.vault) == before
 
 
+def test_clear_override_without_a_record_writes_nothing(gui_server: tuple[str, GuiService]) -> None:
+    """F3: a stale Clear is a successful no-op and never creates the overrides file."""
+    base, gui = gui_server
+
+    status, content_type, body = _post(base, "/api/action/clear-override", {"target_id": "action-1"}, TOKEN)
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = _json(body)
+    assert payload["state"] == "ok"
+    assert payload["committed"] is False
+    assert payload["override"] is None
+    assert not overrides_path(gui.runtime_root).exists()
+    assert not (gui.runtime_root / "journal").exists()
+
+
 def test_capture_action_requires_text(gui_server: tuple[str, GuiService]) -> None:
     base, _gui = gui_server
     for payload in ({}, {"text": ""}, {"text": "   "}):
@@ -878,6 +928,23 @@ def test_static_shell_pins_the_override_controls_and_conflict_banner(
     assert ".cc-conflicts" in css
     assert ".cc-override" in css
     assert ".detail-overrides" in css
+
+
+def test_static_shell_pins_the_always_reachable_overrides_strip(gui_server: tuple[str, GuiService]) -> None:
+    """F1: the Command Center serves an Overrides block that can clear a dropped row."""
+    base, _gui = gui_server
+    app_js = _get(base, "/app.js", TOKEN)[2].decode("utf-8")
+    assert "commandCenterOverrides" in app_js
+    assert "renderCommandCenter(data.sections, data.overrides)" in app_js
+    assert "data-clear-override-target" in app_js
+    assert 'postAction("clear-override", { target_id: targetId })' in app_js
+    assert "if (!overrides || !overrides.length) return" in app_js  # only when non-empty
+    assert ">Overrides<" in app_js
+    assert "task" not in app_js.lower()
+
+    css = _get(base, "/styles.css", TOKEN)[2].decode("utf-8")
+    assert ".cc-overrides" in css
+    assert ".cc-override-row" in css
 
 
 def test_server_refuses_a_non_loopback_host(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:

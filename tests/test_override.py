@@ -16,7 +16,7 @@ from worksync.work.override import (
     read_override_records,
     read_overrides,
 )
-from worksync.work.prioritization import Override
+from worksync.work.prioritization import Override, OverrideKind
 
 NOW = "2026-10-20T09:00:00+00:00"
 
@@ -50,6 +50,11 @@ def test_constants_are_the_r1_shape() -> None:
     assert OVERRIDES_FILENAME == "overrides.json"
     assert SCHEMA_VERSION == 1
     assert KNOWN_OVERRIDE_KINDS == ("pin", "focus_today", "defer", "not_relevant", "always_prioritize")
+
+
+def test_known_kinds_are_derived_from_the_ranker_enum() -> None:
+    """F2: the store's kinds are the ranker's enum, so the two cannot drift."""
+    assert tuple(kind.value for kind in OverrideKind) == KNOWN_OVERRIDE_KINDS
 
 
 def test_overrides_path_is_the_user_state_record(tmp_path: Path) -> None:

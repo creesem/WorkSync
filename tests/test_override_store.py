@@ -164,13 +164,17 @@ def test_save_after_clear_reactivates_one_record(vault: Path, tmp_path: Path) ->
     assert read_overrides(runtime) == (Override("ticket-1", "ticket-1", "always_prioritize", ""),)
 
 
-def test_clear_without_a_record_writes_an_empty_collection(vault: Path, tmp_path: Path) -> None:
+def test_clear_without_a_record_writes_nothing(vault: Path, tmp_path: Path) -> None:
+    """F3: a stale clear is a no-op — no empty file, no journal, no backup."""
     runtime = tmp_path / "runtime"
 
     result = clear_override(vault, runtime, "ticket-1", now=NOW)
 
-    assert result.committed
-    assert result.changes[0]["kind"] == "create"
+    assert result.committed is False
+    assert result.changes == ()
+    assert not overrides_path(runtime).exists()
+    assert not (runtime / "journal").exists()
+    assert not (runtime / "backups").exists()
     assert read_override_records(runtime) == ()
 
 

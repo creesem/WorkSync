@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from collections.abc import Iterable
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -29,7 +30,9 @@ from worksync.work.control_center import build_control_center
 from worksync.work.layout_profile import apply_profile, default_profile, read_profile
 from worksync.work.lifecycle.loader import load_project_records
 from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
+from worksync.work.models import entity_id_of
 from worksync.work.override import read_overrides as _read_overrides
+from worksync.work.prioritization import Override
 from worksync.work.relationships import related_to
 from worksync.work.render import (
     attention_to_dict,
@@ -115,6 +118,30 @@ def _project_entity(index: WorkIndex, name: str):
     return next((entity for entity in index.list_type("project") if entity.project_id == project_id), None)
 
 
+def _overrides_payload(index: WorkIndex, overrides: Iterable[Override]) -> list[dict]:
+    """Resolve every active override to the label and path its target carries.
+
+    An override outlives its section row: a ``not_relevant`` target is dropped from My
+    Priorities, so the view cannot rely on a section item to name and clear it. The index
+    supplies the label and path; a target that is no longer in the vault falls back to its
+    id with an empty path, so it stays visible and reversible.
+    """
+    entities_by_id = {entity_id_of(entity): entity for entity in index.entities}
+    rows = []
+    for override in overrides:
+        entity = entities_by_id.get(override.target_id)
+        rows.append(
+            {
+                "target_id": override.target_id,
+                "kind": override.kind,
+                "reason": override.reason,
+                "label": (entity.title if entity is not None else "") or override.target_id,
+                "path": entity.path if entity is not None else "",
+            }
+        )
+    return rows
+
+
 def command_center(
     vault: str | Path,
     runtime_root: str | Path,
@@ -128,7 +155,9 @@ def command_center(
     ``generated_at`` is injectable so a fixed vault and checkpoint yield a deterministic
     payload. The layout profile supplies the section order, per-section visibility, and the
     "Me" owner; an explicit ``owner_id`` overrides the profile's for programmatic callers.
-    Without an owner My Priorities reports unavailable.
+    Without an owner My Priorities reports unavailable. ``overrides`` lists every active
+    override with its target resolved to a label and path, so an override whose row left
+    every section (``not_relevant``) can still be seen and cleared.
     """
     root = Path(vault).expanduser().resolve()
     records = _cached_scan(vault)
@@ -164,6 +193,7 @@ def command_center(
         "generated_at": when,
         "profile": profile.to_dict(),
         "sections": apply_profile(sections, profile),
+        "overrides": _overrides_payload(index, overrides),
     }
 
 

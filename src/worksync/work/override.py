@@ -21,12 +21,14 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from worksync.work.prioritization import Override
+from worksync.work.prioritization import Override, OverrideKind
 from worksync.work.since_last_check import user_state_root
 
 OVERRIDES_FILENAME = "overrides.json"
 SCHEMA_VERSION = 1
-KNOWN_OVERRIDE_KINDS = ("pin", "focus_today", "defer", "not_relevant", "always_prioritize")
+# Derived from the ranker's enum, in its declaration order, so the store, the action seam,
+# and the ranking can never disagree about which kinds exist.
+KNOWN_OVERRIDE_KINDS = tuple(kind.value for kind in OverrideKind)
 
 _KNOWN_KIND_SET = frozenset(KNOWN_OVERRIDE_KINDS)
 _KNOWN_STATUSES = frozenset({"active", "cleared"})

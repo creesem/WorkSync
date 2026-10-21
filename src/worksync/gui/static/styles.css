@@ -795,6 +795,56 @@ button.complete:hover {
   font-size: 0.78rem;
 }
 
+/* F1: the always-reachable Overrides strip. A not_relevant override leaves every section,
+   so this block keeps its label, kind, and Clear action reachable on the default screen. */
+.cc-overrides {
+  margin-bottom: 1.6rem;
+  padding: 0.55rem 0.75rem 0.4rem;
+  background: var(--surface);
+  border-left: 3px solid var(--brass);
+}
+
+.cc-override-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cc-override-row:last-child {
+  border-bottom: none;
+}
+
+.cc-override-row .who {
+  flex-basis: 14rem;
+  flex-shrink: 0;
+}
+
+.cc-override-row .what {
+  flex: 1;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.cc-override-row .cc-override {
+  margin-left: 0;
+}
+
+.cc-override-row button {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--oxblood);
+  background: var(--surface);
+  color: var(--oxblood);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.cc-override-row button:hover {
+  background: var(--oxblood);
+  color: var(--surface);
+}
+
 .capture-bar {
   position: fixed;
   right: 0;

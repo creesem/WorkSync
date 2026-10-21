@@ -348,4 +348,38 @@ def test_command_center_service_degrades_to_no_overrides_when_the_file_is_malfor
     assert [item["label"] for item in my_priorities["items"]] == ["Overdue action", "Quiet action"]
     assert all(item["override_kind"] is None for item in my_priorities["items"])
     assert my_priorities["conflicts"] == []
+    assert payload["overrides"] == []
     assert target.read_text(encoding="utf-8") == "{not valid json"
+
+
+def test_command_center_service_reports_overrides_whose_row_left_every_section(
+    vault: Path, write_note: Callable[[Path, str, str], Path], tmp_path: Path
+) -> None:
+    """F1: not_relevant drops the row, so the payload must still name it to make it clearable."""
+    _seed_owner_work(vault, write_note)
+    runtime = tmp_path / "var"
+    now = datetime(2026, 2, 1, tzinfo=UTC)
+    save_override(vault, runtime, "quiet-action", "not_relevant", reason="noise", now=now)
+    save_override(vault, runtime, "ghost-action", "pin", now=now)
+
+    payload = service.command_center(vault, runtime, date(2026, 2, 1), owner_id="dana", generated_at=GENERATED_AT)
+    my_priorities = payload["sections"][1]
+
+    assert [item["label"] for item in my_priorities["items"]] == ["Overdue action"]
+    assert payload["overrides"] == [
+        {
+            "target_id": "quiet-action",
+            "kind": "not_relevant",
+            "reason": "noise",
+            "label": "Quiet action",
+            "path": "Actions/Quiet.md",
+        },
+        # A target that is no longer in the vault stays listed and clearable by its id.
+        {
+            "target_id": "ghost-action",
+            "kind": "pin",
+            "reason": "",
+            "label": "ghost-action",
+            "path": "",
+        },
+    ]

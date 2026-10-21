@@ -274,6 +274,19 @@ async function clearOverride() {
   }
 }
 
+// F1: clearing from the Command Center's Overrides strip. The strip is not a section row, so
+// the target id travels on the button rather than on the detail pane.
+async function clearOverrideTarget(targetId) {
+  if (!targetId) return;
+  try {
+    const result = await postAction("clear-override", { target_id: targetId });
+    showWriteResult(result, false);
+    if (current === "command-center") await refreshCommandCenter();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
 function bareName(value) {
   return String(value || "").replace(/\[\[|\]\]/g, "").trim();
 }
@@ -1040,11 +1053,41 @@ function commandCenterBlock(section) {
   </section>`;
 }
 
-function renderCommandCenter(sections) {
+function renderCommandCenter(sections, overrides) {
   const blocks = (sections || []).map(commandCenterBlock).join("");
   view.innerHTML =
     heading("Command Center", "Needs attention, your priorities, and what changed since your last check") +
+    commandCenterOverrides(overrides) +
     (blocks || empty("No sections."));
+}
+
+// F1: the always-reachable Overrides strip. A not_relevant override drops its row from every
+// section, so this list is the one place it can still be seen and cleared. It renders only
+// when something is active, and each row carries the target id its Clear button posts.
+function commandCenterOverrides(overrides) {
+  if (!overrides || !overrides.length) return "";
+  const rows = overrides
+    .map((override) => {
+      const targetId = override.target_id || "";
+      const label = override.label || targetId || "(untitled)";
+      const kind = override.kind || "";
+      const name = overrideActionLabels[kind] || kind;
+      const reason = override.reason ? ` <span class="muted">${escapeHtml(override.reason)}</span>` : "";
+      return `<div class="cc-override-row">
+        <div class="who">${escapeHtml(label)}</div>
+        <div class="what"><span class="cc-override">${escapeHtml(name)}</span>${reason}</div>
+        <button type="button" data-clear-override-target="${escapeHtml(targetId)}"
+          aria-label="Clear ${escapeHtml(name)} for ${escapeHtml(label)}">Clear</button>
+      </div>`;
+    })
+    .join("");
+  return `<section class="cc-overrides" aria-label="Overrides">
+    <div class="cc-head">
+      <h2>Overrides</h2>
+      <span class="cc-count">${escapeHtml(String(overrides.length))}</span>
+    </div>
+    ${rows}
+  </section>`;
 }
 
 // CC-03: the layout toolbar. The route returns the profile and already renders the sections
@@ -1119,7 +1162,7 @@ async function refreshCommandCenter() {
   equivalent.textContent = data.equivalent_cli;
   state.profile = data.profile || null;
   renderLayoutBar();
-  renderCommandCenter(data.sections);
+  renderCommandCenter(data.sections, data.overrides);
   if (!meOptionsLoaded) {
     meOptionsLoaded = true;
     fillMeOptions();
@@ -1397,6 +1440,11 @@ window.addEventListener("popstate", (event) => {
 });
 
 view.addEventListener("click", (event) => {
+  const clearTarget = event.target.closest("[data-clear-override-target]");
+  if (clearTarget) {
+    clearOverrideTarget(clearTarget.dataset.clearOverrideTarget);
+    return;
+  }
   const tab = event.target.closest("[data-queue-tab]");
   if (tab) {
     state.queueTab = tab.dataset.queueTab;

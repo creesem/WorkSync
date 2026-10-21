@@ -7,9 +7,10 @@ layer into its import closure (mirroring the checkpoint and layout-profile split
 Overrides are a ``user_state`` record (``runtime/user_state/overrides.json``), so these
 writes are journaled and backed up but never touch a note. Ruling R3: ``save_override``
 upserts by ``target_id``, keeping one active record per target, and ``clear_override``
-soft-clears the record (``status="cleared"``) rather than deleting it. Both create the
-file on the first write and sha-preconditioned-update it thereafter; the presence of the
-file alone decides which, so the existing contents are never parsed to choose the op.
+soft-clears the record (``status="cleared"``) rather than deleting it. A save creates the
+file on the first write and sha-preconditioned-updates it thereafter; its presence alone
+decides which, so the existing contents are never parsed to choose the op. A clear with no
+matching record writes nothing at all.
 """
 
 from __future__ import annotations
@@ -105,15 +106,19 @@ def clear_override(
     """Soft-clear the override for *target_id* (``status="cleared"``).
 
     The record stays in the file as provenance but ``read_overrides`` omits it. Clearing
-    a target that has no record is an idempotent empty write rather than an error, so the
-    GUI action never fails on a stale view. Writes only the ``user_state`` record.
+    a target that has no record is a no-op that writes nothing at all — no empty file, no
+    journal entry, no backup — so the GUI action never fails on a stale view and never
+    records a mutation that changed nothing. Writes only the ``user_state`` record.
     """
     _validate_target(target_id)
     when = now or datetime.now(UTC)
     stamp = when.isoformat()
+    stored = read_override_records(runtime_root)
+    if not any(record.target_id == target_id for record in stored):
+        return CommitResult(committed=False, journal=Path(), changes=())
     records = [
         replace(record, status="cleared", updated_at=stamp) if record.target_id == target_id else record
-        for record in read_override_records(runtime_root)
+        for record in stored
     ]
     return _commit(
         vault_root,
