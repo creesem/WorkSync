@@ -716,6 +716,85 @@ button.complete:hover {
   font-size: 0.9rem;
 }
 
+/* Ticket 18: the detail-pane override controls, the per-row indicator, and the refusal
+   banner. A refused override is oxblood in both places, never a reassuring brass chip. */
+.detail-overrides {
+  margin: 0.9rem 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--rule);
+}
+
+.detail-label {
+  margin: 0 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.override-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.override-actions button {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.override-actions button:hover {
+  border-color: var(--ink);
+}
+
+.override-actions button.active {
+  border-color: var(--brass);
+  color: var(--brass);
+}
+
+.override-actions button.override-clear {
+  border-color: var(--oxblood);
+  color: var(--oxblood);
+}
+
+.cc-override {
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--brass);
+  color: var(--brass);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cc-override.refused {
+  border-color: var(--oxblood);
+  color: var(--oxblood);
+}
+
+.cc-conflicts {
+  margin: 0.6rem 0 0;
+  padding: 0.55rem 0.8rem;
+  background: var(--surface);
+  border-left: 3px solid var(--oxblood);
+  color: var(--oxblood);
+  font-size: 0.85rem;
+}
+
+.cc-conflicts ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.cc-conflicts .muted {
+  margin-left: 0.35rem;
+  font-size: 0.78rem;
+}
+
 .capture-bar {
   position: fixed;
   right: 0;

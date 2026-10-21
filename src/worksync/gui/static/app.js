@@ -4,6 +4,25 @@ const TOKEN = window.__GUI_TOKEN__ || "";
 const TOKEN_HEADER = "X-Gui-Token";
 const DEFAULT_SECTION = "command-center";
 
+// Ticket 18: the override kinds in the order the detail pane offers them, with the label a
+// button uses and the label a My Priorities row shows once the override is active. The row
+// indicator never claims a refused override was applied: it says "<action> refused" instead.
+const overrideKinds = ["pin", "focus_today", "defer", "not_relevant", "always_prioritize"];
+const overrideActionLabels = {
+  pin: "Pin",
+  focus_today: "Focus today",
+  defer: "Defer",
+  not_relevant: "Not relevant",
+  always_prioritize: "Always prioritize",
+};
+const overrideIndicators = {
+  pin: "Pinned",
+  focus_today: "Focus today",
+  defer: "Deferred",
+  not_relevant: "Not relevant",
+  always_prioritize: "Always prioritized",
+};
+
 const state = {
   triage: [],
   queueTab: "triage",
@@ -155,6 +174,19 @@ function detailField(label, value) {
   return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`;
 }
 
+// Ticket 18: the detail pane's override controls. The requested kind is marked active; a
+// refused override still carries its requested kind on the row, so the refusal is stated by
+// the My Priorities banner rather than a misleading "Deferred" chip.
+function overrideButtons(activeKind) {
+  const buttons = overrideKinds.map((kind) => {
+    const active = kind === activeKind;
+    return `<button type="button" class="${active ? "active" : ""}" data-override-kind="${kind}"
+      aria-pressed="${active}">${escapeHtml(overrideActionLabels[kind])}</button>`;
+  });
+  buttons.push('<button type="button" class="override-clear" data-clear-override="1">Clear</button>');
+  return buttons.join("");
+}
+
 // Ticket 11: a selection can await the cached vault name, and a section change closes the
 // pane in that window; this counter lets the stale selection notice it lost and bail.
 let detailGeneration = 0;
@@ -183,11 +215,20 @@ async function selectItem(node) {
     </dl>
     ${item.reason ? `<p class="detail-reason">${escapeHtml(item.reason)}</p>` : ""}
     ${
+      item.entityId
+        ? `<div class="detail-overrides">
+      <p class="detail-label">Override</p>
+      <div class="override-actions">${overrideButtons(item.overrideKind || "")}</div>
+    </div>`
+        : ""
+    }
+    ${
       url
         ? `<a class="note-link" id="detail-link" href="${escapeHtml(url)}">Open in Obsidian</a>`
         : `<p class="muted">No canonical note for this item.</p>`
     }`;
   state.detailKey = key;
+  detail.dataset.entityId = item.entityId || "";
   detail.hidden = false;
 }
 
@@ -195,7 +236,42 @@ function closeDetail() {
   detailGeneration += 1;
   detail.hidden = true;
   detail.innerHTML = "";
+  detail.dataset.entityId = "";
   state.detailKey = null;
+}
+
+function markOverrideButtons(kind) {
+  for (const button of detail.querySelectorAll("[data-override-kind]")) {
+    const active = button.dataset.overrideKind === kind;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
+}
+
+async function saveOverride(kind) {
+  const targetId = detail.dataset.entityId;
+  if (!targetId) return;
+  try {
+    const result = await postAction("save-override", { target_id: targetId, kind });
+    showWriteResult(result, false);
+    markOverrideButtons(kind);
+    if (current === "command-center") await refreshCommandCenter();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
+}
+
+async function clearOverride() {
+  const targetId = detail.dataset.entityId;
+  if (!targetId) return;
+  try {
+    const result = await postAction("clear-override", { target_id: targetId });
+    showWriteResult(result, false);
+    markOverrideButtons("");
+    if (current === "command-center") await refreshCommandCenter();
+  } catch (error) {
+    showWriteResult({ error: String(error.message || error) }, true);
+  }
 }
 
 function bareName(value) {
@@ -877,17 +953,31 @@ const commandCenterUnavailable = {
   source_unavailable: "Source unavailable.",
 };
 
-function commandCenterItem(item) {
+function commandCenterItem(item, refusedEntityIds) {
   const label = item.label || item.title || item.entity_id || item.path || "(untitled)";
   const kind = item.entity_type || item.kind || "";
   const priority = item.priority === undefined || item.priority === null ? "" : `priority ${item.priority}`;
   const meta = [priority, item.path || ""].filter(Boolean).join(" · ");
+  // Ticket 18: a per-row indicator names the request, or says it was refused; the banner
+  // below the section carries the safety evidence that refused it.
+  const overrideKind = item.override_kind || "";
+  let overrideChip = "";
+  if (overrideKind) {
+    const refused = refusedEntityIds && refusedEntityIds.has(item.entity_id);
+    const text = refused
+      ? `${overrideActionLabels[overrideKind] || overrideKind} refused`
+      : overrideIndicators[overrideKind] || overrideKind;
+    overrideChip = `<span class="cc-override${refused ? " refused" : ""}">${escapeHtml(text)}</span>`;
+  }
   // Ticket 11: every Command Center row is selectable and carries its fields so the detail
-  // pane can render without another request (state is front-end only).
+  // pane can render without another request (state is front-end only). Ticket 18 adds the
+  // entity id and requested override so the pane can save and clear one.
   const attrs = [
     "data-cc-item",
     'role="button"',
     'tabindex="0"',
+    `data-entity-id="${escapeHtml(item.entity_id || "")}"`,
+    `data-override-kind="${escapeHtml(overrideKind)}"`,
     `data-path="${escapeHtml(item.path || "")}"`,
     `data-label="${escapeHtml(label)}"`,
     `data-kind="${escapeHtml(kind)}"`,
@@ -899,8 +989,25 @@ function commandCenterItem(item) {
     <div class="who">${escapeHtml(label)}</div>
     <div class="what">${kind ? `<span class="tag">${escapeHtml(kind)}</span>` : ""}${escapeHtml(
       item.reason || ""
-    )}</div>
+    )}${overrideChip}</div>
     <div class="meta">${escapeHtml(meta)}</div>
+  </div>`;
+}
+
+// Ticket 18: a refused override still carries its requested kind on the row, but the ranker
+// kept it at its safety band. The banner is the one place that says so plainly.
+function commandCenterConflicts(conflicts) {
+  const rows = conflicts
+    .map((conflict) => {
+      const action = overrideActionLabels[conflict.kind] || conflict.kind || "Override";
+      const evidence = conflict.evidence || "a safety floor";
+      const target = conflict.entity_id ? ` <span class="muted">${escapeHtml(conflict.entity_id)}</span>` : "";
+      return `<li>${escapeHtml(`${action} refused: ${evidence}`)}${target}</li>`;
+    })
+    .join("");
+  return `<div class="cc-conflicts" role="alert">
+    <strong>Override refused.</strong> The work record stays at its safety band.
+    <ul>${rows}</ul>
   </div>`;
 }
 
@@ -908,6 +1015,8 @@ function commandCenterBlock(section) {
   const title = commandCenterTitles[section.section_id] || section.section_id || "Section";
   const sectionState = section.state || "";
   const items = section.items || [];
+  const conflicts = section.conflicts || [];
+  const refusedEntityIds = new Set(conflicts.map((conflict) => conflict.entity_id));
   const count =
     section.total_count === undefined || section.total_count === null ? items.length : section.total_count;
   let body;
@@ -918,7 +1027,7 @@ function commandCenterBlock(section) {
   } else if (sectionState === "empty") {
     body = empty("Nothing here.");
   } else {
-    body = items.map(commandCenterItem).join("") || empty("Nothing here.");
+    body = items.map((item) => commandCenterItem(item, refusedEntityIds)).join("") || empty("Nothing here.");
   }
   return `<section class="cc-section" data-section-id="${escapeHtml(section.section_id || "")}">
     <div class="cc-head">
@@ -926,6 +1035,7 @@ function commandCenterBlock(section) {
       <span class="cc-count">${escapeHtml(String(count))}</span>
       <span class="cc-state ${escapeHtml(sectionState)}">${escapeHtml(sectionState || "unknown")}</span>
     </div>
+    ${conflicts.length ? commandCenterConflicts(conflicts) : ""}
     ${body}
   </section>`;
 }
@@ -1339,7 +1449,16 @@ view.addEventListener("keydown", (event) => {
 });
 
 detail.addEventListener("click", (event) => {
-  if (event.target.closest("#detail-close")) closeDetail();
+  if (event.target.closest("#detail-close")) {
+    closeDetail();
+    return;
+  }
+  const overrideButton = event.target.closest("[data-override-kind]");
+  if (overrideButton) {
+    saveOverride(overrideButton.dataset.overrideKind);
+    return;
+  }
+  if (event.target.closest("[data-clear-override]")) clearOverride();
 });
 
 document.addEventListener("keydown", (event) => {

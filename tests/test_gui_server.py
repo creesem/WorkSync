@@ -29,6 +29,12 @@ from worksync.work.layout_profile import (
     profile_path,
     read_profile,
 )
+from worksync.work.override import (
+    OVERRIDES_FILENAME,
+    overrides_path,
+    read_override_records,
+    read_overrides,
+)
 
 TODAY = "2026-02-01"
 # A day before any attention trigger in the fixture vault (project review due 2026-01-10,
@@ -491,6 +497,108 @@ def test_save_layout_profile_repairs_a_corrupt_profile(
     assert _snapshot(gui.vault) == before
 
 
+def test_override_actions_require_a_target_and_a_known_kind(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """Ticket 18: a missing target/kind or an unknown kind is a 400 and writes nothing."""
+    base, gui = gui_server
+    before = _snapshot(gui.vault)
+    invalid = [
+        ("save-override", {"kind": "pin"}),
+        ("save-override", {"target_id": "  ", "kind": "pin"}),
+        ("save-override", {"target_id": "action-1"}),
+        ("save-override", {"target_id": "action-1", "kind": "expedite"}),
+        ("save-override", {"target_id": "action-1", "kind": "pin", "reason": 7}),
+        ("clear-override", {}),
+        ("clear-override", {"target_id": ""}),
+    ]
+
+    for name, payload in invalid:
+        status, content_type, body = _post(base, f"/api/action/{name}", payload, TOKEN)
+        assert status == 400, payload
+        assert content_type == "application/json", payload
+        assert _json(body)["error"] in {"bad_request", "invalid_target"}, payload
+
+    assert not overrides_path(gui.runtime_root).exists()
+    assert _snapshot(gui.vault) == before
+
+
+def test_save_override_persists_only_the_user_state_record(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """Ticket 18: a valid save commits the override and leaves every note byte-identical."""
+    base, gui = gui_server
+    before = _snapshot(gui.vault)
+
+    status, content_type, body = _post(
+        base,
+        "/api/action/save-override",
+        {"target_id": "action-1", "kind": "defer", "reason": "waiting on legal"},
+        TOKEN,
+    )
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = _json(body)
+    assert payload["state"] == "ok"
+    assert payload["action"] == "save-override"
+    assert payload["committed"] is True
+    assert payload["equivalent_cli"] is None
+    assert payload["override"]["target_id"] == "action-1"
+    assert payload["override"]["kind"] == "defer"
+    assert payload["override"]["reason"] == "waiting on legal"
+    assert payload["override"]["status"] == "active"
+    assert [(item.target_id, item.kind, item.reason) for item in read_overrides(gui.runtime_root)] == [
+        ("action-1", "defer", "waiting on legal")
+    ]
+
+    # No canonical write: the vault is byte-identical and the only user_state file is the
+    # overrides record itself (the journal and backups live outside it).
+    assert _snapshot(gui.vault) == before
+    user_state = gui.runtime_root / "user_state"
+    assert [path.name for path in user_state.iterdir()] == [OVERRIDES_FILENAME]
+
+
+def test_save_override_defaults_the_optional_reason(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """The reason is optional: an omitted reason is stored as the empty provenance string."""
+    base, gui = gui_server
+
+    status, _content_type, body = _post(
+        base, "/api/action/save-override", {"target_id": "action-1", "kind": "pin"}, TOKEN
+    )
+
+    assert status == 200
+    assert _json(body)["override"]["reason"] == ""
+    assert read_override_records(gui.runtime_root)[0].reason == ""
+
+
+def test_clear_override_soft_clears_without_touching_the_vault(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """Ticket 18: clearing keeps the record as provenance but drops it from the read model."""
+    base, gui = gui_server
+    assert _post(base, "/api/action/save-override", {"target_id": "action-1", "kind": "pin"}, TOKEN)[0] == 200
+    before = _snapshot(gui.vault)
+
+    status, content_type, body = _post(base, "/api/action/clear-override", {"target_id": "action-1"}, TOKEN)
+
+    assert status == 200
+    assert content_type == "application/json"
+    payload = _json(body)
+    assert payload["state"] == "ok"
+    assert payload["action"] == "clear-override"
+    assert payload["committed"] is True
+    assert payload["equivalent_cli"] is None
+    assert payload["override"]["status"] == "cleared"
+    assert read_overrides(gui.runtime_root) == ()
+    assert [(record.target_id, record.status) for record in read_override_records(gui.runtime_root)] == [
+        ("action-1", "cleared")
+    ]
+    assert _snapshot(gui.vault) == before
+
+
 def test_capture_action_requires_text(gui_server: tuple[str, GuiService]) -> None:
     base, _gui = gui_server
     for payload in ({}, {"text": ""}, {"text": "   "}):
@@ -741,6 +849,35 @@ def test_static_shell_pins_the_layout_controls(gui_server: tuple[str, GuiService
 
     css = _get(base, "/styles.css", TOKEN)[2].decode("utf-8")
     assert ".layout-bar" in css
+
+
+def test_static_shell_pins_the_override_controls_and_conflict_banner(
+    gui_server: tuple[str, GuiService],
+) -> None:
+    """Ticket 18: the detail-pane override controls and the conflict banner are served.
+
+    No JS test harness exists, so the markup and the action wiring are asserted by string;
+    the behaviour is verified by hand.
+    """
+    base, _gui = gui_server
+    app_js = _get(base, "/app.js", TOKEN)[2].decode("utf-8")
+    assert 'postAction("save-override"' in app_js
+    assert 'postAction("clear-override"' in app_js
+    assert "data-override-kind" in app_js
+    assert "data-clear-override" in app_js
+    for label in ("Pin", "Focus today", "Defer", "Not relevant", "Always prioritize", "Clear"):
+        assert label in app_js
+    # The conflict banner names the refused override and the safety evidence that refused it.
+    assert "cc-conflicts" in app_js
+    assert "refused" in app_js
+    assert "cc-override" in app_js
+    assert "target_id" in app_js
+    assert "task" not in app_js.lower()
+
+    css = _get(base, "/styles.css", TOKEN)[2].decode("utf-8")
+    assert ".cc-conflicts" in css
+    assert ".cc-override" in css
+    assert ".detail-overrides" in css
 
 
 def test_server_refuses_a_non_loopback_host(vault: Path, write_note: Callable[..., Path], tmp_path: Path) -> None:

@@ -35,6 +35,8 @@ from worksync.work.layout_profile import KNOWN_SECTIONS, default_profile, read_p
 from worksync.work.layout_profile_store import reset_profile, save_profile
 from worksync.work.lifecycle.transitions import apply_lifecycle_transition
 from worksync.work.merge import apply_merge as run_identity_apply
+from worksync.work.override import KNOWN_OVERRIDE_KINDS, read_override_records
+from worksync.work.override_store import clear_override, save_override
 from worksync.work.queue import QueueError
 from worksync.work.reviewer import ReviewerError
 from worksync.work.writer import (
@@ -303,6 +305,74 @@ def _layout_owner_id(value: object) -> str | None:
     if not isinstance(value, str):
         raise ActionError("bad_request", "owner_id must be a person id string or null.", 400)
     return value.strip() or None
+
+
+def _save_override(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Upsert one user override; it writes the ``user_state`` record, never a note."""
+    target_id = _required(payload, "target_id", "invalid_target")
+    kind = _required(payload, "kind", "invalid_target")
+    if kind not in KNOWN_OVERRIDE_KINDS:
+        raise ActionError(
+            "bad_request",
+            f"Unknown override kind: {kind}. Choose one of: {', '.join(KNOWN_OVERRIDE_KINDS)}.",
+            400,
+        )
+    reason = payload.get("reason")
+    if reason is None:
+        reason = ""
+    if not isinstance(reason, str):
+        raise ActionError("bad_request", "reason must be a string.", 400)
+    committed, record = _override_write(
+        service,
+        target_id,
+        lambda: save_override(service.vault, service.runtime_root, target_id, kind, reason=reason),
+    )
+    return {
+        "state": "ok",
+        "action": "save-override",
+        "committed": committed,
+        "override": record,
+        "equivalent_cli": None,
+    }
+
+
+def _clear_override(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Soft-clear one user override; it writes only the ``user_state`` record."""
+    target_id = _required(payload, "target_id", "invalid_target")
+    committed, record = _override_write(
+        service,
+        target_id,
+        lambda: clear_override(service.vault, service.runtime_root, target_id),
+    )
+    return {
+        "state": "ok",
+        "action": "clear-override",
+        "committed": committed,
+        "override": record,
+        "equivalent_cli": None,
+    }
+
+
+def _override_write(service: WriteContext, target_id: str, write: Callable[[], Any]) -> tuple[bool, dict | None]:
+    """Run one override write and read its record back, failing closed on a bad store.
+
+    A malformed ``overrides.json`` makes both the write and the read-back raise
+    ``ValueError``; the store's own validation errors are the same shape. They become a
+    400 rather than escaping the action seam as an unhandled exception.
+    """
+    try:
+        result = write()
+        record = next(
+            (
+                stored.to_dict()
+                for stored in read_override_records(service.runtime_root)
+                if stored.target_id == target_id
+            ),
+            None,
+        )
+    except ValueError as exc:
+        raise ActionError("invalid_override", f"The override store could not be written: {exc}", 400) from exc
+    return result.committed, record
 
 
 def _apply_batch(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
@@ -745,6 +815,8 @@ ACTIONS: dict[str, ActionHandler] = {
     "complete-action": _complete_action,
     "set-reviewer": _set_reviewer,
     "save-layout-profile": _save_layout_profile,
+    "save-override": _save_override,
+    "clear-override": _clear_override,
     "apply-batch": _apply_batch,
     "capture": _capture,
     "ingest-scan": _ingest_scan,
