@@ -15,6 +15,8 @@ from pathlib import Path
 from worksync.context import service
 from worksync.core.config import DEFAULT_KRISP_SINCE_DAYS
 
+CONTRACT_VERSION = 1
+
 
 @dataclass(frozen=True)
 class GuiService:
@@ -43,8 +45,23 @@ class GuiService:
     def command_center(self, today: date) -> dict:
         """The Command Center: the three default sections, assembled by the read seam."""
         return {
+            "contract_version": CONTRACT_VERSION,
             "equivalent_cli": "worksync command-center",
+            "vault": {"name": self.vault_name},
+            "viewer": {"name": self.reviewer},
             **service.command_center(self.vault, self.runtime_root, today),
+        }
+
+    def entity(self, entity_id: str, today: date) -> dict | None:
+        """One entity's intrinsic contract detail, by stable id (``None`` means 404)."""
+        entity = service.entity_contract(self.vault, entity_id, today)
+        if entity is None:
+            return None
+        return {
+            "contract_version": CONTRACT_VERSION,
+            "availability": "available",
+            "error_state": None,
+            "entity": entity,
         }
 
     def review(self, today: date) -> dict:

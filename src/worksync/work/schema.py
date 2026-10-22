@@ -70,6 +70,20 @@ def is_valid_person_id(value: str) -> bool:
     return bool(PERSON_ID_RE.fullmatch(value))
 
 
+# Entity ids (project/ticket/meeting/action) share the kebab-case person-id shape.
+ENTITY_ID_RE = PERSON_ID_RE
+MAX_ENTITY_ID_LENGTH = 128
+
+
+def is_entity_id(value: str) -> bool:
+    """Return True when *value* is a valid kebab-case entity identifier of bounded length.
+
+    A shape check only: the entity route resolves the id by index lookup and never treats the
+    value as a filesystem path.
+    """
+    return bool(value) and len(value) <= MAX_ENTITY_ID_LENGTH and bool(ENTITY_ID_RE.fullmatch(value))
+
+
 def person_id_slug(title: str) -> str:
     """Derive a kebab-case person identifier from a display name."""
     ascii_text = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii")

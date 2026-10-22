@@ -142,6 +142,10 @@ def test_section_item_to_dict_serializes_every_field_with_list_sequences() -> No
         "timestamps": [],
         "override_kind": None,
         "band": None,
+        "owner": None,
+        "owner_id": None,
+        "due": None,
+        "severity": None,
     }
 
 
@@ -209,8 +213,10 @@ def test_section_result_to_dict_carries_every_field_plus_the_derived_state() -> 
 
     data = section_result_to_dict(result)
 
-    assert set(data) == {field.name for field in fields(result)} | {"state"}
+    assert set(data) == {field.name for field in fields(result)} | {"state", "title", "subtitle"}
     assert data["section_id"] == "needs_attention"
+    assert data["title"] == "Needs Attention"
+    assert data["subtitle"] == "Blocked, overdue, and manager-flagged work"
     assert data["query_version"] == 1
     assert data["generated_at"] == GENERATED_AT
     assert data["effective_filters"] == {"kinds": ["blocked"]}

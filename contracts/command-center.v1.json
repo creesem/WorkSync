@@ -1,0 +1,261 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://worksync.local/contracts/command-center.v1.json",
+  "title": "WorkSync Command Center read contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "generated_at",
+    "equivalent_cli",
+    "vault",
+    "viewer",
+    "profile",
+    "sections",
+    "overrides"
+  ],
+  "properties": {
+    "contract_version": { "const": 1 },
+    "generated_at": { "type": "string", "minLength": 1 },
+    "equivalent_cli": { "type": "string", "minLength": 1 },
+    "vault": { "$ref": "#/$defs/vault" },
+    "viewer": { "$ref": "#/$defs/viewer" },
+    "profile": { "$ref": "#/$defs/profile" },
+    "sections": {
+      "type": "array",
+      "items": {
+        "anyOf": [{ "$ref": "#/$defs/entitySection" }, { "$ref": "#/$defs/noteSection" }]
+      }
+    },
+    "overrides": { "type": "array", "items": { "$ref": "#/$defs/override" } }
+  },
+  "$defs": {
+    "vault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": { "name": { "type": "string", "minLength": 1 } }
+    },
+    "viewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": { "name": { "type": ["string", "null"] } }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "profile_id",
+        "owner_id",
+        "default_view",
+        "section_order",
+        "visibility",
+        "filters",
+        "revision",
+        "updated_at"
+      ],
+      "properties": {
+        "schema_version": { "type": "integer" },
+        "profile_id": { "type": "string" },
+        "owner_id": { "type": ["string", "null"] },
+        "default_view": { "type": "string" },
+        "section_order": { "type": "array", "items": { "type": "string" } },
+        "visibility": { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "filters": { "type": "object" },
+        "revision": { "type": "integer" },
+        "updated_at": { "type": ["string", "null"] }
+      }
+    },
+    "entitySection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "section_id",
+        "title",
+        "subtitle",
+        "query_version",
+        "generated_at",
+        "effective_filters",
+        "items",
+        "total_count",
+        "source_freshness",
+        "availability",
+        "error_state",
+        "conflicts",
+        "state"
+      ],
+      "properties": {
+        "section_id": { "enum": ["needs_attention", "my_priorities"] },
+        "title": { "type": "string", "minLength": 1 },
+        "subtitle": { "type": "string", "minLength": 1 },
+        "query_version": { "type": "integer" },
+        "generated_at": { "type": "string", "minLength": 1 },
+        "effective_filters": { "type": "object" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/entityItem" } },
+        "total_count": { "type": "integer", "minimum": 0 },
+        "source_freshness": { "enum": ["fresh", "stale", "unknown"] },
+        "availability": { "enum": ["available", "unavailable"] },
+        "error_state": { "type": ["string", "null"] },
+        "conflicts": { "type": "array", "items": { "$ref": "#/$defs/conflict" } },
+        "state": { "enum": ["items", "empty", "unavailable", "stale"] }
+      }
+    },
+    "noteSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "section_id",
+        "title",
+        "subtitle",
+        "availability",
+        "error_state",
+        "acknowledged_at",
+        "generated_at",
+        "items",
+        "total_count",
+        "state"
+      ],
+      "properties": {
+        "section_id": { "const": "since_last_check" },
+        "title": { "type": "string", "minLength": 1 },
+        "subtitle": { "type": "string", "minLength": 1 },
+        "availability": { "enum": ["available", "unavailable"] },
+        "error_state": { "type": ["string", "null"] },
+        "acknowledged_at": { "type": ["string", "null"] },
+        "generated_at": { "type": "string", "minLength": 1 },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/noteItem" } },
+        "total_count": { "type": "integer", "minimum": 0 },
+        "state": { "enum": ["items", "empty", "unavailable", "stale"] }
+      }
+    },
+    "entityItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity_id",
+        "entity_type",
+        "status",
+        "label",
+        "path",
+        "reason",
+        "priority",
+        "attention",
+        "timestamps",
+        "override_kind",
+        "band",
+        "owner",
+        "owner_id",
+        "due",
+        "severity"
+      ],
+      "properties": {
+        "entity_id": { "type": "string", "minLength": 1 },
+        "entity_type": { "enum": ["project", "person", "ticket", "meeting", "action"] },
+        "status": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "reason": { "type": ["string", "null"] },
+        "priority": { "enum": ["P1", "P2", "P3", "P4", null] },
+        "attention": { "type": "array", "items": { "type": "string" } },
+        "timestamps": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 }
+        },
+        "override_kind": {
+          "enum": ["pin", "focus_today", "defer", "not_relevant", "always_prioritize", null]
+        },
+        "band": { "type": ["integer", "null"] },
+        "owner": { "type": ["string", "null"] },
+        "owner_id": { "type": ["string", "null"] },
+        "due": { "type": ["string", "null"] },
+        "severity": { "enum": ["high", "medium", "low", null] }
+      }
+    },
+    "noteItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "title", "current_hash", "previous_hash"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["added", "changed", "removed"] },
+        "title": { "type": "string" },
+        "current_hash": { "type": ["string", "null"] },
+        "previous_hash": { "type": ["string", "null"] }
+      }
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_id", "kind", "reason", "label", "path"],
+      "properties": {
+        "target_id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string" },
+        "label": { "type": "string" },
+        "path": { "type": "string" }
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["override_id", "entity_id", "kind", "evidence", "detail"],
+      "properties": {
+        "override_id": { "type": "string" },
+        "entity_id": { "type": "string" },
+        "kind": { "type": "string" },
+        "evidence": { "type": "string" },
+        "detail": { "type": "string" }
+      }
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity_id",
+        "entity_type",
+        "label",
+        "status",
+        "priority",
+        "owner",
+        "owner_id",
+        "due",
+        "path",
+        "attention",
+        "timestamps",
+        "tags",
+        "aliases"
+      ],
+      "properties": {
+        "entity_id": { "type": "string", "minLength": 1 },
+        "entity_type": { "enum": ["project", "person", "ticket", "meeting", "action"] },
+        "label": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "minLength": 1 },
+        "priority": { "enum": ["P1", "P2", "P3", "P4", null] },
+        "owner": { "type": ["string", "null"] },
+        "owner_id": { "type": ["string", "null"] },
+        "due": { "type": ["string", "null"] },
+        "path": { "type": "string", "minLength": 1 },
+        "attention": { "type": "array", "items": { "type": "string" } },
+        "timestamps": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 }
+        },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "aliases": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "entityResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_version", "availability", "error_state", "entity"],
+      "properties": {
+        "contract_version": { "const": 1 },
+        "availability": { "enum": ["available", "unavailable"] },
+        "error_state": { "type": ["string", "null"] },
+        "entity": { "$ref": "#/$defs/entity" }
+      }
+    }
+  }
+}

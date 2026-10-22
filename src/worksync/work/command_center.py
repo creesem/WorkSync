@@ -24,6 +24,7 @@ from worksync.work.review import (
     attention_items,
     is_open_status,
 )
+from worksync.work.section_meta import section_meta
 
 QUERY_VERSION = 1
 
@@ -37,12 +38,16 @@ class SectionItem:
     status: str
     label: str
     path: str
-    reason: str
+    reason: str | None
     priority: str | None
     attention: tuple[str, ...]
     timestamps: tuple[tuple[str, str], ...] = ()
     override_kind: str | None = None
     band: int | None = None
+    owner: str | None = None
+    owner_id: str | None = None
+    due: str | None = None
+    severity: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,18 +108,52 @@ def timestamps_for_entity(entity: EntityBase) -> tuple[tuple[str, str], ...]:
     return tuple(timestamps)
 
 
-def _aggregate_section_item(entity: EntityBase, kept: tuple[AttentionItem, ...]) -> SectionItem:
+_SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+def _top_severity(signals: Iterable[AttentionItem]) -> str | None:
+    """Return the highest attention severity carried by an entity's signals, or ``None``."""
+    severities = [signal.severity for signal in signals if signal.severity]
+    if not severities:
+        return None
+    return min(severities, key=lambda value: _SEVERITY_ORDER.get(value, 3))
+
+
+def _owner_fields(entity: EntityBase, index: WorkIndex) -> tuple[str | None, str | None]:
+    """Return ``(owner_id, owner)`` for an entity's first accountable person.
+
+    The owner reference is resolved through the index's person lookup — the same one the rest
+    of the engine uses — so a wikilink, alias, or id all resolve. ``owner`` is the
+    engine-resolved display label and ``owner_id`` the person's stable id; both are ``None``
+    when the person is not in the registry, so the shell shows "Not recorded" rather than
+    inventing a name.
+    """
+    owners = entity.owners
+    if not owners:
+        return None, None
+    person = index.get("person", owners[0])
+    if person is None:
+        return None, None
+    return getattr(person, "person_id", None), person.title
+
+
+def _aggregate_section_item(entity: EntityBase, kept: tuple[AttentionItem, ...], index: WorkIndex) -> SectionItem:
     """Fold one entity's kept attention signals into a single section row."""
+    owner_id, owner = _owner_fields(entity, index)
     return SectionItem(
         entity_id=entity_id_of(entity),
         entity_type=entity.entity_type.value,
         status=entity.status,
         label=entity.title,
         path=entity.path,
-        reason=kept[0].reason,
+        reason=kept[0].reason if kept else None,
         priority=getattr(entity, "priority", None),
         attention=tuple(item.kind for item in kept),
         timestamps=timestamps_for_entity(entity),
+        owner=owner,
+        owner_id=owner_id,
+        due=getattr(entity, "due", None),
+        severity=_top_severity(kept),
     )
 
 
@@ -136,7 +175,7 @@ def needs_attention(
     for item in selected:
         kept_by_path.setdefault(item.path, []).append(item)
     section_items = tuple(
-        _aggregate_section_item(entities_by_path[path], tuple(kept)) for path, kept in kept_by_path.items()
+        _aggregate_section_item(entities_by_path[path], tuple(kept), index) for path, kept in kept_by_path.items()
     )
     kept_kinds = list(dict.fromkeys(item.kind for item in selected))
     return build_section(
@@ -197,7 +236,8 @@ def my_priorities(
     override_kinds = {override.target_id: override.kind for override in override_tuple}
 
     section_items = tuple(
-        _ranked_section_item(ranked, entities_by_path, attention_groups, override_kinds) for ranked in ranking.items
+        _ranked_section_item(ranked, entities_by_path, attention_groups, override_kinds, index)
+        for ranked in ranking.items
     )
     return build_section(
         "my_priorities",
@@ -213,10 +253,13 @@ def _ranked_section_item(
     entities_by_path: dict[str, EntityBase],
     attention_groups: dict[str, tuple[AttentionItem, ...]],
     override_kinds: dict[str, str],
+    index: WorkIndex,
 ) -> SectionItem:
     """Fold one ranked candidate into a row carrying its band and requested override."""
     candidate = ranked.candidate
     kept = attention_groups.get(candidate.path, ())
+    entity = entities_by_path[candidate.path]
+    owner_id, owner = _owner_fields(entity, index)
     return SectionItem(
         entity_id=candidate.entity_id,
         entity_type=candidate.entity_type,
@@ -226,9 +269,13 @@ def _ranked_section_item(
         reason=kept[0].reason if kept else candidate.status,
         priority=candidate.priority,
         attention=tuple(item.kind for item in kept),
-        timestamps=timestamps_for_entity(entities_by_path[candidate.path]),
+        timestamps=timestamps_for_entity(entity),
         override_kind=override_kinds.get(candidate.entity_id),
         band=ranked.band,
+        owner=owner,
+        owner_id=owner_id,
+        due=getattr(entity, "due", None),
+        severity=_top_severity(kept),
     )
 
 
@@ -257,6 +304,10 @@ def section_item_to_dict(item: SectionItem) -> dict:
         "timestamps": [list(timestamp) for timestamp in item.timestamps],
         "override_kind": item.override_kind,
         "band": item.band,
+        "owner": item.owner,
+        "owner_id": item.owner_id,
+        "due": item.due,
+        "severity": item.severity,
     }
 
 
@@ -278,8 +329,11 @@ def section_result_to_dict(result: SectionResult) -> dict:
     render empty vs stale vs unavailable without re-deriving it. ``conflicts`` is a list of
     records so the view can surface a refused override without parsing the ranker's objects.
     """
+    title, subtitle = section_meta(result.section_id)
     return {
         "section_id": result.section_id,
+        "title": title,
+        "subtitle": subtitle,
         "query_version": result.query_version,
         "generated_at": result.generated_at,
         "effective_filters": dict(result.effective_filters),
@@ -290,4 +344,33 @@ def section_result_to_dict(result: SectionResult) -> dict:
         "error_state": result.error_state,
         "conflicts": [_conflict_to_dict(conflict) for conflict in result.conflicts],
         "state": section_state(result),
+    }
+
+
+def entity_contract_dict(
+    entity: EntityBase,
+    *,
+    index: WorkIndex,
+    attention_kinds: tuple[str, ...] = (),
+) -> dict:
+    """Serialize one entity as the contract's intrinsic detail object.
+
+    Only the declared contract fields travel: no raw frontmatter, no note body, and no
+    unindexed file content. ``owner`` is the engine-resolved label (``None`` when unknown).
+    """
+    owner_id, owner = _owner_fields(entity, index)
+    return {
+        "entity_id": entity_id_of(entity),
+        "entity_type": entity.entity_type.value,
+        "label": entity.title,
+        "status": entity.status,
+        "priority": getattr(entity, "priority", None),
+        "owner": owner,
+        "owner_id": owner_id,
+        "due": getattr(entity, "due", None),
+        "path": entity.path,
+        "attention": list(attention_kinds),
+        "timestamps": [list(timestamp) for timestamp in timestamps_for_entity(entity)],
+        "tags": list(entity.tags),
+        "aliases": list(entity.aliases),
     }

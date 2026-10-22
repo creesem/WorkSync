@@ -19,6 +19,7 @@ from worksync.context.retrieval import ServiceError
 from worksync.core.paths import PathSafetyError, ensure_under
 from worksync.gui.actions import ActionError, dispatch_action
 from worksync.gui.controller import GuiService
+from worksync.work.schema import is_entity_id
 
 TOKEN_HEADER = "X-Gui-Token"
 TOKEN_PLACEHOLDER = "__WORKSYNC_TOKEN__"
@@ -151,6 +152,8 @@ class GuiHandler(BaseHTTPRequestHandler):
             return service.search(_required(params, "q"), project_id=params.get("project"), limit=_limit(params))
         if path == "/api/settings":
             return service.settings()
+        if path == "/api/entity":
+            return service.entity(_entity_id(params), _today(params))
         if path == "/api/health":
             return service.health()
         return None
@@ -208,6 +211,14 @@ def _required(params: dict[str, str], key: str) -> str:
     value = params.get(key, "").strip()
     if not value:
         raise ValueError(f"Missing required query parameter: {key}")
+    return value
+
+
+def _entity_id(params: dict[str, str]) -> str:
+    """Return a validated kebab-case entity id; refuse anything path-shaped or malformed."""
+    value = params.get("id", "").strip()
+    if not is_entity_id(value):
+        raise ValueError("Invalid or missing entity id.")
     return value
 
 

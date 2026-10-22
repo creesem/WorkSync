@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Literal
 
 from worksync.inventory.parse import scan_vault
+from worksync.work.section_meta import section_meta
 
 CHECKPOINT_FILENAME = "checkpoint.json"
 USER_STATE_ZONE = "user_state"
@@ -203,11 +204,14 @@ def since_last_check_to_dict(result: SinceLastCheckResult) -> dict:
     The section id and the derived ``state`` are carried so the frontend can order and
     render every Command Center section the same way.
     """
+    title, subtitle = section_meta("since_last_check")
     return {
         "section_id": "since_last_check",
+        "title": title,
+        "subtitle": subtitle,
         "availability": result.availability,
         "error_state": result.error_state,
-        "acknowledged_at": result.acknowledged_at,
+        "acknowledged_at": result.acknowledged_at or None,
         "generated_at": result.generated_at,
         "items": [
             {

@@ -257,8 +257,10 @@ def test_to_dict_carries_every_field_and_note_row_fields(
     data = since_last_check_to_dict(result)
     item = result.items[0]
 
-    assert set(data) == {field.name for field in fields(result)} | {"section_id", "state"}
+    assert set(data) == {field.name for field in fields(result)} | {"section_id", "state", "title", "subtitle"}
     assert data["section_id"] == "since_last_check"
+    assert data["title"] == "Since Last Check"
+    assert data["subtitle"]
     assert data["state"] == "items"
     assert data["availability"] == "available"
     assert data["error_state"] is None
@@ -288,7 +290,7 @@ def test_to_dict_reports_the_unavailable_section_with_no_items() -> None:
 
     data = since_last_check_to_dict(result)
 
-    assert set(data) == {field.name for field in fields(result)} | {"section_id", "state"}
+    assert set(data) == {field.name for field in fields(result)} | {"section_id", "state", "title", "subtitle"}
     assert data["error_state"] == "no_checkpoint"
     assert data["state"] == "unavailable"
     assert data["items"] == []

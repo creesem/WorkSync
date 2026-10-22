@@ -23,6 +23,7 @@ from worksync.context.retrieval import search_evidence as _search_evidence
 from worksync.core.config import ConfigError, load_config
 from worksync.inventory.index import index_path
 from worksync.inventory.parse import iter_markdown, scan_vault
+from worksync.work.command_center import entity_contract_dict as _entity_contract_dict
 from worksync.work.command_center import my_priorities as _my_priorities
 from worksync.work.command_center import needs_attention as _needs_attention
 from worksync.work.command_center import section_result_to_dict as _section_result_to_dict
@@ -41,6 +42,9 @@ from worksync.work.render import (
     workload_to_dict,
 )
 from worksync.work.repository import WorkIndex, entity_to_dict
+from worksync.work.review import (
+    attention_by_path as _attention_by_path,
+)
 from worksync.work.review import (
     attention_items as _attention_items,
 )
@@ -189,12 +193,30 @@ def command_center(
         _section_result_to_dict(_my_priorities(index, owner, today, generated_at=when, overrides=overrides)),
         _since_last_check_to_dict(_since_last_check_from_records(records, checkpoint, generated_at=when)),
     ]
+    profile_payload = profile.to_dict()
+    # Contract boundary: the stored record keeps its R1 shape (``updated_at: ""``), while the
+    # read contract reports an absent timestamp as ``null``, never an empty string.
+    profile_payload["updated_at"] = profile_payload.get("updated_at") or None
     return {
         "generated_at": when,
-        "profile": profile.to_dict(),
+        "profile": profile_payload,
         "sections": apply_profile(sections, profile),
         "overrides": _overrides_payload(index, overrides),
     }
+
+
+def entity_contract(vault: str | Path, entity_id: str, today: date) -> dict | None:
+    """Return the contract's intrinsic detail object for one entity id, or ``None``.
+
+    Resolution is by stable id through the shared index — never by filesystem path — and the
+    object carries only the declared contract fields.
+    """
+    index = _index(vault)
+    entity = next((candidate for candidate in index.entities if entity_id_of(candidate) == entity_id), None)
+    if entity is None:
+        return None
+    kinds = tuple(item.kind for item in _attention_by_path(index, today).get(entity.path, ()))
+    return _entity_contract_dict(entity, index=index, attention_kinds=kinds)
 
 
 def resolve_project(vault: str | Path, hint: dict | None) -> dict:
