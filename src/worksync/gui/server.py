@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import hmac
 import json
-import mimetypes
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import parse_qs, unquote, urlparse
 
 from worksync.context.retrieval import ServiceError
@@ -28,6 +27,20 @@ LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
 ACTION_PREFIX = "/api/action/"
 MAX_LIMIT = 50
 MAX_BODY = 1 << 20
+
+# An external UI directory is served with a strict surface: assets only, and only the one
+# entry point as HTML. This keeps test scripts, mockups, and hidden files unreachable.
+STATIC_ASSET_SUFFIXES = frozenset({".js", ".css", ".woff2", ".woff", ".svg", ".png", ".ico"})
+STATIC_CONTENT_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+}
 
 
 class GuiHttpServer(ThreadingHTTPServer):
@@ -159,7 +172,10 @@ class GuiHandler(BaseHTTPRequestHandler):
         return None
 
     def _handle_static(self, path: str) -> None:
-        relative = "index.html" if path in ("", "/") else unquote(path).lstrip("/")
+        relative = self._static_relative(path)
+        if relative is None:
+            self._send_json(404, {"error": "not_found"})
+            return
         try:
             target = ensure_under(self.server.static_dir, self.server.static_dir / relative)
         except PathSafetyError:
@@ -168,12 +184,37 @@ class GuiHandler(BaseHTTPRequestHandler):
         if not target.is_file():
             self._send_json(404, {"error": "not_found"})
             return
-        content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-        if target.name == "index.html":
-            body = target.read_text(encoding="utf-8").replace(TOKEN_PLACEHOLDER, self.server.token).encode("utf-8")
+        is_index = relative == "index.html"
+        content_type = STATIC_CONTENT_TYPES[".html" if is_index else target.suffix.lower()]
+        if is_index:
+            body = _inject_token(target.read_text(encoding="utf-8"), self.server.token).encode("utf-8")
         else:
             body = target.read_bytes()
         self._send_bytes(200, body, content_type)
+
+    @staticmethod
+    def _static_relative(path: str) -> str | None:
+        """Return a safe UI-relative path, or ``None`` when the request must 404.
+
+        The UI root may be an external directory, so hidden paths, Windows
+        alternate-data-stream and trailing-dot tricks, unsupported extensions, and any HTML
+        other than the single entry point are refused before touching the filesystem.
+        """
+        raw = unquote(path)
+        if "\x00" in raw or "\\" in raw:
+            return None
+        relative = "index.html" if raw in ("", "/") else raw.lstrip("/")
+        parts = PurePosixPath(relative).parts
+        if not parts:
+            return None
+        if any(part.startswith(".") or ":" in part or part.endswith((".", " ")) or part == "~" for part in parts):
+            return None
+        suffix = PurePosixPath(relative).suffix.lower()
+        if suffix == ".html":
+            return relative if relative == "index.html" else None
+        if suffix not in STATIC_ASSET_SUFFIXES:
+            return None
+        return relative
 
     def _send_json(self, status: int, payload: dict) -> None:
         self._send_bytes(status, json.dumps(payload, default=str).encode("utf-8"), "application/json")
@@ -198,13 +239,43 @@ def create_server(
     port: int = 0,
     static_dir: str | Path | None = None,
 ) -> GuiHttpServer:
-    """Bind a loopback server; refuses a non-loopback host or an empty token."""
+    """Bind a loopback server; refuses a non-loopback host or an empty token.
+
+    ``static_dir`` selects the served shell. The default is the engine's own shell; an
+    external directory must exist and contain an ``index.html`` so a typo fails loudly
+    instead of silently serving the wrong UI.
+    """
     if host not in LOOPBACK_HOSTS:
         raise ValueError(f"The GUI binds to loopback only, got: {host}")
     if not token:
         raise ValueError("The GUI requires a non-empty token.")
-    directory = Path(static_dir) if static_dir is not None else DEFAULT_STATIC_DIR
+    directory = Path(static_dir).expanduser().resolve() if static_dir is not None else DEFAULT_STATIC_DIR
+    if not directory.is_dir():
+        raise ValueError(f"The UI directory was not found: {directory}")
+    if not (directory / "index.html").is_file():
+        raise ValueError(f"The UI directory has no index.html: {directory}")
     return GuiHttpServer((host, port), service, token, directory)
+
+
+def _inject_token(html: str, token: str) -> str:
+    """Put the per-run token in the served page without exposing it anywhere else.
+
+    The engine's own shell carries ``__WORKSYNC_TOKEN__``; an external shell need not, so the
+    token script is injected before ``</head>`` (or after the body tag) when no placeholder is
+    present.
+    """
+    script = f"<script>window.__GUI_TOKEN__ = {json.dumps(token)};</script>"
+    if TOKEN_PLACEHOLDER in html:
+        return html.replace(TOKEN_PLACEHOLDER, token)
+    marker = "</head>"
+    if marker in html:
+        return html.replace(marker, script + marker, 1)
+    body = html.find("<body")
+    if body != -1:
+        end = html.find(">", body)
+        if end != -1:
+            return html[: end + 1] + script + html[end + 1 :]
+    return script + html
 
 
 def _required(params: dict[str, str], key: str) -> str:

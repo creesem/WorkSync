@@ -58,12 +58,12 @@ def build_service(
     )
 
 
-def bind(service: GuiService, token: str, *, host: str, port: int) -> GuiHttpServer:
+def bind(service: GuiService, token: str, *, host: str, port: int, static_dir: Path | None = None) -> GuiHttpServer:
     """Bind the requested port, falling back to a free one when it is busy."""
     try:
-        return create_server(service, token, host=host, port=port)
+        return create_server(service, token, host=host, port=port, static_dir=static_dir)
     except OSError:
-        return create_server(service, token, host=host, port=0)
+        return create_server(service, token, host=host, port=0, static_dir=static_dir)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -74,6 +74,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=None, help="Port to bind (default: config, with fallback).")
     parser.add_argument("--token", default=None, help="Override the per-run token (automation only).")
     parser.add_argument("--no-browser", action="store_true", help="Do not open a browser.")
+    parser.add_argument(
+        "--ui-dir",
+        type=Path,
+        default=None,
+        help="Serve an external UI directory instead of the built-in shell.",
+    )
     return parser
 
 
@@ -92,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     except ReviewerError:
         reviewer = None
     port = args.port if args.port is not None else config.ui_port
+    ui_dir = Path(args.ui_dir) if args.ui_dir is not None else config.ui_dir
     token = args.token or secrets.token_urlsafe(24)
     model = LocalModel(ModelConfig.from_raw(config.raw)) if ModelConfig.configured(config.raw) else None
     inbox = str(config.raw.get("inbox_path") or "").strip() or None
@@ -115,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"worksync-gui: {exc}", file=sys.stderr)
         return 2
     try:
-        server = bind(service, token, host=args.host, port=port)
+        server = bind(service, token, host=args.host, port=port, static_dir=ui_dir)
     except (OSError, ValueError) as exc:
         print(f"worksync-gui: {exc}", file=sys.stderr)
         return 2

@@ -69,6 +69,7 @@ class WorksyncConfig:
     raw: dict[str, object] = field(default_factory=dict)
     krisp_since_days: int = DEFAULT_KRISP_SINCE_DAYS
     krisp_inbox_path: Path = DEFAULT_KRISP_INBOX
+    ui_dir: Path | None = None
 
     def krisp_inbox_for(self, runtime: str | Path | None = None) -> Path:
         """Return the Krisp inbox rebased onto *runtime* (defaults to the configured runtime).
@@ -146,6 +147,16 @@ def load_config(config_path: str | Path | None = None, *, root: str | Path | Non
     except PathSafetyError as exc:
         raise ConfigError(f"krisp_inbox_path must resolve inside the runtime root: {inbox}") from exc
 
+    ui_raw = str(data.get("ui_dir") or "").strip()
+    ui_dir = None
+    if ui_raw:
+        ui_dir = Path(ui_raw).expanduser()
+        if not ui_dir.is_absolute():
+            ui_dir = base / ui_dir
+        ui_dir = ui_dir.resolve()
+        if not ui_dir.is_dir():
+            raise ConfigError(f"Configured ui_dir was not found: {ui_dir}")
+
     return WorksyncConfig(
         vault_path=vault,
         vault_name=str(data.get("vault_name") or vault.name),
@@ -156,4 +167,5 @@ def load_config(config_path: str | Path | None = None, *, root: str | Path | Non
         raw=dict(data),
         krisp_since_days=since_days,
         krisp_inbox_path=inbox,
+        ui_dir=ui_dir,
     )
