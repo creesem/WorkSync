@@ -237,23 +237,36 @@ def _save_layout_profile(service: WriteContext, payload: dict, *, confirmed: boo
     """Persist the Command Center layout: section order, visibility, and the "Me" owner.
 
     Only the ``user_state`` profile record is written — never a note. ``reset`` restores
-    the defaults instead. The profile is read back after the commit so the client caches
-    the stored revision and timestamp rather than the pre-save values.
+    the defaults instead. An optional ``expected_revision`` provides optimistic
+    concurrency: a save or reset based on a stale revision fails with 409. The profile is
+    read back after the commit so the client caches the stored revision and timestamp
+    rather than the pre-save values.
     """
     reset = payload.get("reset", False)
     if type(reset) is not bool:
         raise ActionError("bad_request", "reset must be a boolean.", 400)
+    try:
+        current = read_profile(service.runtime_root)
+    except ValueError:
+        # Mirror the route's graceful degradation: a corrupt profile is replaced by the
+        # defaults plus this payload rather than blocking the save (store ruling R5).
+        current = default_profile()
+    expected_revision = payload.get("expected_revision")
+    if expected_revision is not None:
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ActionError("bad_request", "expected_revision must be a non-negative integer.", 400)
+        if current.revision != expected_revision:
+            raise ActionError(
+                "stale_revision",
+                f"The layout changed since it was loaded "
+                f"(expected revision {expected_revision}, found {current.revision}).",
+                409,
+            )
     if reset:
         result = reset_profile(service.vault, service.runtime_root)
     else:
         section_order = _layout_section_order(payload.get("section_order"))
         visibility = _layout_visibility(payload.get("visibility"))
-        try:
-            current = read_profile(service.runtime_root)
-        except ValueError:
-            # Mirror the route's graceful degradation: a corrupt profile is replaced by the
-            # defaults plus this payload rather than blocking the save (store ruling R5).
-            current = default_profile()
         owner_id = _layout_owner_id(payload.get("owner_id", current.owner_id))
         profile = replace(current, section_order=section_order, visibility=visibility, owner_id=owner_id)
         result = save_profile(service.vault, service.runtime_root, profile)

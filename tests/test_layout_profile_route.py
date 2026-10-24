@@ -198,3 +198,65 @@ def test_command_center_route_degrades_on_a_malformed_profile(route: tuple[str, 
     assert payload["profile"]["section_order"] == list(KNOWN_SECTIONS)
     # The degraded read is read-only: the corrupt file is left as-is for the save path to repair.
     assert target.read_text(encoding="utf-8") == "{not valid json"
+
+
+def test_save_layout_profile_rejects_a_stale_revision(route: tuple[str, GuiService]) -> None:
+    base, _gui = route
+    visibility = {section: True for section in KNOWN_SECTIONS}
+    order = list(KNOWN_SECTIONS)
+
+    status, payload = _post(
+        base,
+        "/api/action/save-layout-profile",
+        {"section_order": order, "visibility": visibility, "expected_revision": 1},
+    )
+    assert status == 200
+    assert payload["profile"]["revision"] == 2
+
+    status, payload = _post(
+        base,
+        "/api/action/save-layout-profile",
+        {
+            "section_order": ["my_priorities", "needs_attention", "since_last_check"],
+            "visibility": visibility,
+            "expected_revision": 1,
+        },
+    )
+    assert status == 409
+    assert payload["error"] == "stale_revision"
+
+    _status, _content_type, command_center = _get(base, f"/api/command-center?today={TODAY}")
+    assert command_center["profile"]["revision"] == 2
+    assert command_center["profile"]["section_order"] == order
+
+    status, payload = _post(
+        base,
+        "/api/action/save-layout-profile",
+        {
+            "section_order": ["my_priorities", "needs_attention", "since_last_check"],
+            "visibility": visibility,
+            "expected_revision": 2,
+        },
+    )
+    assert status == 200
+    assert payload["profile"]["revision"] == 3
+
+
+def test_save_layout_profile_reset_rejects_a_stale_revision(route: tuple[str, GuiService]) -> None:
+    base, _gui = route
+
+    status, payload = _post(base, "/api/action/save-layout-profile", {"reset": True, "expected_revision": 99})
+    assert status == 409
+    assert payload["error"] == "stale_revision"
+
+    status, payload = _post(base, "/api/action/save-layout-profile", {"reset": True, "expected_revision": 1})
+    assert status == 200
+    assert payload["profile"]["revision"] == 1
+
+
+def test_save_layout_profile_rejects_a_non_integer_expected_revision(route: tuple[str, GuiService]) -> None:
+    base, _gui = route
+
+    status, payload = _post(base, "/api/action/save-layout-profile", {"reset": True, "expected_revision": "1"})
+    assert status == 400
+    assert payload["error"] == "bad_request"
