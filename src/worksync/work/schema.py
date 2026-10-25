@@ -376,6 +376,7 @@ def entity_from_record(record: IndexRecord) -> EntityBase | None:
         "status": status,
         "aliases": tuple(record.aliases),
         "tags": tuple(record.tags),
+        "supertags": _supertags(frontmatter.get("supertags")),
         "raw": dict(frontmatter),
     }
 
@@ -471,6 +472,20 @@ def _tuple_field(frontmatter: dict[str, Any], *keys: str) -> tuple[str, ...]:
     for key in keys:
         if frontmatter.get(key) is not None:
             return _as_tuple(frontmatter.get(key))
+    return ()
+
+
+def _supertags(value: Any) -> tuple[str, ...]:
+    """Parse ``supertags`` as a deduped tuple of ids; malformed values parse as empty."""
+    if isinstance(value, str):
+        text = value.strip()
+        return (text,) if text else ()
+    if isinstance(value, list | tuple):
+        seen: dict[str, None] = {}
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                seen.setdefault(item.strip(), None)
+        return tuple(seen)
     return ()
 
 

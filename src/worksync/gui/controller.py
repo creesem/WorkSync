@@ -54,7 +54,7 @@ class GuiService:
 
     def entity(self, entity_id: str, today: date) -> dict | None:
         """One entity's intrinsic contract detail, by stable id (``None`` means 404)."""
-        entity = service.entity_contract(self.vault, entity_id, today)
+        entity = service.entity_contract(self.vault, entity_id, today, runtime_root=self.runtime_root)
         if entity is None:
             return None
         return {

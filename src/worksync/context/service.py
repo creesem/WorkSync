@@ -64,6 +64,8 @@ from worksync.work.review import (
 from worksync.work.since_last_check import read_checkpoint as _read_checkpoint
 from worksync.work.since_last_check import since_last_check_from_records as _since_last_check_from_records
 from worksync.work.since_last_check import since_last_check_to_dict as _since_last_check_to_dict
+from worksync.work.supertag_instances import validate_instance
+from worksync.work.supertags import build_registry
 
 ENTITY_TYPES = ("project", "person", "ticket", "meeting", "action")
 
@@ -214,18 +216,36 @@ def command_center(
     }
 
 
-def entity_contract(vault: str | Path, entity_id: str, today: date) -> dict | None:
+def entity_contract(
+    vault: str | Path,
+    entity_id: str,
+    today: date,
+    *,
+    runtime_root: str | Path | None = None,
+) -> dict | None:
     """Return the contract's intrinsic detail object for one entity id, or ``None``.
 
     Resolution is by stable id through the shared index — never by filesystem path — and the
-    object carries only the declared contract fields.
+    object carries only the declared contract fields. Supertag ids/errors are additive; a
+    malformed/absent generation record degrades to no exclusions.
     """
     index = _index(vault)
     entity = next((candidate for candidate in index.entities if entity_id_of(candidate) == entity_id), None)
     if entity is None:
         return None
     kinds = tuple(item.kind for item in _attention_by_path(index, today).get(entity.path, ()))
-    return _entity_contract_dict(entity, index=index, attention_kinds=kinds)
+    contract = _entity_contract_dict(entity, index=index, attention_kinds=kinds)
+    root = Path(vault).expanduser().resolve()
+    try:
+        generation = read_generation(runtime_root) if runtime_root is not None else WorkGeneration()
+    except ValueError:
+        generation = WorkGeneration()
+    registry = build_registry(_cached_scan(vault), root, generation)
+    validation = validate_instance(registry, entity, index)
+    contract["supertags"] = list(validation.tag_ids)
+    contract["supertag_errors"] = list(validation.all_errors)
+    contract["supertag_warnings"] = list(validation.all_warnings)
+    return contract
 
 
 def resolve_project(vault: str | Path, hint: dict | None) -> dict:

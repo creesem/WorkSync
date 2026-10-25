@@ -122,6 +122,7 @@ class EntityBase:
     status: str
     aliases: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    supertags: tuple[str, ...] = ()
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property

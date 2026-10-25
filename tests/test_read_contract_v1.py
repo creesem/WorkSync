@@ -39,6 +39,9 @@ ENTITY_FIELDS = {
     "timestamps",
     "tags",
     "aliases",
+    "supertags",
+    "supertag_errors",
+    "supertag_warnings",
 }
 
 

@@ -225,7 +225,10 @@
         "attention",
         "timestamps",
         "tags",
-        "aliases"
+        "aliases",
+        "supertags",
+        "supertag_errors",
+        "supertag_warnings"
       ],
       "properties": {
         "entity_id": { "type": "string", "minLength": 1 },
@@ -243,7 +246,10 @@
           "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 }
         },
         "tags": { "type": "array", "items": { "type": "string" } },
-        "aliases": { "type": "array", "items": { "type": "string" } }
+        "aliases": { "type": "array", "items": { "type": "string" } },
+        "supertags": { "type": "array", "items": { "type": "string" } },
+        "supertag_errors": { "type": "array", "items": { "type": "string" } },
+        "supertag_warnings": { "type": "array", "items": { "type": "string" } }
       }
     },
     "entityResponse": {
