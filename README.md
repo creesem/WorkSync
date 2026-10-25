@@ -16,10 +16,11 @@ this project.
 **V1 read platform implemented.** The merged `worksync` package ships one typed vault
 scanner and FTS index, the five work entities with validation and relationships, the
 single retrieval seam, reproducible generated views, the gated mutation gateway with
-its journal and activity log, a read-only tokenized GUI workspace, and a read-only
-stdio MCP adapter. The vault is read as-is and never moved. All V2 write surfaces,
-ingestion, and local-model enrichment remain out of scope; the cutover and rollback
-plan is [`docs/migration-parity-plan.md`](docs/migration-parity-plan.md).
+its journal and activity log, a tokenized GUI workspace, and a read-only stdio MCP
+adapter. The vault is read as-is and never moved. Reviewed V2 writes, ingest, the
+work-generation cutover, and supertags are implemented; local-model enrichment remains
+out of scope. The cutover and rollback plan is
+[`docs/migration-parity-plan.md`](docs/migration-parity-plan.md).
 
 **V2 began with the malformed-frontmatter migration.** `worksync migrate frontmatter`
 detects every note whose leading YAML block is invalid and repairs the known mechanical
@@ -29,6 +30,13 @@ repaired, backed up, and journalled, and the real-vault parity carve-out is clos
 See [ADR-0014](docs/adr/0014-repair-malformed-frontmatter.md). The canonical schema
 normalization (the retired `task` entity and related field changes) remains the next
 V2 migration.
+
+**Supertags v1 (spec 13).** Vault notes with `type: supertag` define typed fields,
+defaults, one-parent inheritance, and index-resolved references. The engine exposes the
+read-only `GET /api/supertags` catalog and `GET /api/supertag` collections, and applies or
+removes tags through the canonical gateway (`worksync tag apply|remove` or the Tags
+workspace). Definitions live in `6. Templates/Supertags` and are edited in Obsidian;
+fields are read-only in the app, and removing a tag never deletes its field values.
 
 ## Provenance
 
