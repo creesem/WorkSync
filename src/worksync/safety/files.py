@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 CONFLICT_COPY = re.compile(r"\s*\((?:[^()]+'s\s+)?conflicted copy(?:\s+[^()]*)?\)$", re.IGNORECASE)
@@ -60,6 +61,24 @@ def conflicts_for(path: str | Path) -> list[Path]:
     )
 
 
+# A Windows reader can briefly hold the destination open, making ``os.replace`` fail with a
+# sharing violation. Polling clients (the GUI, tests) make that window real, so retry a bounded
+# number of times before surfacing the failure.
+REPLACE_RETRIES = 8
+_REPLACE_BACKOFF_SECONDS = 0.01
+
+
+def _replace_with_retry(source: str | Path, target: str | Path) -> None:
+    for attempt in range(REPLACE_RETRIES):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == REPLACE_RETRIES - 1:
+                raise
+            time.sleep(_REPLACE_BACKOFF_SECONDS * (attempt + 1))
+
+
 def atomic_write_bytes(
     path: str | Path,
     content: bytes,
@@ -84,7 +103,7 @@ def atomic_write_bytes(
             raise RuntimeError(f"File changed during processing: {path}")
         if path.exists():
             shutil.copystat(path, temp_name)
-        os.replace(temp_name, path)
+        _replace_with_retry(temp_name, path)
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
