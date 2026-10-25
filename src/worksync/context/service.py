@@ -28,6 +28,7 @@ from worksync.work.command_center import my_priorities as _my_priorities
 from worksync.work.command_center import needs_attention as _needs_attention
 from worksync.work.command_center import section_result_to_dict as _section_result_to_dict
 from worksync.work.control_center import build_control_center
+from worksync.work.jobs import list_jobs as _list_jobs
 from worksync.work.layout_profile import apply_profile, default_profile, read_profile
 from worksync.work.lifecycle.loader import load_project_records
 from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
@@ -236,6 +237,11 @@ def health(vault: str | Path) -> dict:
 def processing(runtime_root: str | Path) -> dict:
     """Read-only operational status: review queues, Krisp sync, and recent activity."""
     return _processing_status(runtime_root)
+
+
+def jobs(runtime_root: str | Path) -> list[dict]:
+    """Return the newest durable job records (read-only)."""
+    return _list_jobs(runtime_root, limit=20)
 
 
 def get_entity(vault: str | Path, entity_type: str, name: str) -> dict | None:

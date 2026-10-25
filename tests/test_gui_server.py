@@ -17,6 +17,7 @@ import worksync
 import worksync.work.capture as capture_module
 from worksync.context import service
 from worksync.context.association import index_associations
+from worksync.gui import actions as actions_module
 from worksync.gui.controller import GuiService
 from worksync.gui.server import TOKEN_HEADER, create_server
 from worksync.inventory.index import index_vault
@@ -1024,3 +1025,37 @@ def test_gui_write_seam_reaches_the_gateway() -> None:
     assert not any(name.startswith("worksync.context") for name in closure)
     assert not any(name.startswith("worksync.inventory.index") for name in closure)
     assert "sqlite3" not in targets
+
+
+def test_an_unexpected_action_error_returns_json(
+    gui_server: tuple[str, GuiService], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base, _gui = gui_server
+
+    def explode(*args: object, **kwargs: object) -> dict:
+        raise RuntimeError("boom")
+
+    monkeypatch.setitem(actions_module.ACTIONS, "save-override", explode)
+
+    status, content_type, body = _post(base, "/api/action/save-override", {"target_id": "x", "kind": "pin"}, TOKEN)
+
+    assert status == 500
+    assert content_type == "application/json"
+    assert _json(body)["error"] == "internal_error"
+
+
+def test_an_unexpected_read_error_returns_json(
+    gui_server: tuple[str, GuiService], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base, _gui = gui_server
+
+    def explode(*args: object, **kwargs: object) -> dict:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(service, "command_center", explode)
+
+    status, content_type, body = _get(base, "/api/command-center", TOKEN)
+
+    assert status == 500
+    assert content_type == "application/json"
+    assert _json(body)["error"] == "read_failed"

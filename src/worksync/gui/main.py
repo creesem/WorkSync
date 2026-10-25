@@ -12,6 +12,7 @@ from worksync.core.config import DEFAULT_KRISP_SINCE_DAYS, ConfigError, load_con
 from worksync.core.model import LocalModel, ModelConfig
 from worksync.core.secrets import resolve_krisp_api_key
 from worksync.gui.controller import GuiService
+from worksync.gui.jobs import JobRunner
 from worksync.gui.server import GuiHttpServer, create_server
 from worksync.inventory.index import index_path
 from worksync.safety import MutationError, recover
@@ -58,12 +59,20 @@ def build_service(
     )
 
 
-def bind(service: GuiService, token: str, *, host: str, port: int, static_dir: Path | None = None) -> GuiHttpServer:
+def bind(
+    service: GuiService,
+    token: str,
+    *,
+    host: str,
+    port: int,
+    static_dir: Path | None = None,
+    jobs: JobRunner | None = None,
+) -> GuiHttpServer:
     """Bind the requested port, falling back to a free one when it is busy."""
     try:
-        return create_server(service, token, host=host, port=port, static_dir=static_dir)
+        return create_server(service, token, host=host, port=port, static_dir=static_dir, jobs=jobs)
     except OSError:
-        return create_server(service, token, host=host, port=0, static_dir=static_dir)
+        return create_server(service, token, host=host, port=0, static_dir=static_dir, jobs=jobs)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -121,9 +130,12 @@ def main(argv: list[str] | None = None) -> int:
     except MutationError as exc:
         print(f"worksync-gui: {exc}", file=sys.stderr)
         return 2
+    runner = JobRunner(service)
     try:
-        server = bind(service, token, host=args.host, port=port, static_dir=ui_dir)
+        runner.start()
+        server = bind(service, token, host=args.host, port=port, static_dir=ui_dir, jobs=runner)
     except (OSError, ValueError) as exc:
+        runner.stop()
         print(f"worksync-gui: {exc}", file=sys.stderr)
         return 2
     url = f"http://{args.host}:{server.server_address[1]}/"
@@ -135,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         pass
     finally:
+        runner.stop()
         server.server_close()
     return 0
 

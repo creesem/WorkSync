@@ -18,6 +18,7 @@ from worksync.context.retrieval import ServiceError
 from worksync.core.paths import PathSafetyError, ensure_under
 from worksync.gui.actions import ActionError, dispatch_action
 from worksync.gui.controller import GuiService
+from worksync.gui.jobs import JobError, JobRunner
 from worksync.work.schema import is_entity_id
 
 TOKEN_HEADER = "X-Gui-Token"
@@ -48,10 +49,18 @@ class GuiHttpServer(ThreadingHTTPServer):
 
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], service: GuiService, token: str, static_dir: Path) -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        service: GuiService,
+        token: str,
+        static_dir: Path,
+        jobs: JobRunner | None = None,
+    ) -> None:
         self.service = service
         self.token = token
         self.static_dir = Path(static_dir)
+        self.jobs = jobs
         super().__init__(address, GuiHandler)
 
 
@@ -75,6 +84,9 @@ class GuiHandler(BaseHTTPRequestHandler):
             self.close_connection = True
             self._send_json(400, {"error": "bad_request", "message": str(exc)})
             return
+        if parsed.path == "/api/jobs":
+            self._handle_job_submit(body)
+            return
         if not parsed.path.startswith(ACTION_PREFIX):
             self._send_json(404, {"error": "not_found", "message": f"No endpoint: {parsed.path}"})
             return
@@ -95,6 +107,9 @@ class GuiHandler(BaseHTTPRequestHandler):
         except ActionError as exc:
             self._send_json(exc.status, {"error": exc.code, "message": str(exc), "affected": list(exc.affected)})
             return
+        except Exception:  # noqa: BLE001 - never drop the connection on an unexpected failure
+            self._send_json(500, {"error": "internal_error", "message": "The action failed unexpectedly."})
+            return
         self._send_json(200, result)
 
     def _read_body(self) -> bytes:
@@ -105,6 +120,34 @@ class GuiHandler(BaseHTTPRequestHandler):
         if length > MAX_BODY:
             raise ValueError("Request body is too large.")
         return self.rfile.read(length) if length else b""
+
+    def _handle_job_submit(self, body: bytes) -> None:
+        """Enqueue a background scan/pull job; returns 202 with the persisted job."""
+        if not self._authorized():
+            self._send_json(401, {"error": "unauthorized", "message": "A valid X-Gui-Token header is required."})
+            return
+        try:
+            payload = self._parse_json(body)
+        except ValueError as exc:
+            self._send_json(400, {"error": "bad_request", "message": str(exc)})
+            return
+        key = payload.get("idempotency_key")
+        if key is not None and not isinstance(key, str):
+            self._send_json(400, {"error": "bad_request", "message": "idempotency_key must be a string."})
+            return
+        runner = self.server.jobs
+        if runner is None:
+            self._send_json(
+                503,
+                {"error": "jobs_unavailable", "message": "Background jobs are not enabled in this process."},
+            )
+            return
+        try:
+            job = runner.submit(str(payload.get("kind") or ""), idempotency_key=key or None)
+        except JobError as exc:
+            self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
+            return
+        self._send_json(202, {"state": "queued", "job": job})
 
     @staticmethod
     def _parse_json(body: bytes) -> dict:
@@ -137,6 +180,9 @@ class GuiHandler(BaseHTTPRequestHandler):
             return
         except (FileNotFoundError, OSError, ServiceError) as exc:
             self._send_json(500, {"error": "read_failed", "message": str(exc)})
+            return
+        except Exception:  # noqa: BLE001 - never drop the connection on an unexpected failure
+            self._send_json(500, {"error": "read_failed", "message": "The read failed unexpectedly."})
             return
         if payload is None:
             self._send_json(404, {"error": "not_found", "message": f"No endpoint: {parsed.path}"})
@@ -230,7 +276,11 @@ class GuiHandler(BaseHTTPRequestHandler):
         # cache them, or a stale app.js/styles.css keeps an old layout on screen.
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            # The client went away mid-response; there is nowhere to report it.
+            return
 
 
 def create_server(
@@ -240,12 +290,13 @@ def create_server(
     host: str = "127.0.0.1",
     port: int = 0,
     static_dir: str | Path | None = None,
+    jobs: JobRunner | None = None,
 ) -> GuiHttpServer:
     """Bind a loopback server; refuses a non-loopback host or an empty token.
 
     ``static_dir`` selects the served shell. The default is the engine's own shell; an
     external directory must exist and contain an ``index.html`` so a typo fails loudly
-    instead of silently serving the wrong UI.
+    instead of silently serving the wrong UI. ``jobs`` is the optional background runner.
     """
     if host not in LOOPBACK_HOSTS:
         raise ValueError(f"The GUI binds to loopback only, got: {host}")
@@ -256,7 +307,7 @@ def create_server(
         raise ValueError(f"The UI directory was not found: {directory}")
     if not (directory / "index.html").is_file():
         raise ValueError(f"The UI directory has no index.html: {directory}")
-    return GuiHttpServer((host, port), service, token, directory)
+    return GuiHttpServer((host, port), service, token, directory, jobs)
 
 
 def _inject_token(html: str, token: str) -> str:

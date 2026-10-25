@@ -125,11 +125,12 @@ class GuiService:
         return {"equivalent_cli": "worksync health", **service.health(self.vault)}
 
     def processing(self) -> dict:
-        """Read-only operational status: review queues, Krisp sync, and recent activity."""
+        """Read-only operational status: review queues, Krisp sync, recent activity, jobs."""
         return {
             "contract_version": CONTRACT_VERSION,
             "equivalent_cli": "worksync activity",
             **service.processing(self.runtime_root),
+            "jobs": service.jobs(self.runtime_root),
         }
 
     def search(self, query: str, *, project_id: str | None = None, limit: int = 20) -> dict:
