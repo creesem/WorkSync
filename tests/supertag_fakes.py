@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from prioritization_fakes import action_note
+
 FOLDER = "6. Templates/Supertags"
 
 
@@ -67,3 +69,26 @@ def write_definition(
     lines.append("---")
     lines.append(f"# {name}")
     write_note(vault, f"{FOLDER}/{filename}.md", "\n".join(lines) + "\n")
+
+
+def write_action(
+    write_note,
+    vault: Path,
+    name: str,
+    *,
+    action_id: str = "a-1",
+    status: str = "open",
+    supertags: tuple[str, ...] = (),
+    **fields: object,
+) -> None:
+    """Write one action note with optional supertags and quoted wikilink references."""
+    lines = ["type: action", f"status: {status}", f"action_id: {action_id}"]
+    if supertags:
+        lines.append("supertags:")
+        lines.extend(f"  - {tag}" for tag in supertags)
+    for key, value in fields.items():
+        text = str(value)
+        if text.startswith("[[") and text.endswith("]]"):
+            text = json.dumps(text)
+        lines.append(f"{key}: {text}")
+    write_note(vault, f"Actions/{name}.md", action_note("\n".join(lines) + "\n", f"# {name}"))

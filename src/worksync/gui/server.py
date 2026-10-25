@@ -20,6 +20,7 @@ from worksync.gui.actions import ActionError, dispatch_action
 from worksync.gui.controller import GuiService
 from worksync.gui.jobs import JobError, JobRunner
 from worksync.work.schema import is_entity_id
+from worksync.work.supertags import SupertagError
 
 TOKEN_HEADER = "X-Gui-Token"
 TOKEN_PLACEHOLDER = "__WORKSYNC_TOKEN__"
@@ -175,6 +176,9 @@ class GuiHandler(BaseHTTPRequestHandler):
         params = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
         try:
             payload = self._dispatch(parsed.path, params)
+        except SupertagError as exc:
+            self._send_json(exc.status, {"error": exc.code, "message": str(exc)})
+            return
         except ValueError as exc:
             self._send_json(400, {"error": "bad_request", "message": str(exc)})
             return
@@ -213,6 +217,17 @@ class GuiHandler(BaseHTTPRequestHandler):
             return service.settings()
         if path == "/api/processing":
             return service.processing()
+        if path == "/api/supertags":
+            return service.supertags()
+        if path == "/api/supertag":
+            return service.supertag(
+                params.get("id", ""),
+                sort=params.get("sort", "title"),
+                order=params.get("order", "asc"),
+                filter_value=params.get("filter"),
+                limit=_query_int(params, "limit", 50, 1, 200),
+                offset=_query_int(params, "offset", 0, 0),
+            )
         if path == "/api/entity":
             return service.entity(_entity_id(params), _today(params))
         if path == "/api/health":
@@ -365,3 +380,24 @@ def _limit(params: dict[str, str]) -> int:
     except ValueError as exc:
         raise ValueError(f"Invalid limit: {value}") from exc
     return max(1, min(parsed, MAX_LIMIT))
+
+
+def _query_int(
+    params: dict[str, str],
+    name: str,
+    default: int,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    """Parse a bounded integer query parameter, raising a user-facing read error."""
+    value = params.get(name, "").strip()
+    if not value:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise SupertagError("bad_request", f"{name} must be an integer.", 400) from exc
+    if parsed < minimum or (maximum is not None and parsed > maximum):
+        bound = f"between {minimum} and {maximum}" if maximum is not None else f"at least {minimum}"
+        raise SupertagError("bad_request", f"{name} must be {bound}.", 400)
+    return parsed

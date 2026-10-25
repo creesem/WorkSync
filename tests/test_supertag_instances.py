@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 
-from prioritization_fakes import action_note
 from supertag_fakes import field_yaml as _field
+from supertag_fakes import write_action as _action
 from supertag_fakes import write_definition as _definition
 from worksync.context import service
 from worksync.inventory.parse import scan_vault
@@ -24,27 +23,6 @@ PROJECT = "---\ntype: project\nstatus: active\nproject_id: portal\n---\n# Portal
 def _context(vault: Path):
     records = scan_vault(vault)
     return build_registry(records, vault, WorkGeneration()), WorkIndex.from_records(records, root=vault)
-
-
-def _action(
-    write_note,
-    vault: Path,
-    name: str,
-    *,
-    action_id: str = "a-1",
-    supertags: tuple[str, ...] = (),
-    **fields: object,
-) -> None:
-    lines = ["type: action", "status: open", f"action_id: {action_id}"]
-    if supertags:
-        lines.append("supertags:")
-        lines.extend(f"  - {tag}" for tag in supertags)
-    for key, value in fields.items():
-        text = str(value)
-        if text.startswith("[[") and text.endswith("]]"):
-            text = json.dumps(text)
-        lines.append(f"{key}: {text}")
-    write_note(vault, f"Actions/{name}.md", action_note("\n".join(lines) + "\n", f"# {name}"))
 
 
 def _design_definition(write_note, vault: Path, *, fields: str) -> None:
@@ -184,7 +162,7 @@ def test_malformed_supertags_are_reported(vault: Path, write_note) -> None:
     write_note(
         vault,
         "Actions/Bad.md",
-        action_note("type: action\nstatus: open\naction_id: a-bad\nsupertags:\n  nested: value\n", "# Bad"),
+        "---\ntype: action\nstatus: open\naction_id: a-bad\nsupertags:\n  nested: value\n---\n# Bad\n",
     )
     registry, index = _context(vault)
     entity = index.list_type("action")[0]

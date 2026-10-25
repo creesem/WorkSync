@@ -133,6 +133,32 @@ class GuiService:
             "jobs": service.jobs(self.runtime_root),
         }
 
+    def supertags(self) -> dict:
+        """Read-only supertag catalog: definitions, counts, and errors."""
+        return service.supertags(self.vault, self.runtime_root)
+
+    def supertag(
+        self,
+        supertag_id: str,
+        *,
+        sort: str = "title",
+        order: str = "asc",
+        filter_value: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict:
+        """Read-only supertag collection with typed filter, sort, and pagination."""
+        return service.supertag_page(
+            self.vault,
+            self.runtime_root,
+            supertag_id,
+            sort=sort,
+            order=order,
+            filter_value=filter_value,
+            limit=limit,
+            offset=offset,
+        )
+
     def search(self, query: str, *, project_id: str | None = None, limit: int = 20) -> dict:
         """Project-scoped evidence search with provenance."""
         options = {"project": project_id} if project_id else {}

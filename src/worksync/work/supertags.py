@@ -12,7 +12,7 @@ import hashlib
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -120,6 +120,24 @@ class SupertagRegistry:
         return tuple(
             tag for tag in self.supertags if not tag.builtin and not tag.errors and tag.entity_type == entity_type
         )
+
+
+@dataclass(frozen=True)
+class SupertagView:
+    """The registry plus the full/live indices used to resolve instances and references."""
+
+    registry: SupertagRegistry
+    full: WorkIndex
+    live: WorkIndex
+
+
+class SupertagError(ValueError):
+    """A user-facing supertag read error with an HTTP status."""
+
+    def __init__(self, code: str, message: str, status: int = 400) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -253,12 +271,12 @@ def builtin_supertags() -> tuple[Supertag, ...]:
     )
 
 
-def build_registry(
+def build_view(
     records: Iterable[IndexRecord],
     root: str | Path,
     generation: WorkGeneration,
-) -> SupertagRegistry:
-    """Build the registry from an inventory scan, live-view counts, and generation state."""
+) -> SupertagView:
+    """Build the registry and both indices from one inventory scan."""
     ordered = tuple(records)
     full = WorkIndex.from_records(ordered, root=root)
     live = live_index_from(full, generation, root)
@@ -267,7 +285,16 @@ def build_registry(
     tags = _resolve_definitions(builtins, raws)
     tags = _apply_field_conflicts(tags)
     tags = _with_counts(tags, full, live)
-    return SupertagRegistry(tuple(tags))
+    return SupertagView(registry=SupertagRegistry(tuple(tags)), full=full, live=live)
+
+
+def build_registry(
+    records: Iterable[IndexRecord],
+    root: str | Path,
+    generation: WorkGeneration,
+) -> SupertagRegistry:
+    """Build the registry from an inventory scan and generation state."""
+    return build_view(records, root, generation).registry
 
 
 def supertag_registry(vault: str | Path, runtime: str | Path) -> SupertagRegistry:
@@ -420,6 +447,8 @@ def _parse_field(
 
     default_set = "default" in item
     default = item.get("default")
+    if type_ == "date" and isinstance(default, date):
+        default = default.date().isoformat() if isinstance(default, datetime) else default.isoformat()
     if default_set:
         problem = _default_problem(default, type_, options)
         if problem is not None:

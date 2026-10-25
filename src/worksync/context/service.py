@@ -64,8 +64,15 @@ from worksync.work.review import (
 from worksync.work.since_last_check import read_checkpoint as _read_checkpoint
 from worksync.work.since_last_check import since_last_check_from_records as _since_last_check_from_records
 from worksync.work.since_last_check import since_last_check_to_dict as _since_last_check_to_dict
-from worksync.work.supertag_instances import validate_instance
-from worksync.work.supertags import build_registry
+from worksync.work.supertag_instances import tag_instance, validate_instance
+from worksync.work.supertags import (
+    BASE_ENTITY_TYPES,
+    Supertag,
+    SupertagError,
+    SupertagField,
+    build_registry,
+    build_view,
+)
 
 ENTITY_TYPES = ("project", "person", "ticket", "meeting", "action")
 
@@ -246,6 +253,224 @@ def entity_contract(
     contract["supertag_errors"] = list(validation.all_errors)
     contract["supertag_warnings"] = list(validation.all_warnings)
     return contract
+
+
+def supertags(vault: str | Path, runtime_root: str | Path, *, generated_at: str | None = None) -> dict:
+    """Return the supertag catalog: built-ins, custom definitions, counts, and errors."""
+    view = _supertag_view(vault, runtime_root)
+    when = generated_at or datetime.now(UTC).isoformat()
+    return {
+        "contract_version": 1,
+        "generated_at": when,
+        "supertags": [_supertag_dict(tag) for tag in view.registry.supertags],
+    }
+
+
+def supertag_page(
+    vault: str | Path,
+    runtime_root: str | Path,
+    supertag_id: str,
+    *,
+    sort: str = "title",
+    order: str = "asc",
+    filter_value: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    generated_at: str | None = None,
+) -> dict:
+    """Return one definition and a filtered/sorted/paginated page of live instances."""
+    if not isinstance(supertag_id, str) or not supertag_id.strip():
+        raise SupertagError("bad_request", "A supertag id is required.", 400)
+    if order not in {"asc", "desc"}:
+        raise SupertagError("bad_request", "order must be asc or desc.", 400)
+    if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
+        raise SupertagError("bad_request", "limit must be between 1 and 200.", 400)
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        raise SupertagError("bad_request", "offset must be zero or greater.", 400)
+
+    view = _supertag_view(vault, runtime_root)
+    tag = view.registry.get(supertag_id)
+    if tag is None:
+        raise SupertagError("unknown_supertag", f"No supertag with id: {supertag_id}", 404)
+    sort_field: SupertagField | None = None
+    if sort != "title":
+        sort_field = tag.field(sort)
+        if sort_field is None:
+            raise SupertagError("bad_request", f"Unknown sort field: {sort}", 400)
+
+    filter_field: SupertagField | None = None
+    filter_needle: str | None = None
+    if filter_value is not None:
+        if not isinstance(filter_value, str) or ":" not in filter_value:
+            raise SupertagError("bad_request", "filter must be field:value.", 400)
+        key, needle = filter_value.split(":", 1)
+        filter_field = tag.field(key.strip())
+        filter_needle = needle.strip()
+        if filter_field is None or not filter_needle:
+            raise SupertagError("bad_request", "filter must name a field and a value.", 400)
+        _validate_filter(filter_field, filter_needle)
+
+    when = generated_at or datetime.now(UTC).isoformat()
+    total = 0
+    page: list[dict] = []
+    truncated = False
+    if not tag.errors:
+        entities = view.live.list_type(tag.entity_type)
+        if not tag.builtin:
+            entities = tuple(entity for entity in entities if tag.id in entity.supertags)
+        rows = [_supertag_row(tag, entity, view) for entity in entities]
+        if filter_field is not None and filter_needle is not None:
+            rows = [row for row in rows if _row_matches(filter_field, row, filter_needle, view.full)]
+        rows = _sort_rows(rows, sort_field, order)
+        total = len(rows)
+        page = rows[offset : offset + limit]
+        truncated = offset + limit < total
+    return {
+        "contract_version": 1,
+        "generated_at": when,
+        "supertag": _supertag_dict(tag),
+        "instances": page,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "truncated": truncated,
+        "legacy_count": tag.legacy_count,
+    }
+
+
+def _supertag_view(vault: str | Path, runtime_root: str | Path):
+    root = Path(vault).expanduser().resolve()
+    try:
+        generation = read_generation(runtime_root)
+    except ValueError:
+        generation = WorkGeneration()
+    return build_view(_cached_scan(vault), root, generation)
+
+
+def _supertag_dict(tag: Supertag) -> dict:
+    return {
+        "id": tag.id,
+        "name": tag.name,
+        "base": tag.base,
+        "entity_type": tag.entity_type,
+        "color": tag.color,
+        "builtin": tag.builtin,
+        "extends": tag.extends,
+        "fields": [_field_dict(field) for field in tag.fields],
+        "instance_count": tag.instance_count,
+        "legacy_count": tag.legacy_count,
+        "errors": list(tag.errors),
+    }
+
+
+def _field_dict(field: SupertagField) -> dict:
+    return {
+        "name": field.name,
+        "key": field.key,
+        "type": field.type,
+        "required": field.required,
+        "optional": field.optional,
+        "default": field.default,
+        "options": list(field.options),
+        "target": field.target,
+        "inherited": field.inherited,
+        "source": field.source,
+    }
+
+
+def _supertag_row(tag: Supertag, entity, view) -> dict:
+    instance = tag_instance(tag, entity, view.full)
+    errors = list(instance.all_errors)
+    warnings = list(instance.all_warnings)
+    for issue in view.live.issues_for(entity.path):
+        (errors if issue.severity == "error" else warnings).append(issue.message)
+    return {
+        "path": entity.path,
+        "title": entity.title,
+        "entity_id": entity_id_of(entity),
+        "status": entity.status,
+        "fields": {field.field.key: field.value for field in instance.fields},
+        "effective": {field.field.key: field.effective for field in instance.fields},
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def _sort_rows(rows: list[dict], field: SupertagField | None, order: str) -> list[dict]:
+    if field is None:
+        rows.sort(key=lambda row: (row["title"].casefold(), row["path"]), reverse=order == "desc")
+        return rows
+    present = [row for row in rows if _sort_value(field, row) is not None]
+    missing = [row for row in rows if _sort_value(field, row) is None]
+    present.sort(key=lambda row: (row["title"].casefold(), row["path"]))
+    present.sort(key=lambda row: _sort_value(field, row), reverse=order == "desc")
+    missing.sort(key=lambda row: (row["title"].casefold(), row["path"]))
+    return [*present, *missing]
+
+
+def _sort_value(field: SupertagField, row: dict):
+    value = row["effective"].get(field.key)
+    if value is None:
+        return None
+    if field.type == "number":
+        return float(value) if _is_number(value) else None
+    if field.type == "date":
+        return str(value) if isinstance(value, str) else None
+    if field.type == "checkbox":
+        return value if isinstance(value, bool) else None
+    if field.type in {"multi_reference", "multi_text"}:
+        return ", ".join(str(item) for item in value).casefold() if isinstance(value, list) else None
+    return str(value).casefold()
+
+
+def _validate_filter(field: SupertagField, needle: str) -> None:
+    if field.type == "checkbox":
+        if needle.casefold() not in {"true", "false", "1", "0", "yes", "no"}:
+            raise SupertagError("bad_request", f"{field.key} filter must be true or false.", 400)
+    elif field.type == "number":
+        try:
+            float(needle)
+        except ValueError as exc:
+            raise SupertagError("bad_request", f"{field.key} filter must be a number.", 400) from exc
+    elif field.type == "date":
+        try:
+            date.fromisoformat(needle)
+        except ValueError as exc:
+            raise SupertagError("bad_request", f"{field.key} filter must be an ISO date.", 400) from exc
+
+
+def _row_matches(field: SupertagField, row: dict, needle: str, index: WorkIndex) -> bool:
+    value = row["effective"].get(field.key)
+    if value is None:
+        return False
+    if field.type == "checkbox":
+        expected = needle.casefold() in {"true", "1", "yes"}
+        return isinstance(value, bool) and value == expected
+    if field.type == "number":
+        return _is_number(value) and float(value) == float(needle)
+    if field.type == "date":
+        return str(value) == needle
+    if field.type == "reference":
+        return _reference_matches(field, value, needle, index)
+    if field.type == "multi_reference":
+        return isinstance(value, list) and any(_reference_matches(field, item, needle, index) for item in value)
+    if field.type == "multi_text":
+        return isinstance(value, list) and any(str(item).casefold() == needle.casefold() for item in value)
+    return str(value).casefold() == needle.casefold()
+
+
+def _reference_matches(field: SupertagField, value: object, needle: str, index: WorkIndex) -> bool:
+    target = BASE_ENTITY_TYPES.get(field.target or "")
+    if target is None or not isinstance(value, str):
+        return False
+    if value.casefold() == needle.casefold():
+        return True
+    entity = index.get(target, value)
+    return entity is not None and entity.title.casefold() == needle.casefold()
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def resolve_project(vault: str | Path, hint: dict | None) -> dict:

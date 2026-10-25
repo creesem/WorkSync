@@ -7,7 +7,7 @@ The registry supplies definitions; the live/full index supplies references. Noth
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from worksync.work.models import EntityBase, entity_id_of
@@ -152,6 +152,8 @@ def tag_instance(tag: Supertag, entity: EntityBase, index: WorkIndex) -> TagInst
 
 def _field_value(field: SupertagField, entity: EntityBase, index: WorkIndex) -> FieldValue:
     value = entity.raw.get(field.key)
+    if field.type == "date" and isinstance(value, date):
+        value = value.date().isoformat() if isinstance(value, datetime) else value.isoformat()
     present = value is not None
     effective = value if present else field.default
     errors: list[str] = []
