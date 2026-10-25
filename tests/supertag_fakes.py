@@ -10,6 +10,9 @@ import json
 from pathlib import Path
 
 from prioritization_fakes import action_note
+from worksync.inventory.parse import scan_vault
+from worksync.work.models import entity_id_of
+from worksync.work.repository import WorkIndex
 
 FOLDER = "6. Templates/Supertags"
 
@@ -69,6 +72,33 @@ def write_definition(
     lines.append("---")
     lines.append(f"# {name}")
     write_note(vault, f"{FOLDER}/{filename}.md", "\n".join(lines) + "\n")
+
+
+DESIGN_PERSON = "---\ntype: person\nstatus: active\nperson_id: myles\n---\n# Myles\n"
+DESIGN_FIELDS = (
+    field_yaml("Design phase", "design_phase", "select", options=("discovery", "design", "build"), default="discovery")
+    + field_yaml("Labels", "labels", "multi_text", default=["alpha", "beta"])
+    + field_yaml("Reviewer", "reviewer", "reference", target="person", default="[[Myles]]")
+    + field_yaml("Review date", "review_date", "date", default="2026-11-01")
+)
+
+
+def seed_design_vault(
+    write_note,
+    vault: Path,
+    *,
+    fields: str = DESIGN_FIELDS,
+    action_name: str = "A1",
+    action_id: str = "a-1",
+) -> str:
+    """Seed one person, a ``design-task`` definition, and a bare action; return its entity id."""
+    write_note(vault, "People/Myles.md", DESIGN_PERSON)
+    write_definition(write_note, vault, "Design Task", fields=fields)
+    write_action(write_note, vault, action_name, action_id=action_id)
+    records = scan_vault(vault)
+    index = WorkIndex.from_records(records, root=vault)
+    entity = next(candidate for candidate in index.list_type("action") if candidate.title == action_name)
+    return entity_id_of(entity)
 
 
 def write_action(

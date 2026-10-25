@@ -5,12 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
+
 from worksync.inventory.parse import (
     edit_frontmatter_fields,
     parse_note,
     read_frontmatter,
     scan_vault,
     set_frontmatter_fields,
+    set_frontmatter_values,
     split_frontmatter,
 )
 
@@ -102,6 +105,73 @@ def test_edit_frontmatter_preserves_crlf_and_body() -> None:
 
 def test_set_frontmatter_fields_synthesizes_a_block_when_absent() -> None:
     assert set_frontmatter_fields("# Body\n", {"status": "active"}) == "---\nstatus: active\n---\n# Body\n"
+
+
+def test_set_frontmatter_values_handles_lists_and_quotes_strings() -> None:
+    text = "---\ntype: action\nsupertags:\n  - old\nstatus: open\n---\n# Body\n"
+
+    updated = set_frontmatter_values(
+        text,
+        {
+            "supertags": ["design-task", "vendor-followup"],
+            "reviewer": "[[Myles]]",
+            "review_date": "2026-11-01",
+        },
+    )
+
+    frontmatter = read_frontmatter(updated)
+    assert frontmatter.data["supertags"] == ["design-task", "vendor-followup"]
+    assert frontmatter.data["reviewer"] == "[[Myles]]"
+    assert frontmatter.data["review_date"] == "2026-11-01"
+    assert frontmatter.data["type"] == "action"
+    assert "  - old" not in updated
+    assert updated.endswith("# Body\n")
+
+
+def test_set_frontmatter_values_removes_a_key_and_its_block() -> None:
+    text = "---\ntype: action\nsupertags:\n  - one\n  - two\nstatus: open\n---\n# Body\n"
+
+    updated = set_frontmatter_values(text, {"supertags": None})
+
+    assert "supertags" not in updated
+    assert "status: open" in updated
+    assert updated.endswith("# Body\n")
+
+
+def test_set_frontmatter_values_writes_empty_and_scalar_values() -> None:
+    text = "---\ntype: action\nsupertags:\n  - one\n---\n# Body\n"
+
+    updated = set_frontmatter_values(text, {"supertags": [], "priority": "P1", "flagged": True, "count": 2})
+
+    frontmatter = read_frontmatter(updated)
+    assert frontmatter.data["supertags"] == []
+    assert frontmatter.data["priority"] == "P1"
+    assert frontmatter.data["flagged"] is True
+    assert frontmatter.data["count"] == 2
+
+
+def test_set_frontmatter_values_preserves_crlf() -> None:
+    text = "---\r\ntype: action\r\nsupertags: [old]\r\nstatus: open\r\n---\r\n# Body\r\nline\r\n"
+
+    updated = set_frontmatter_values(text, {"supertags": ["new"], "reviewer": "[[Myles]]"})
+
+    assert "\n" not in updated.replace("\r\n", "")
+    frontmatter = read_frontmatter(updated)
+    assert frontmatter.data["supertags"] == ["new"]
+    assert frontmatter.data["reviewer"] == "[[Myles]]"
+    assert updated.endswith("# Body\r\nline\r\n")
+
+
+def test_set_frontmatter_values_creates_frontmatter_when_absent() -> None:
+    assert (
+        set_frontmatter_values("# Body\n", {"supertags": ["design-task"]})
+        == "---\nsupertags:\n  - design-task\n---\n# Body\n"
+    )
+
+
+def test_set_frontmatter_values_rejects_unterminated_frontmatter() -> None:
+    with pytest.raises(ValueError):
+        set_frontmatter_values("---\ntype: action\n# no close\n", {"supertags": ["x"]})
 
 
 def test_parse_note_extracts_structure(vault: Path, write_note: Callable[..., Path]) -> None:

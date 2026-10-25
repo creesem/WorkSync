@@ -40,6 +40,7 @@ from worksync.work.override import KNOWN_OVERRIDE_KINDS, read_override_records
 from worksync.work.override_store import clear_override, save_override
 from worksync.work.queue import QueueError
 from worksync.work.reviewer import ReviewerError
+from worksync.work.supertag_write import SupertagWriteError, apply_supertag, remove_supertag
 from worksync.work.writer import (
     ActionWriteError,
     ActionWriteResult,
@@ -870,8 +871,93 @@ def _identity_apply_cli(proposal_id: str, reason: str, reviewer: str, decisions:
     return " ".join(parts)
 
 
+def _supertag_cli(
+    command: str,
+    entity_id: str,
+    supertag_id: str,
+    reason: str,
+    reviewer: str,
+    confirmed: bool,
+) -> str:
+    parts = [
+        "worksync",
+        "tag",
+        command,
+        _quote(entity_id),
+        _quote(supertag_id),
+        "--reason",
+        _quote(reason),
+        "--reviewer",
+        _quote(reviewer),
+    ]
+    if confirmed:
+        parts.append("--confirm")
+    return " ".join(parts)
+
+
+def _apply_supertag(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Apply one custom supertag; defaults are materialized only for missing keys."""
+    entity_id = _required(payload, "entity_id", "invalid_target")
+    supertag_id = _required(payload, "supertag_id", "invalid_supertag")
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    try:
+        result = apply_supertag(
+            service.vault,
+            service.runtime_root,
+            entity_id,
+            supertag_id,
+            reviewer=reviewer,
+            reason=reason,
+            expected=_expected(payload),
+            confirmed=confirmed,
+        )
+    except SupertagWriteError as exc:
+        raise ActionError(exc.code, str(exc), exc.status) from exc
+    return {
+        "state": "ok",
+        "action": "apply-supertag",
+        "committed": result.committed,
+        "path": result.path,
+        "tags": list(result.tags),
+        "defaults_written": list(result.defaults_written),
+        "equivalent_cli": _supertag_cli("apply", entity_id, supertag_id, reason, reviewer, confirmed),
+    }
+
+
+def _remove_supertag(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Remove one custom supertag entry; field values are always preserved."""
+    entity_id = _required(payload, "entity_id", "invalid_target")
+    supertag_id = _required(payload, "supertag_id", "invalid_supertag")
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    try:
+        result = remove_supertag(
+            service.vault,
+            service.runtime_root,
+            entity_id,
+            supertag_id,
+            reviewer=reviewer,
+            reason=reason,
+            expected=_expected(payload),
+            confirmed=confirmed,
+        )
+    except SupertagWriteError as exc:
+        raise ActionError(exc.code, str(exc), exc.status) from exc
+    return {
+        "state": "ok",
+        "action": "remove-supertag",
+        "committed": result.committed,
+        "path": result.path,
+        "tags": list(result.tags),
+        "equivalent_cli": _supertag_cli("remove", entity_id, supertag_id, reason, reviewer, confirmed),
+    }
+
+
 ACTIONS: dict[str, ActionHandler] = {
     "update-action": _update_action,
+    "apply-supertag": _apply_supertag,
+    "remove-supertag": _remove_supertag,
     "complete-action": _complete_action,
     "set-reviewer": _set_reviewer,
     "save-layout-profile": _save_layout_profile,

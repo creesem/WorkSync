@@ -83,6 +83,7 @@ from worksync.work.review import (
     build_project_review,
 )
 from worksync.work.reviewer import ReviewerError, resolve_reviewer
+from worksync.work.supertag_write import SupertagWriteError, apply_supertag, remove_supertag
 from worksync.work.views import VIEW_NAMES, build_view, build_views, view_zones, write_views
 from worksync.work.workday import (
     SLOTS as WORKDAY_SLOTS,
@@ -526,6 +527,29 @@ def build_parser() -> argparse.ArgumentParser:
     task_complete.set_defaults(handler=_task_complete)
     _add_reviewer_paths(task_update)
     _add_reviewer_paths(task_complete)
+
+    tag = sub.add_parser("tag", help="Apply or remove a custom supertag on a work note.")
+    tag_sub = tag.add_subparsers(dest="tag_command")
+    tag_apply = tag_sub.add_parser("apply", help="Apply a custom supertag; materialize missing defaults.")
+    tag_apply.add_argument("entity_id")
+    tag_apply.add_argument("supertag_id")
+    tag_apply.add_argument("--reason", required=True, help="Human-readable reason for the change.")
+    tag_apply.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    tag_apply.add_argument("--sha", default=None, help="Expected note SHA (stale-safe precondition).")
+    tag_apply.add_argument("--confirm", action="store_true", help="Confirm the trusted-vault write.")
+    tag_apply.add_argument("--json", action="store_true", help="Emit JSON.")
+    tag_apply.set_defaults(handler=_tag_apply)
+    _add_reviewer_paths(tag_apply)
+    tag_remove = tag_sub.add_parser("remove", help="Remove a custom supertag; keep field values.")
+    tag_remove.add_argument("entity_id")
+    tag_remove.add_argument("supertag_id")
+    tag_remove.add_argument("--reason", required=True, help="Human-readable reason for the change.")
+    tag_remove.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    tag_remove.add_argument("--sha", default=None, help="Expected note SHA (stale-safe precondition).")
+    tag_remove.add_argument("--confirm", action="store_true", help="Confirm the trusted-vault write.")
+    tag_remove.add_argument("--json", action="store_true", help="Emit JSON.")
+    tag_remove.set_defaults(handler=_tag_remove)
+    _add_reviewer_paths(tag_remove)
 
     workday = sub.add_parser("workday", help="Show, steer, or complete the five-slot workday plan.")
     workday_sub = workday.add_subparsers(dest="workday_command")
@@ -2113,6 +2137,70 @@ def _task_complete(args: argparse.Namespace) -> int:
         print(f"worksync: {exc}", file=sys.stderr)
         return 2
     _print_write(_write_payload(result, dry_run=args.dry_run, reviewer=reviewer, reason=args.reason), args.json)
+    return 0
+
+
+def _tag_apply(args: argparse.Namespace) -> int:
+    return _tag_write(args, applying=True)
+
+
+def _tag_remove(args: argparse.Namespace) -> int:
+    return _tag_write(args, applying=False)
+
+
+def _tag_write(args: argparse.Namespace, *, applying: bool) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer)
+        if applying:
+            result = apply_supertag(
+                vault,
+                runtime,
+                args.entity_id,
+                args.supertag_id,
+                reviewer=reviewer,
+                reason=args.reason,
+                expected=args.sha,
+                confirmed=args.confirm,
+            )
+        else:
+            result = remove_supertag(
+                vault,
+                runtime,
+                args.entity_id,
+                args.supertag_id,
+                reviewer=reviewer,
+                reason=args.reason,
+                expected=args.sha,
+                confirmed=args.confirm,
+            )
+        if result.committed:
+            _rebuild_derived(vault, runtime)
+    except (ReviewerError, SupertagWriteError, MutationError) as exc:
+        print(f"worksync: {exc.code}: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, FileNotFoundError, OSError, PathSafetyError, ValueError) as exc:
+        print(f"worksync: {exc}", file=sys.stderr)
+        return 2
+    payload = {
+        "action": "apply-supertag" if applying else "remove-supertag",
+        "path": result.path,
+        "committed": result.committed,
+        "tags": list(result.tags),
+        "defaults_written": list(result.defaults_written),
+        "reviewer": reviewer,
+        "reason": args.reason,
+        "journal": str(result.journal) if result.journal is not None else None,
+        "sha": result.sha,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+        return 0
+    verb = "applied" if applying else "removed"
+    print(f"{verb} {args.supertag_id} on {result.path}")
+    print(f"  tags: {', '.join(result.tags) or '(none)'}")
+    if applying and result.defaults_written:
+        print(f"  defaults: {', '.join(result.defaults_written)}")
     return 0
 
 

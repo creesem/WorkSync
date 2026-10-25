@@ -185,6 +185,89 @@ def set_frontmatter_fields(content: str, fields: dict[str, str | None]) -> str:
     return edit_frontmatter_fields(content, set_fields=fields)
 
 
+def _render_frontmatter_value(key: str, value: object, eol: str) -> list[str]:
+    """Render one YAML value as a frontmatter block, preserving strings exactly."""
+    if isinstance(value, list | tuple):
+        items = list(value)
+        if not items:
+            return [f"{key}: []{eol}"]
+        dumped = yaml.safe_dump(items, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        return [f"{key}:{eol}", *(f"  {line}{eol}" for line in dumped.rstrip("\n").split("\n"))]
+    if isinstance(value, dict):
+        if not value:
+            return [f"{key}: {{}}{eol}"]
+        dumped = yaml.safe_dump(value, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        return [f"{key}:{eol}", *(f"  {line}{eol}" for line in dumped.rstrip("\n").split("\n"))]
+    if isinstance(value, str):
+        dumped = yaml.safe_dump(value, default_style='"', allow_unicode=True).strip()
+    else:
+        dumped = yaml.safe_dump(value, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        if dumped.endswith("...\n"):
+            dumped = dumped[:-4]
+        dumped = dumped.strip()
+    return [f"{key}: {dumped}{eol}"]
+
+
+def set_frontmatter_values(content: str, values: Mapping[str, object]) -> str:
+    """Set or remove top-level frontmatter keys with YAML-safe scalar/list values.
+
+    Unlike :func:`edit_frontmatter_fields`, this handles lists (e.g. ``supertags``) and
+    quotes strings so references and ISO dates stay strings. Only named keys and their
+    owned indented blocks change; key order, the body, and line endings are preserved.
+    A ``None`` value removes the key. Unterminated frontmatter raises ``ValueError`` so a
+    caller can fail closed instead of committing an unchanged note.
+    """
+    if not values:
+        return content
+    lines = content.splitlines(keepends=True)
+    if not lines or lines[0].rstrip("\r\n") != "---":
+        eol = "\r\n" if "\r\n" in content else "\n"
+        rendered = [
+            line
+            for key, value in values.items()
+            if value is not None
+            for line in _render_frontmatter_value(key, value, eol)
+        ]
+        if not rendered:
+            return content
+        return f"---{eol}{''.join(rendered)}---{eol}{content}"
+
+    close = next((index for index in range(1, len(lines)) if lines[index].rstrip("\r\n") == "---"), None)
+    if close is None:
+        raise ValueError("Unterminated frontmatter block.")
+    eol = "\r\n" if lines[0].endswith("\r\n") else "\n"
+    block = lines[1:close]
+    tail = lines[close:]
+    edited: list[str] = []
+    handled: set[str] = set()
+    index = 0
+    while index < len(block):
+        line = block[index]
+        match = _KEY_LINE.match(line)
+        if match is None or match.group("indent"):
+            edited.append(line)
+            index += 1
+            continue
+        key = match.group("key")
+        if key not in values:
+            edited.append(line)
+            index += 1
+            continue
+        index += 1
+        while index < len(block) and block[index][:1] in (" ", "\t"):
+            index += 1
+        value = values[key]
+        if value is None:
+            continue
+        edited.extend(_render_frontmatter_value(key, value, eol))
+        handled.add(key)
+    for key, value in values.items():
+        if value is None or key in handled:
+            continue
+        edited.extend(_render_frontmatter_value(key, value, eol))
+    return "".join([lines[0], *edited, *tail])
+
+
 def _as_text(value: Any) -> str | None:
     if value is None:
         return None
