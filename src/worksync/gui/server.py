@@ -165,6 +165,8 @@ class GuiHandler(BaseHTTPRequestHandler):
             return service.search(_required(params, "q"), project_id=params.get("project"), limit=_limit(params))
         if path == "/api/settings":
             return service.settings()
+        if path == "/api/processing":
+            return service.processing()
         if path == "/api/entity":
             return service.entity(_entity_id(params), _today(params))
         if path == "/api/health":

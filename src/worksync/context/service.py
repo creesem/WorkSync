@@ -34,6 +34,7 @@ from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_regis
 from worksync.work.models import entity_id_of
 from worksync.work.override import read_overrides as _read_overrides
 from worksync.work.prioritization import Override
+from worksync.work.processing import processing_status as _processing_status
 from worksync.work.relationships import related_to
 from worksync.work.render import (
     attention_to_dict,
@@ -230,6 +231,11 @@ def list_projects(vault: str | Path, db_path: str | Path | None = None) -> list[
 def health(vault: str | Path) -> dict:
     """Return the vault-wide health report: counts and validation issues."""
     return _index(vault).health()
+
+
+def processing(runtime_root: str | Path) -> dict:
+    """Read-only operational status: review queues, Krisp sync, and recent activity."""
+    return _processing_status(runtime_root)
 
 
 def get_entity(vault: str | Path, entity_type: str, name: str) -> dict | None:
