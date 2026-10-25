@@ -117,7 +117,7 @@ def init_pool(
                     "create",
                     Path(POOL_FILENAME),
                     USER_STATE_ZONE,
-                    content=_render(manifest),
+                    content=render_manifest(manifest),
                 ),
             ),
             reviewer=reviewer,
@@ -184,15 +184,14 @@ def write_pool(
             409,
         )
     validate_manifest(manifest)
-    saved = replace(
+    saved = prepare_pool_write(
         manifest,
+        reviewer=reviewer,
+        reason=reason,
+        when=when,
+        verb=verb,
         revision=current.revision + 1,
-        audit=(
-            *manifest.audit,
-            PoolAuditEvent(at=when.isoformat(), by=reviewer, verb=verb, reason=reason),
-        ),
     )
-    validate_manifest(saved)
     limitations = restrict_private_paths(runtime_root)
     result = _commit(
         ChangeSet(
@@ -202,7 +201,7 @@ def write_pool(
                     "update",
                     Path(POOL_FILENAME),
                     USER_STATE_ZONE,
-                    content=_render(saved),
+                    content=render_manifest(saved),
                     expected=current_sha,
                 ),
             ),
@@ -303,7 +302,7 @@ def restore_pool(
                     "update",
                     Path(POOL_FILENAME),
                     USER_STATE_ZONE,
-                    content=_render(restored),
+                    content=render_manifest(restored),
                     expected=current_sha,
                 ),
             ),
@@ -363,8 +362,34 @@ def _commit(
         raise PoolError(exc.code, str(exc), status) from exc
 
 
-def _render(manifest: PoolManifest) -> str:
+def render_manifest(manifest: PoolManifest) -> str:
+    """Render the canonical JSON text of a pool manifest (the gateway writes these bytes)."""
     return json.dumps(manifest.to_dict(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+
+def prepare_pool_write(
+    manifest: PoolManifest,
+    *,
+    reviewer: str,
+    reason: str,
+    when: datetime,
+    verb: str = POOL_WRITE_VERB,
+    revision: int | None = None,
+) -> PoolManifest:
+    """Return the manifest as stored by one accepted write: next revision plus an audit event.
+
+    Shared by the standalone pool writer and the new-meeting apply so both produce one
+    canonical ``user_state`` update with the same revision/audit semantics.
+    """
+    reviewer = _required(reviewer, "missing_reviewer", "A reviewer is required.")
+    reason = _required(reason, "missing_reason", "A reason is required.")
+    saved = replace(
+        manifest,
+        revision=manifest.revision + 1 if revision is None else revision,
+        audit=(*manifest.audit, PoolAuditEvent(at=when.isoformat(), by=reviewer, verb=verb, reason=reason)),
+    )
+    validate_manifest(saved)
+    return saved
 
 
 def _required(value: str, code: str, message: str) -> str:

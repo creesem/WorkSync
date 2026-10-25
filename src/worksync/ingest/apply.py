@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from worksync.core.config import DEFAULT_KRISP_INBOX
@@ -31,6 +31,7 @@ from worksync.safety.gateway import commit
 from worksync.safety.models import ChangeSet, CommitResult, FileOp
 from worksync.safety.zones import write_zones
 from worksync.work.models import SyncMode
+from worksync.work.pool_extract import NewMeeting, meeting_id_for, stage_new_meetings
 from worksync.work.queue import QueueStore, op_dict
 from worksync.work.schema import canonical_action_status, canonical_priority
 
@@ -68,6 +69,7 @@ def apply(
     krisp_inbox_path: str | Path | None = None,
     overrides: dict[str, dict] | None = None,
     dry_run: bool = False,
+    now: datetime | None = None,
 ) -> ApplyResult:
     """Apply the selected pending proposals as one transaction."""
     if not str(reviewer).strip():
@@ -97,26 +99,41 @@ def apply(
         inbox_root = require_inbox_under(runtime_root, inbox_root)
 
     ops: list[FileOp] = []
+    new_meetings: list[NewMeeting] = []
     for proposal in selected:
         if proposal.action == "meeting":
-            ops.extend(
-                _meeting_ops(
-                    vault_root,
-                    runtime_root,
-                    meetings_root,
-                    inbox_root,
-                    proposal,
-                    today=when,
-                    reviewer=reviewer,
-                    reason=reason,
-                )
+            meeting_ops, new_meeting = _meeting_ops(
+                vault_root,
+                runtime_root,
+                meetings_root,
+                inbox_root,
+                proposal,
+                today=when,
+                reviewer=reviewer,
+                reason=reason,
             )
+            ops.extend(meeting_ops)
+            new_meetings.append(new_meeting)
         else:
             ops.extend(
                 _proposal_ops(
                     vault_root, active_root, dropped_root, proposal, today=when, reviewer=reviewer, reason=reason
                 )
             )
+
+    # New-meeting pool extraction is part of the same transaction: trusted meeting create plus
+    # one user_state pool update. The direct inbox/capture->action path above is unchanged.
+    if new_meetings:
+        staged = stage_new_meetings(
+            vault_root,
+            runtime_root,
+            new_meetings,
+            reviewer=reviewer,
+            reason=str(reason).strip(),
+            now=now,
+        )
+        if staged is not None:
+            ops.append(staged.op)
 
     selected_by_id = {proposal.id: proposal for proposal in selected}
     updated = tuple(
@@ -384,7 +401,7 @@ def _meeting_ops(
     today: date,
     reviewer: str,
     reason: str,
-) -> list[FileOp]:
+) -> tuple[list[FileOp], NewMeeting]:
     transcript = _resolve_krisp_source(inbox_root, proposal.source_path, proposal.source_sha256, proposal.id)
     sidecar = transcript.with_suffix(".krisp.json")
     if not sidecar.is_file():
@@ -395,23 +412,26 @@ def _meeting_ops(
     processed = inbox_root / PROCESSED_DIRNAME / today.isoformat()
     transcript_dest = unique_target(processed, transcript.name)
     sidecar_dest = unique_target(processed, sidecar.name)
-    return [
-        FileOp("create", _relative(vault_root, target), "trusted", content=content),
-        FileOp(
-            "move",
-            _relative(runtime_root, transcript),
-            "runtime",
-            destination=_relative(runtime_root, transcript_dest),
-            expected=proposal.source_sha256,
-        ),
-        FileOp(
-            "move",
-            _relative(runtime_root, sidecar),
-            "runtime",
-            destination=_relative(runtime_root, sidecar_dest),
-            expected=sha256_file(sidecar),
-        ),
-    ]
+    return (
+        [
+            FileOp("create", _relative(vault_root, target), "trusted", content=content),
+            FileOp(
+                "move",
+                _relative(runtime_root, transcript),
+                "runtime",
+                destination=_relative(runtime_root, transcript_dest),
+                expected=proposal.source_sha256,
+            ),
+            FileOp(
+                "move",
+                _relative(runtime_root, sidecar),
+                "runtime",
+                destination=_relative(runtime_root, sidecar_dest),
+                expected=sha256_file(sidecar),
+            ),
+        ],
+        NewMeeting(path=_relative(vault_root, target).as_posix(), content=content),
+    )
 
 
 def _resolve_krisp_source(inbox_root: Path, relative: str, expected_sha: str, proposal_id: str) -> Path:
@@ -442,7 +462,19 @@ def render_meeting_note(fields: dict) -> str:
         raise IngestError(
             "invalid_meeting_date", f"Meeting date is not a valid ISO date: {fields.get('date')!r}"
         ) from exc
-    lines = ["---", "type: meeting", f"status: {status}", f"date: {date_value}"]
+    lines = [
+        "---",
+        "type: meeting",
+        f"title: {_scalar(fields.get('title') or 'meeting')}",
+        f"status: {status}",
+        f"date: {date_value}",
+    ]
+    meeting_id = str(fields.get("meeting_id") or "").strip() or meeting_id_for(
+        str(fields.get("title") or "meeting"),
+        date_value,
+        str(fields.get("external_id") or "").strip() or None,
+    )
+    lines.append(f"meeting_id: {_scalar(meeting_id)}")
     if fields.get("date_status"):
         lines.append(f"date_status: {_scalar(fields['date_status'])}")
     attendees = fields.get("attendees") or []

@@ -184,6 +184,7 @@ class PoolSource:
     line: int | None = None
     occurrence: int | None = None
     quote: str | None = None
+    checked: bool | None = None
     rule_version: str | None = None
     extracted_at: str | None = None
     initiated_by: str | None = None
@@ -200,6 +201,7 @@ class PoolSource:
             "line": self.line,
             "occurrence": self.occurrence,
             "quote": self.quote,
+            "checked": self.checked,
             "rule_version": self.rule_version,
             "extracted_at": self.extracted_at,
             "initiated_by": self.initiated_by,
@@ -223,6 +225,7 @@ class PoolSource:
             line=_nullable_int(data.get("line"), "source.line"),
             occurrence=_nullable_int(data.get("occurrence"), "source.occurrence"),
             quote=_nullable_text(data.get("quote"), "source.quote"),
+            checked=_nullable_bool(data.get("checked"), "source.checked"),
             rule_version=_nullable_text(data.get("rule_version"), "source.rule_version"),
             extracted_at=_nullable_text(data.get("extracted_at"), "source.extracted_at"),
             initiated_by=_nullable_text(data.get("initiated_by"), "source.initiated_by"),
@@ -1038,6 +1041,8 @@ def _validate_source(source: PoolSource) -> None:
             raise PoolError("pool_corrupt", "Meeting source line/occurrence is invalid", 500)
         if not source.quote or not source.rule_version or not source.extracted_at:
             raise PoolError("pool_corrupt", "Meeting source lacks quote/rule/extracted_at", 500)
+        if source.checked is not None and not isinstance(source.checked, bool):
+            raise PoolError("pool_corrupt", "Meeting source checked must be a boolean or null", 500)
         _validate_timestamp(source.extracted_at, "source.extracted_at")
         if source.meeting_date is not None:
             _validate_date(source.meeting_date, "source.meeting_date")
@@ -1056,6 +1061,8 @@ def _validate_source(source: PoolSource) -> None:
             raise PoolError("pool_corrupt", "Manual source must not fabricate hash/quote/line", 500)
         if source.occurrence is not None or source.rule_version is not None or source.extracted_at is not None:
             raise PoolError("pool_corrupt", "Manual source cannot carry extraction metadata", 500)
+        if source.checked is not None:
+            raise PoolError("pool_corrupt", "Manual source cannot carry a checked state", 500)
         if source.meeting_date is not None:
             _validate_date(source.meeting_date, "source.meeting_date")
     else:
@@ -1182,6 +1189,14 @@ def _nullable_int(value: object, path: str) -> int | None:
     if value is None:
         return None
     return _int(value, path)
+
+
+def _nullable_bool(value: object, path: str) -> bool | None:
+    if value is None:
+        return None
+    if not isinstance(value, bool):
+        raise PoolError("pool_corrupt", f"{path} must be a boolean or null", 500)
+    return value
 
 
 def _text_list(value: object, path: str) -> tuple[str, ...]:
