@@ -12,7 +12,7 @@ license = { text = "MIT" }
 authors = [
   { name = "mcreese" }
 ]
-dependencies = ["PyYAML>=6"]
+dependencies = ["PyYAML>=6", "tzdata>=2024.1"]
 
 [project.optional-dependencies]
 dev = [
