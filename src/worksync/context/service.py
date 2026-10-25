@@ -28,6 +28,7 @@ from worksync.work.command_center import my_priorities as _my_priorities
 from worksync.work.command_center import needs_attention as _needs_attention
 from worksync.work.command_center import section_result_to_dict as _section_result_to_dict
 from worksync.work.control_center import build_control_center
+from worksync.work.generation import WorkGeneration, live_view, read_generation
 from worksync.work.jobs import list_jobs as _list_jobs
 from worksync.work.layout_profile import apply_profile, default_profile, read_profile
 from worksync.work.lifecycle.loader import load_project_records
@@ -167,7 +168,13 @@ def command_center(
     """
     root = Path(vault).expanduser().resolve()
     records = _cached_scan(vault)
-    index = WorkIndex.from_records(records, root)
+    try:
+        generation = read_generation(runtime_root)
+    except ValueError:
+        # A malformed generation record must not brick the default screen. Degrade to no
+        # exclusions; the next cutover/reset repairs the record.
+        generation = WorkGeneration()
+    records, index = live_view(records, root, generation)
     when = generated_at or datetime.now(UTC).isoformat()
     try:
         checkpoint = _read_checkpoint(runtime_root)

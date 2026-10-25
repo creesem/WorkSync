@@ -53,6 +53,8 @@ from worksync.work.duplicates import DuplicatesError
 from worksync.work.duplicates import apply as run_duplicates_apply
 from worksync.work.duplicates import dismiss as run_duplicates_dismiss
 from worksync.work.duplicates import scan as run_duplicates_scan
+from worksync.work.generation import read_generation
+from worksync.work.generation_store import GenerationError, cut_over, reset_generation
 from worksync.work.identity import IdentityError
 from worksync.work.identity import dismiss as run_identity_dismiss
 from worksync.work.identity import load_manifest as load_identity_manifest
@@ -208,6 +210,21 @@ def build_parser() -> argparse.ArgumentParser:
     health.add_argument("--vault", type=Path, default=None, help="Override the configured vault.")
     health.add_argument("--json", action="store_true", help="Emit JSON.")
     health.set_defaults(handler=_health)
+
+    work = sub.add_parser("work", help="Work-generation administration.")
+    work_sub = work.add_subparsers(dest="work_command")
+    cutover = work_sub.add_parser("cutover", help="Freeze existing actions and tickets as legacy reference.")
+    cutover.add_argument("--reason", required=True, help="Why the cutover is happening.")
+    cutover.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    _add_reviewer_paths(cutover)
+    cutover.add_argument("--json", action="store_true", help="Emit JSON.")
+    cutover.set_defaults(handler=_work_cutover)
+    reset = work_sub.add_parser("reset-generation", help="Restore legacy work to the live set.")
+    reset.add_argument("--reason", required=True, help="Why the generation is being reset.")
+    reset.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    _add_reviewer_paths(reset)
+    reset.add_argument("--json", action="store_true", help="Emit JSON.")
+    reset.set_defaults(handler=_work_reset)
 
     review = sub.add_parser("review", help="Read-only attention and rollup queues.")
     review_sub = review.add_subparsers(dest="review_view")
@@ -789,6 +806,57 @@ def _health(args: argparse.Namespace) -> int:
     print(f"Entities: {report['entities']}  Errors: {report['errors']}  Warnings: {report['warnings']}")
     for issue in report["issues"]:
         print(f"  {issue['severity'].upper():<7} {issue['path']}: {issue['message']}")
+    return 0
+
+
+def _work_cutover(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        result = cut_over(vault, runtime, reviewer=reviewer, reason=args.reason)
+        generation = read_generation(runtime)
+    except (ConfigError, GenerationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "committed": result.committed,
+        "generation": generation.generation,
+        "legacy_action_count": len(generation.legacy_action_ids),
+        "legacy_ticket_count": len(generation.legacy_ticket_ids),
+        "cutover_at": generation.cutover_at,
+        "reviewer": generation.reviewer,
+        "reason": generation.reason,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+    print(
+        f"legacy cutover: generation {generation.generation}; "
+        f"{payload['legacy_action_count']} action(s), {payload['legacy_ticket_count']} ticket(s) excluded"
+    )
+    return 0
+
+
+def _work_reset(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        result = reset_generation(vault, runtime, reviewer=reviewer, reason=args.reason)
+        generation = read_generation(runtime)
+    except (ConfigError, GenerationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "committed": result.committed,
+        "generation": generation.generation,
+        "cutover_at": generation.cutover_at,
+        "reviewer": generation.reviewer,
+        "reason": generation.reason,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+    print(f"legacy work restored: generation {generation.generation}; legacy exclusions cleared")
     return 0
 
 

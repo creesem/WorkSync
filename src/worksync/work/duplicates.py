@@ -17,6 +17,7 @@ from pathlib import Path
 from worksync.safety.files import sha256_file
 from worksync.safety.models import FileOp
 from worksync.work.consolidate import merged_content, redirect_content
+from worksync.work.generation import is_legacy_path, live_index, read_generation
 from worksync.work.models import EntityBase, EntityType
 from worksync.work.notes import Note, load_action_note
 from worksync.work.queue import (
@@ -110,7 +111,7 @@ def discover_duplicates(vault: str | Path, index: WorkIndex) -> tuple[Proposal, 
 def scan(vault: str | Path, runtime: str | Path, *, today: date | None = None, dry_run: bool = False) -> Manifest:
     """Detect duplicate pairs and persist the merged manifest with a precondition."""
     del today  # detection is date-independent; accepted for CLI symmetry
-    index = WorkIndex.from_vault(vault)
+    index = live_index(vault, runtime)
     fresh = discover_duplicates(vault, index)
     return scan_manifest(QueueStore(runtime, MANIFEST_REL), fresh, token=_scan_token(vault, index), dry_run=dry_run)
 
@@ -226,8 +227,10 @@ def apply(
     """Apply the selected pending pairs as one transaction through the gateway."""
     when = today or date.today()
     vault_root = Path(vault).expanduser().resolve()
+    store = QueueStore(runtime, MANIFEST_REL)
+    _reject_legacy(store.load(), ids, read_generation(runtime))
     return apply_proposals(
-        QueueStore(runtime, MANIFEST_REL),
+        store,
         vault_root=vault_root,
         reviewer=reviewer,
         reason=reason,
@@ -247,6 +250,25 @@ def apply(
 
 def _batch_verb(resolutions: tuple[str, ...]) -> str:
     return "merge" if "merge" in resolutions else "redirect"
+
+
+def _reject_legacy(manifest: Manifest | None, ids: tuple[str, ...] | None, generation) -> None:
+    """Refuse to apply a proposal whose either side is frozen legacy work."""
+    if manifest is None:
+        return
+    blocked = tuple(
+        proposal.id
+        for proposal in manifest.proposals
+        if proposal.status == "pending"
+        and (ids is None or proposal.id in ids)
+        and (is_legacy_path(proposal.source_path, generation) or is_legacy_path(proposal.target_path, generation))
+    )
+    if blocked:
+        raise DuplicatesError(
+            "legacy_target",
+            "Legacy work cannot be applied: " + ", ".join(blocked),
+            affected=blocked,
+        )
 
 
 def _pair_ops(

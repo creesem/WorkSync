@@ -82,6 +82,7 @@ _STATUS_BY_CODE = {
     "unknown_proposal": 404,
     "stale_hash": 409,
     "stale_source": 409,
+    "legacy_target": 409,
     "needs_confirmation": 409,
     "no_manifest": 409,
     "target_appeared": 409,

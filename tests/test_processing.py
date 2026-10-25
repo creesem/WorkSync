@@ -179,6 +179,69 @@ def test_processing_status_payload_does_not_need_the_vault(processing_server: tu
     ]
 
 
+def test_processing_hides_legacy_queue_proposals_and_reports_generation(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    _write(
+        runtime / "user_state" / "work_generation.json",
+        {
+            "schema_version": 1,
+            "generation": 2,
+            "legacy_action_ids": ["action-old"],
+            "legacy_action_paths": ["Actions/Old.md"],
+            "legacy_ticket_ids": [],
+            "legacy_ticket_paths": [],
+            "cutover_at": "2026-10-24T09:00:00+00:00",
+            "reviewer": "Myles",
+            "reason": "Start clean",
+        },
+    )
+    _write(
+        runtime / "staging" / "duplicates" / "manifest.json",
+        {
+            "version": 1,
+            "proposals": [
+                {
+                    "id": "old-1",
+                    "status": "pending",
+                    "source_path": "Actions/Old.md",
+                    "target_path": "Actions/Other.md",
+                },
+                {
+                    "id": "live-1",
+                    "status": "pending",
+                    "source_path": "Actions/Live.md",
+                    "target_path": "Actions/Other.md",
+                },
+            ],
+        },
+    )
+
+    payload = processing_status(runtime)
+
+    duplicates = next(item for item in payload["queues"] if item["id"] == "duplicates")
+    assert duplicates["pending"] == 1
+    assert [proposal["id"] for proposal in duplicates["proposals"]] == ["live-1"]
+    assert payload["generation"] == {
+        "generation": 2,
+        "cutover_at": "2026-10-24T09:00:00+00:00",
+        "legacy_action_count": 1,
+        "legacy_ticket_count": 0,
+        "error": None,
+    }
+
+
+def test_processing_degrades_when_the_generation_record_is_corrupt(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    path = runtime / "user_state" / "work_generation.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    payload = processing_status(runtime)
+
+    assert payload["generation"]["error"] == "unreadable"
+    assert payload["generation"]["legacy_action_count"] == 0
+
+
 def test_processing_lists_both_sides_and_evidence_for_duplicates(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     _write(

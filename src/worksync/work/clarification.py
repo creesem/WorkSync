@@ -20,6 +20,7 @@ from worksync.safety.files import sha256_file
 from worksync.safety.models import FileOp
 from worksync.work.consolidate import append_update_entry, archive_content, merged_content, redirect_content, revision
 from worksync.work.dates import parse_iso_date
+from worksync.work.generation import is_legacy_path, live_index, read_generation
 from worksync.work.models import EntityType
 from worksync.work.notes import Note, load_action_note
 from worksync.work.queue import (
@@ -78,7 +79,7 @@ def discover_clarifications(vault: str | Path, index: WorkIndex, *, today: date)
 def scan(vault: str | Path, runtime: str | Path, *, today: date | None = None, dry_run: bool = False) -> Manifest:
     """Queue clarification items and persist the merged manifest with a precondition."""
     when = today or date.today()
-    index = WorkIndex.from_vault(vault)
+    index = live_index(vault, runtime)
     fresh = discover_clarifications(vault, index, today=when)
     return scan_manifest(QueueStore(runtime, MANIFEST_REL), fresh, token=_scan_token(vault, index), dry_run=dry_run)
 
@@ -128,8 +129,10 @@ def apply(
             index = WorkIndex.from_vault(vault)
         return _item_ops(vault_root, index, proposal, override, when=when, reviewer=reviewer, reason=reason)
 
+    store = QueueStore(runtime, MANIFEST_REL)
+    _reject_legacy(store.load(), ids, read_generation(runtime))
     return apply_proposals(
-        QueueStore(runtime, MANIFEST_REL),
+        store,
         vault_root=vault_root,
         reviewer=reviewer,
         reason=reason,
@@ -355,3 +358,22 @@ def _batch_verb(resolutions: tuple[str, ...]) -> str:
         if verb in resolutions:
             return verb
     return "keep"
+
+
+def _reject_legacy(manifest: Manifest | None, ids: tuple[str, ...] | None, generation) -> None:
+    """Refuse to apply a clarification whose action is frozen legacy work."""
+    if manifest is None:
+        return
+    blocked = tuple(
+        proposal.id
+        for proposal in manifest.proposals
+        if proposal.status == "pending"
+        and (ids is None or proposal.id in ids)
+        and is_legacy_path(proposal.source_path, generation)
+    )
+    if blocked:
+        raise ClarificationError(
+            "legacy_target",
+            "Legacy work cannot be applied: " + ", ".join(blocked),
+            affected=blocked,
+        )
