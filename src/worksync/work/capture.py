@@ -1,9 +1,8 @@
 """Turn typed text into a pending review-queue proposal.
 
-Capture is the one GUI write: it appends a proposal to the capture manifest under the
-derived staging zone. It never touches a canonical note, and capture review/apply is
-deferred to CC-05, so a captured thought lands on ``work.queue`` with no review surface
-reading it yet.
+Capture staging: append a proposal to the capture manifest under the derived staging zone; it
+never touches a canonical note. The review/apply path lives in ``worksync.ingest.capture`` and
+writes an inbox note for the ingest pipeline to classify.
 """
 
 from __future__ import annotations
@@ -74,3 +73,20 @@ def capture_text(runtime_root: str | Path, text: str, *, now: str | None = None)
             affected=(str(store.path()),),
         ) from exc
     return manifest
+
+
+def capture_dismiss(
+    runtime_root: str | Path,
+    proposal_id: str,
+    *,
+    reviewer: str,
+    reason: str,
+) -> Manifest:
+    """Dismiss one capture proposal; the manifest is the only write."""
+    return QueueStore(runtime_root, CAPTURE_REL).dismiss(
+        proposal_id,
+        reviewer=reviewer,
+        reason=reason,
+        error=QueueError,
+        no_manifest="No capture queue; capture something first.",
+    )

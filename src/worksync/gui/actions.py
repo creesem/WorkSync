@@ -20,6 +20,7 @@ from worksync.ingest import IngestError
 from worksync.ingest import apply as ingest_apply
 from worksync.ingest import dismiss as ingest_dismiss
 from worksync.ingest import scan as ingest_scan
+from worksync.ingest.capture import capture_apply
 from worksync.ingest.krisp import KrispAPIError, build_client, sync_status
 from worksync.ingest.krisp import pull as run_krisp_pull
 from worksync.safety.files import sha256_bytes
@@ -28,7 +29,7 @@ from worksync.work import clarification as clarification_service
 from worksync.work import duplicates as duplicates_service
 from worksync.work import identity as identity_service
 from worksync.work import reviewer as reviewer_store
-from worksync.work.capture import capture_text
+from worksync.work.capture import capture_dismiss, capture_text
 from worksync.work.clarification import ClarificationError
 from worksync.work.duplicates import DuplicatesError
 from worksync.work.layout_profile import KNOWN_SECTIONS, default_profile, read_profile
@@ -469,6 +470,51 @@ def _capture(service: WriteContext, payload: dict, *, confirmed: bool, today: da
     }
 
 
+def _capture_apply(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Apply reviewed captures as notes in the ingest inbox (one gateway transaction)."""
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    ids = payload.get("ids")
+    if ids is not None and (not isinstance(ids, list) or not ids):
+        raise ActionError("bad_request", "ids must be a non-empty list.", 400)
+    result = capture_apply(
+        service.vault,
+        service.runtime_root,
+        reviewer=reviewer,
+        reason=reason,
+        ids=tuple(str(item) for item in ids) if ids else None,
+        confirmed=confirmed,
+        inbox_path=service.inbox_path,
+    )
+    return {
+        "state": "ok",
+        "action": "capture-apply",
+        "committed": result.committed,
+        "reviewer": reviewer,
+        "reason": reason,
+        "applied": list(result.applied),
+        "changes": [dict(change) for change in result.changes],
+        "equivalent_cli": None,
+    }
+
+
+def _capture_dismiss(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Dismiss one capture proposal; writes only the staging manifest."""
+    proposal_id = _required(payload, "id", "invalid_target")
+    reason = _required(payload, "reason", "missing_reason")
+    reviewer = _reviewer(service)
+    manifest = capture_dismiss(service.runtime_root, proposal_id, reviewer=reviewer, reason=reason)
+    return {
+        "state": "ok",
+        "action": "capture-dismiss",
+        "committed": False,
+        "reviewer": reviewer,
+        "reason": reason,
+        "proposals": [proposal.to_dict() for proposal in manifest.proposals],
+        "equivalent_cli": None,
+    }
+
+
 def _ingest_scan(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
     manifest = ingest_scan(
         service.vault,
@@ -832,6 +878,8 @@ ACTIONS: dict[str, ActionHandler] = {
     "clear-override": _clear_override,
     "apply-batch": _apply_batch,
     "capture": _capture,
+    "capture-apply": _capture_apply,
+    "capture-dismiss": _capture_dismiss,
     "ingest-scan": _ingest_scan,
     "ingest-apply": _ingest_apply,
     "ingest-dismiss": _ingest_dismiss,

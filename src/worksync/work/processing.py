@@ -43,13 +43,28 @@ def _queue(runtime: Path, queue_id: str, label: str) -> dict:
     path = runtime / "staging" / queue_id / "manifest.json"
     data, error = _read_json(path)
     counts = {status: 0 for status in PROPOSAL_STATUSES}
+    pending: list[dict] = []
     updated_at = None
     if data is not None:
         proposals = data.get("proposals")
         if isinstance(proposals, list):
             for proposal in proposals:
-                status = str(proposal.get("status") or "unknown") if isinstance(proposal, dict) else "unknown"
+                if not isinstance(proposal, dict):
+                    counts["unknown"] = counts.get("unknown", 0) + 1
+                    continue
+                status = str(proposal.get("status") or "unknown")
                 counts[status] = counts.get(status, 0) + 1
+                if status == "pending" and len(pending) < 20:
+                    fields = proposal.get("fields")
+                    target = proposal.get("target_path")
+                    pending.append(
+                        {
+                            "id": str(proposal.get("id") or ""),
+                            "action": str(proposal.get("action") or ""),
+                            "fields": fields if isinstance(fields, dict) else {},
+                            "target_path": target if isinstance(target, str) and target else None,
+                        }
+                    )
         raw_updated = data.get("updated_at")
         updated_at = raw_updated if isinstance(raw_updated, str) and raw_updated else None
     return {
@@ -60,6 +75,7 @@ def _queue(runtime: Path, queue_id: str, label: str) -> dict:
         "by_status": counts,
         "updated_at": updated_at,
         "error": error,
+        "proposals": pending,
     }
 
 
