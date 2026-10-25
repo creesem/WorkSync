@@ -56,13 +56,27 @@ def _queue(runtime: Path, queue_id: str, label: str) -> dict:
                 counts[status] = counts.get(status, 0) + 1
                 if status == "pending" and len(pending) < 20:
                     fields = proposal.get("fields")
+                    source = proposal.get("source_path")
                     target = proposal.get("target_path")
+                    confidence = proposal.get("confidence")
+                    provenance = proposal.get("provenance")
                     pending.append(
                         {
                             "id": str(proposal.get("id") or ""),
                             "action": str(proposal.get("action") or ""),
                             "fields": fields if isinstance(fields, dict) else {},
+                            "source_path": source if isinstance(source, str) and source else None,
                             "target_path": target if isinstance(target, str) and target else None,
+                            "confidence": (
+                                float(confidence)
+                                if isinstance(confidence, (int, float)) and not isinstance(confidence, bool)
+                                else None
+                            ),
+                            "provenance": (
+                                [str(item)[:300] for item in provenance if isinstance(item, str) and item][:8]
+                                if isinstance(provenance, list)
+                                else []
+                            ),
                         }
                     )
         raw_updated = data.get("updated_at")

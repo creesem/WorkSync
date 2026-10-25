@@ -179,5 +179,43 @@ def test_processing_status_payload_does_not_need_the_vault(processing_server: tu
     ]
 
 
+def test_processing_lists_both_sides_and_evidence_for_duplicates(tmp_path: Path) -> None:
+    runtime = tmp_path / "runtime"
+    _write(
+        runtime / "staging" / "duplicates" / "manifest.json",
+        {
+            "version": 1,
+            "updated_at": "2026-10-24T09:00:00+00:00",
+            "proposals": [
+                {
+                    "id": "pair-1",
+                    "action": "merge",
+                    "status": "pending",
+                    "source_path": "Actions/Duplicate.md",
+                    "target_path": "Actions/Canonical.md",
+                    "source_sha256": "a" * 64,
+                    "target_sha256": "b" * 64,
+                    "fields": {
+                        "canonical_title": "Canonical",
+                        "duplicate_title": "Duplicate",
+                        "similarity": "0.9100",
+                    },
+                    "confidence": 0.91,
+                    "provenance": ["same title", "shared project"],
+                }
+            ],
+        },
+    )
+
+    payload = processing_status(runtime)
+
+    duplicates = next(item for item in payload["queues"] if item["id"] == "duplicates")
+    proposal = duplicates["proposals"][0]
+    assert proposal["source_path"] == "Actions/Duplicate.md"
+    assert proposal["target_path"] == "Actions/Canonical.md"
+    assert proposal["confidence"] == 0.91
+    assert proposal["provenance"] == ["same title", "shared project"]
+
+
 def test_proposal_status_vocabulary_matches_the_queue_contract() -> None:
     assert PROPOSAL_STATUSES == queue.PROPOSAL_STATUSES
