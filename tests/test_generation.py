@@ -21,7 +21,14 @@ from worksync.work.generation import (
     live_view,
     read_generation,
 )
-from worksync.work.generation_store import GenerationError, cut_over, reset_generation
+from worksync.work.generation_store import (
+    RETIRED_QUEUES,
+    GenerationError,
+    cut_over,
+    reset_generation,
+    retire_pending,
+)
+from worksync.work.queue import QueueStore
 from worksync.work.repository import WorkIndex
 
 
@@ -266,3 +273,57 @@ def test_clarification_apply_refuses_legacy_work(vault: Path, write_note, tmp_pa
         )
 
     assert error.value.code == "legacy_target"
+
+
+def test_retire_pending_dismisses_task_queues_and_keeps_identity(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    runtime = tmp_path / "runtime"
+    payload = {"version": 1, "proposals": [{"id": "p1", "status": "pending"}, {"id": "p2", "status": "applied"}]}
+    for queue in ("capture", "ingest", "duplicates", "clarification", "identity"):
+        path = runtime / "staging" / queue / "manifest.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = retire_pending(
+        vault,
+        runtime,
+        reviewer="Myles",
+        reason="Legacy cutover: retire pre-cutover intake",
+        now="2026-10-25T00:00:00+00:00",
+    )
+
+    assert result.committed is True
+    assert result.retired == {"capture": 1, "ingest": 1, "duplicates": 1, "clarification": 1}
+    for queue in ("capture", "ingest", "duplicates", "clarification"):
+        manifest = QueueStore(runtime, Path(queue) / "manifest.json").load()
+        statuses = {proposal.id: proposal.status for proposal in manifest.proposals}
+        assert statuses == {"p1": "dismissed", "p2": "applied"}
+        retired = next(proposal for proposal in manifest.proposals if proposal.id == "p1")
+        assert retired.reviewer == "Myles"
+        assert retired.reason == "Legacy cutover: retire pre-cutover intake"
+        assert retired.decided_at == "2026-10-25T00:00:00+00:00"
+    identity = QueueStore(runtime, Path("identity") / "manifest.json").load()
+    assert {proposal.id: proposal.status for proposal in identity.proposals} == {
+        "p1": "pending",
+        "p2": "applied",
+    }
+
+    second = retire_pending(vault, runtime, reviewer="Myles", reason="Retire again")
+
+    assert second.committed is False
+    assert second.retired == {}
+
+
+def test_retired_queue_paths_match_the_owning_modules() -> None:
+    from worksync.ingest.manifest import MANIFEST_REL as INGEST_MANIFEST_REL
+    from worksync.work.capture import CAPTURE_REL
+    from worksync.work.clarification import MANIFEST_REL as CLARIFICATION_MANIFEST_REL
+    from worksync.work.duplicates import MANIFEST_REL as DUPLICATES_MANIFEST_REL
+
+    assert dict(RETIRED_QUEUES) == {
+        "capture": CAPTURE_REL,
+        "ingest": INGEST_MANIFEST_REL,
+        "duplicates": DUPLICATES_MANIFEST_REL,
+        "clarification": CLARIFICATION_MANIFEST_REL,
+    }

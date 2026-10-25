@@ -78,3 +78,35 @@ def test_cli_cutover_refuses_a_second_boundary(vault: Path, write_note, tmp_path
 
     assert code == 1
     assert "already_cut_over" in capsys.readouterr().err
+
+
+def test_cli_retire_pending(vault: Path, write_note, tmp_path: Path, capsys) -> None:
+    runtime = tmp_path / "runtime"
+    write_note(vault, "Actions/One.md", action_note("type: action\nstatus: open\naction_id: a-1\n", "# One"))
+    manifest = runtime / "staging" / "ingest" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({"version": 1, "proposals": [{"id": "p1", "status": "pending"}, {"id": "p2", "status": "pending"}]}),
+        encoding="utf-8",
+    )
+
+    code = main(
+        [
+            "work",
+            "retire-pending",
+            "--reason",
+            "Legacy cutover: retire pre-cutover intake",
+            "--reviewer",
+            "Myles",
+            "--vault",
+            str(vault),
+            "--runtime",
+            str(runtime),
+            "--json",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["committed"] is True
+    assert payload["retired"] == {"ingest": 2}

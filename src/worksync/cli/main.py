@@ -54,7 +54,7 @@ from worksync.work.duplicates import apply as run_duplicates_apply
 from worksync.work.duplicates import dismiss as run_duplicates_dismiss
 from worksync.work.duplicates import scan as run_duplicates_scan
 from worksync.work.generation import read_generation
-from worksync.work.generation_store import GenerationError, cut_over, reset_generation
+from worksync.work.generation_store import GenerationError, cut_over, reset_generation, retire_pending
 from worksync.work.identity import IdentityError
 from worksync.work.identity import dismiss as run_identity_dismiss
 from worksync.work.identity import load_manifest as load_identity_manifest
@@ -225,6 +225,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_reviewer_paths(reset)
     reset.add_argument("--json", action="store_true", help="Emit JSON.")
     reset.set_defaults(handler=_work_reset)
+    retire = work_sub.add_parser("retire-pending", help="Dismiss all currently pending task-queue proposals.")
+    retire.add_argument("--reason", required=True, help="Why the pending proposals are being retired.")
+    retire.add_argument("--reviewer", default=None, help="Override the remembered reviewer.")
+    _add_reviewer_paths(retire)
+    retire.add_argument("--json", action="store_true", help="Emit JSON.")
+    retire.set_defaults(handler=_work_retire)
 
     review = sub.add_parser("review", help="Read-only attention and rollup queues.")
     review_sub = review.add_subparsers(dest="review_view")
@@ -857,6 +863,30 @@ def _work_reset(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
         return 0
     print(f"legacy work restored: generation {generation.generation}; legacy exclusions cleared")
+    return 0
+
+
+def _work_retire(args: argparse.Namespace) -> int:
+    try:
+        vault, runtime = _vault_runtime_paths(args)
+        reviewer = _resolve_current_reviewer(runtime, args.reviewer, remember=True)
+        result = retire_pending(vault, runtime, reviewer=reviewer, reason=args.reason)
+    except (ConfigError, GenerationError, ReviewerError, OSError, ValueError) as exc:
+        print(f"worksync: {getattr(exc, 'code', 'error')}: {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "committed": result.committed,
+        "retired": result.retired,
+        "journal": str(result.journal),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+    if not result.retired:
+        print("retired pending proposals: none")
+        return 0
+    summary = ", ".join(f"{queue}={count}" for queue, count in result.retired.items())
+    print(f"retired pending proposals: {summary}")
     return 0
 
 
