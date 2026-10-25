@@ -141,7 +141,8 @@ def read_profile(runtime_root: str | Path) -> LayoutProfile:
     Fails closed (ruling R3): a present path that is not a regular file (a directory or
     a dangling symlink), unreadable or malformed JSON, a shape ``from_dict`` rejects, or
     a schema version this build does not know all raise ``ValueError``. A missing file is
-    the normal "never customised" state, not an error.
+    the normal "never customised" state, not an error. A UTF-8 BOM is tolerated (read as
+    ``utf-8-sig``), matching the other persisted-JSON readers.
     """
     path = profile_path(runtime_root)
     if not path.is_file():
@@ -149,7 +150,7 @@ def read_profile(runtime_root: str | Path) -> LayoutProfile:
             raise ValueError(f"Layout profile is not a regular file: {path}")
         return default_profile()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
         raise ValueError(f"Layout profile could not be read: {path}") from exc
     try:

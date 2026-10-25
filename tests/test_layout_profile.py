@@ -160,6 +160,18 @@ def test_read_profile_returns_the_stored_profile(tmp_path: Path) -> None:
     assert profile.updated_at == "2026-10-18T12:30:00+00:00"
 
 
+def test_read_profile_accepts_a_utf8_bom(tmp_path: Path) -> None:
+    path = profile_path(tmp_path / "runtime")
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(_valid_payload(revision=4)), encoding="utf-8-sig")
+    assert path.read_bytes().startswith(b"\xef\xbb\xbf")
+
+    profile = read_profile(tmp_path / "runtime")
+
+    assert profile.revision == 4
+    assert profile.section_order == KNOWN_SECTIONS
+
+
 def test_read_profile_raises_on_malformed_json(tmp_path: Path) -> None:
     path = profile_path(tmp_path / "runtime")
     path.parent.mkdir(parents=True)
