@@ -85,9 +85,64 @@ def pool_path(runtime_root: str | Path) -> Path:
     return user_state_root(runtime_root) / POOL_FILENAME
 
 
-def score_for_ratings(impact: int, urgency: int, effort: int, strategic_fit: int) -> float:
-    """Return the advisory ``rubric-v1`` score for all four human ratings."""
-    raw = 0.35 * (impact / 5) + 0.30 * (urgency / 5) + 0.25 * (strategic_fit / 5) + 0.10 * ((6 - effort) / 5)
+@dataclass(frozen=True)
+class ScoringModel:
+    """One versioned human-rubric scoring model.
+
+    Versions are additive and permanent: a stored score is validated against the
+    model named by its own ``scoring_version``, never against the current default.
+    That keeps old scores explainable when weights change.
+    """
+
+    version: str
+    impact_weight: float
+    urgency_weight: float
+    strategic_fit_weight: float
+    effort_weight: float
+    formula: str
+    effort_inverted: bool = True
+
+
+RUBRIC_V1_FORMULA = (
+    "raw = 0.35*(impact/5) + 0.30*(urgency/5) + 0.25*(strategic_fit/5) + 0.10*((6-effort)/5); score = round(raw*100, 1)"
+)
+SCORING_MODELS: dict[str, ScoringModel] = {
+    SCORING_VERSION: ScoringModel(
+        version=SCORING_VERSION,
+        impact_weight=0.35,
+        urgency_weight=0.30,
+        strategic_fit_weight=0.25,
+        effort_weight=0.10,
+        formula=RUBRIC_V1_FORMULA,
+    ),
+}
+
+
+def scoring_model(version: str) -> ScoringModel:
+    """Return a registered scoring model, failing closed for an unknown version."""
+    model = SCORING_MODELS.get(version)
+    if model is None:
+        raise PoolError("pool_version", f"Unsupported scoring version: {version}", 409)
+    return model
+
+
+def score_for_ratings(
+    impact: int,
+    urgency: int,
+    effort: int,
+    strategic_fit: int,
+    *,
+    version: str = SCORING_VERSION,
+) -> float:
+    """Return the advisory score for all four human ratings under one version."""
+    model = scoring_model(version)
+    effort_value = 6 - effort if model.effort_inverted else effort
+    raw = (
+        model.impact_weight * (impact / 5)
+        + model.urgency_weight * (urgency / 5)
+        + model.strategic_fit_weight * (strategic_fit / 5)
+        + model.effort_weight * (effort_value / 5)
+    )
     return round(raw * 100, 1)
 
 
@@ -223,8 +278,7 @@ class Rubric:
             ratings.append(value)
         note = _nullable_text(data.get("note"), "rubric.note") or ""
         scoring_version = _text(data.get("scoring_version"), "rubric.scoring_version")
-        if scoring_version != SCORING_VERSION:
-            raise PoolError("pool_version", f"Unsupported scoring version: {scoring_version}", 409)
+        scoring_model(scoring_version)
         score = data.get("score")
         if score is not None and (
             not isinstance(score, (int, float)) or isinstance(score, bool) or not 0 <= score <= 100
@@ -237,7 +291,7 @@ class Rubric:
                 raise PoolError("pool_corrupt", "rubric must have all four ratings or none", 500)
             if score is None:
                 raise PoolError("pool_corrupt", "rubric with all four ratings requires a score", 500)
-            expected = score_for_ratings(*ratings)  # type: ignore[arg-type]
+            expected = score_for_ratings(*ratings, version=scoring_version)  # type: ignore[arg-type]
             if score != expected:
                 raise PoolError(
                     "pool_corrupt",
@@ -346,9 +400,12 @@ class HistoryEntry:
     to_state: str
     reason: str
     op: str
+    ratings: dict[str, int] | None = None
+    scoring_version: str | None = None
+    score: float | None = None
 
-    def to_dict(self) -> dict[str, str | None]:
-        return {
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
             "at": self.at,
             "by": self.by,
             "from": self.from_state,
@@ -356,11 +413,20 @@ class HistoryEntry:
             "reason": self.reason,
             "op": self.op,
         }
+        if self.ratings is not None:
+            data["ratings"] = dict(self.ratings)
+            data["scoring_version"] = self.scoring_version
+            data["score"] = self.score
+        return data
 
     @classmethod
     def from_dict(cls, payload: object) -> HistoryEntry:
         data = _mapping(payload, "history[]")
-        _allow(data, {"at", "by", "from", "to", "reason", "op"}, "history[]")
+        _allow(
+            data,
+            {"at", "by", "from", "to", "reason", "op", "ratings", "scoring_version", "score"},
+            "history[]",
+        )
         at = _text(data.get("at"), "history[].at")
         _validate_timestamp(at, "history[].at")
         from_state = data.get("from")
@@ -369,6 +435,26 @@ class HistoryEntry:
         to_state = _text(data.get("to"), "history[].to")
         if to_state not in STATES:
             raise PoolError("pool_corrupt", "history[].to is not a state", 500)
+        ratings = _history_ratings(data.get("ratings"))
+        scoring_version = _nullable_text(data.get("scoring_version"), "history[].scoring_version")
+        score = data.get("score")
+        if ratings is None:
+            if scoring_version is not None or score is not None:
+                raise PoolError("pool_corrupt", "history[] scoring fields require all four ratings", 500)
+        else:
+            if scoring_version is None or score is None:
+                raise PoolError("pool_corrupt", "history[] evaluation requires scoring_version and score", 500)
+            if not isinstance(score, (int, float)) or isinstance(score, bool) or not 0 <= score <= 100:
+                raise PoolError("pool_corrupt", "history[].score must be 0-100", 500)
+            expected = score_for_ratings(
+                ratings["impact"],
+                ratings["urgency"],
+                ratings["effort"],
+                ratings["strategic_fit"],
+                version=scoring_version,
+            )
+            if float(score) != expected:
+                raise PoolError("pool_corrupt", "history[].score does not match its ratings", 500)
         return cls(
             at=at,
             by=_text(data.get("by"), "history[].by"),
@@ -376,6 +462,9 @@ class HistoryEntry:
             to_state=to_state,
             reason=_text(data.get("reason"), "history[].reason"),
             op=_text(data.get("op"), "history[].op"),
+            ratings=ratings,
+            scoring_version=scoring_version,
+            score=float(score) if score is not None else None,
         )
 
 
@@ -864,8 +953,7 @@ def validate_manifest(manifest: PoolManifest) -> None:
         raise PoolError("pool_version", f"Unsupported pool schema: {manifest.schema_version}", 409)
     if manifest.candidate_schema_version != CANDIDATE_SCHEMA_VERSION:
         raise PoolError("pool_version", f"Unsupported candidate schema: {manifest.candidate_schema_version}", 409)
-    if manifest.scoring_version != SCORING_VERSION:
-        raise PoolError("pool_version", f"Unsupported scoring version: {manifest.scoring_version}", 409)
+    scoring_model(manifest.scoring_version)
     if manifest.revision < 1:
         raise PoolError("pool_corrupt", "revision must be at least 1", 500)
     _validate_start(manifest.pool_start_at, manifest.pool_start_timezone, manifest.pool_start_local_date)
@@ -1102,3 +1190,17 @@ def _text_list(value: object, path: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise PoolError("pool_corrupt", f"{path} must be a list", 500)
     return tuple(_text(item, f"{path}[]") for item in value)
+
+
+def _history_ratings(value: object) -> dict[str, int] | None:
+    if value is None:
+        return None
+    data = _mapping(value, "history[].ratings")
+    _allow(data, {"impact", "urgency", "effort", "strategic_fit"}, "history[].ratings")
+    ratings: dict[str, int] = {}
+    for key in ("impact", "urgency", "effort", "strategic_fit"):
+        item = data.get(key)
+        if not isinstance(item, int) or isinstance(item, bool) or not 1 <= item <= 5:
+            raise PoolError("pool_corrupt", f"history[].ratings.{key} must be 1-5", 500)
+        ratings[key] = item
+    return ratings
