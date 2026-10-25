@@ -143,6 +143,17 @@ def is_legacy_path(path: str | None, generation: WorkGeneration) -> bool:
     return bool(path) and path in generation.legacy_paths
 
 
+def live_index_from(index: WorkIndex, generation: WorkGeneration, root: str | Path) -> WorkIndex:
+    """Return *index* with legacy action/ticket entities removed."""
+    if not generation.cut_over:
+        return index
+    legacy_paths = {entity.path for entity in index.entities if is_legacy(entity, generation)}
+    return WorkIndex.from_entities(
+        (entity for entity in index.entities if entity.path not in legacy_paths),
+        root=root,
+    )
+
+
 def live_view(
     records: Iterable[IndexRecord],
     root: str | Path,
@@ -159,7 +170,7 @@ def live_view(
         return ordered, full
     legacy_paths = {entity.path for entity in full.entities if is_legacy(entity, generation)}
     kept = tuple(record for record in ordered if record.path not in legacy_paths)
-    return kept, WorkIndex.from_records(kept, root=root)
+    return kept, live_index_from(full, generation, root)
 
 
 def live_index(vault_root: str | Path, runtime_root: str | Path) -> WorkIndex:
