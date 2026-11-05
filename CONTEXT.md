@@ -100,10 +100,28 @@ The generated weekly project packet — team updates, prior action items, waitin
 action items/deadlines; reproducible and never hand-edited.
 _Avoid_: report, agenda
 
-**Control center**:
-The read-only project coordination view that preserves links to the authoritative
-records and leads with unresolved outcomes and the next decision.
-_Avoid_: dashboard, status page
+### Command Center
+
+**Command Center**:
+The default landing view: a personalized set of predefined sections of canonical records,
+each item showing why it appears, its evidence, and a link to the record. Replaces the
+earlier "Control center" term.
+_Avoid_: dashboard, status page, control center
+
+**Section**:
+One predefined Command Center block (Needs Attention, My Priorities, Since Last Check)
+that queries canonical records with a stated reason per item.
+_Avoid_: widget, panel, card
+
+**Layout profile**:
+The user's saved Command Center arrangement: which sections show, their order, and their
+filters. Versioned, migratable, and resettable without touching the vault.
+_Avoid_: settings, dashboard config
+
+**Override**:
+A user decision (pin, focus today, defer, not relevant, always prioritize) that changes how
+a record is ranked in the Command Center without changing the record itself.
+_Avoid_: setting, flag
 
 ### Evidence and retrieval
 
@@ -324,7 +342,8 @@ _Avoid_: mirror command, echo
 
 **Runtime root**:
 The configurable directory holding non-canonical state — index, sessions, journals,
-backups, logs — outside the vault; it defaults to the repo-local `var/`.
+backups, logs — outside the vault; it defaults to the repo-local `var/`. Its user-state
+zone is the exception: not regenerable (see User state).
 _Avoid_: data dir, cache dir
 
 **Machine config**:
@@ -402,6 +421,11 @@ _Avoid_: synced fields
 Computed signals and rollups (attention flags, staleness, workload counts); never
 stored in canonical notes.
 _Avoid_: computed fields
+
+**User state**:
+Durable operational decisions the user made (layout profiles, overrides) held in a
+non-regenerable runtime zone outside the vault, backed up and restored with it.
+_Avoid_: preference cache, settings store
 
 **Generated view**:
 A reproducible artifact rendered from canonical notes (for example Today, Team,
