@@ -35,6 +35,18 @@ from worksync.work.lifecycle.loader import load_project_records
 from worksync.work.lifecycle.registry_model import LifecycleRegistry, read_registry
 from worksync.work.models import entity_id_of
 from worksync.work.override import read_overrides as _read_overrides
+from worksync.work.personal.models import (
+    area_to_payload as _personal_area_payload,
+)
+from worksync.work.personal.models import (
+    project_to_payload as _personal_project_payload,
+)
+from worksync.work.personal.models import (
+    task_to_payload as _personal_task_payload,
+)
+from worksync.work.personal.repository import PersonalIndex
+from worksync.work.personal.today import CONTRACT_VERSION as PERSONAL_CONTRACT_VERSION
+from worksync.work.personal.today import build_today as _build_personal_today
 from worksync.work.prioritization import Override
 from worksync.work.processing import processing_status as _processing_status
 from worksync.work.relationships import related_to
@@ -484,6 +496,51 @@ def list_projects(vault: str | Path, db_path: str | Path | None = None) -> list[
 def health(vault: str | Path) -> dict:
     """Return the vault-wide health report: counts and validation issues."""
     return _index(vault).health()
+
+
+def _personal_index(vault: str | Path) -> PersonalIndex:
+    """Build the personal-only index from the read seam's shared scan cache."""
+    root = Path(vault).expanduser().resolve()
+    return PersonalIndex.from_records(_cached_scan(vault), root)
+
+
+def personal_today(vault: str | Path, today: date, *, generated_at: str | None = None) -> dict:
+    """The personal Today rollup: scheduled, overdue, and unscheduled tasks."""
+    when = generated_at or datetime.now(UTC).isoformat()
+    return _build_personal_today(_personal_index(vault), today, generated_at=when)
+
+
+def personal_areas(vault: str | Path, *, generated_at: str | None = None) -> dict:
+    """Every personal area in deterministic order."""
+    when = generated_at or datetime.now(UTC).isoformat()
+    index = _personal_index(vault)
+    return {
+        "contract_version": PERSONAL_CONTRACT_VERSION,
+        "generated_at": when,
+        "areas": [_personal_area_payload(area) for area in index.areas],
+    }
+
+
+def personal_projects(vault: str | Path, *, generated_at: str | None = None) -> dict:
+    """Every personal project in deterministic order."""
+    when = generated_at or datetime.now(UTC).isoformat()
+    index = _personal_index(vault)
+    return {
+        "contract_version": PERSONAL_CONTRACT_VERSION,
+        "generated_at": when,
+        "projects": [_personal_project_payload(project) for project in index.projects],
+    }
+
+
+def personal_tasks(vault: str | Path, *, generated_at: str | None = None) -> dict:
+    """Every personal task in deterministic order."""
+    when = generated_at or datetime.now(UTC).isoformat()
+    index = _personal_index(vault)
+    return {
+        "contract_version": PERSONAL_CONTRACT_VERSION,
+        "generated_at": when,
+        "tasks": [_personal_task_payload(task) for task in index.tasks],
+    }
 
 
 def processing(runtime_root: str | Path) -> dict:

@@ -42,6 +42,22 @@ class GuiService:
             "attention": service.attention(self.vault, today),
         }
 
+    def personal_today(self, today: date) -> dict:
+        """The personal Today rollup: scheduled, overdue, and unscheduled tasks."""
+        return service.personal_today(self.vault, today)
+
+    def personal_areas(self) -> dict:
+        """Every personal area, read-only."""
+        return service.personal_areas(self.vault)
+
+    def personal_projects(self) -> dict:
+        """Every personal project, read-only."""
+        return service.personal_projects(self.vault)
+
+    def personal_tasks(self) -> dict:
+        """Every personal task, read-only."""
+        return service.personal_tasks(self.vault)
+
     def command_center(self, today: date) -> dict:
         """The Command Center: the three default sections, assembled by the read seam."""
         return {

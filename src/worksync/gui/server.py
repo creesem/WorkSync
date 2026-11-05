@@ -199,6 +199,14 @@ class GuiHandler(BaseHTTPRequestHandler):
             return service.command_center(_today(params))
         if path == "/api/today":
             return service.today(_today(params))
+        if path == "/api/personal/today":
+            return service.personal_today(_today(params))
+        if path == "/api/personal/areas":
+            return service.personal_areas()
+        if path == "/api/personal/projects":
+            return service.personal_projects()
+        if path == "/api/personal/tasks":
+            return service.personal_tasks()
         if path == "/api/review":
             return service.review(_today(params))
         if path == "/api/projects":

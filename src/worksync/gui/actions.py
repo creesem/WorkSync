@@ -38,6 +38,25 @@ from worksync.work.lifecycle.transitions import apply_lifecycle_transition
 from worksync.work.merge import apply_merge as run_identity_apply
 from worksync.work.override import KNOWN_OVERRIDE_KINDS, read_override_records
 from worksync.work.override_store import clear_override, save_override
+from worksync.work.personal.writer import (
+    PersonalWriteError,
+    PersonalWriteResult,
+)
+from worksync.work.personal.writer import (
+    capture_task as capture_personal_task,
+)
+from worksync.work.personal.writer import (
+    complete_task as complete_personal_task,
+)
+from worksync.work.personal.writer import (
+    create_area as create_personal_area,
+)
+from worksync.work.personal.writer import (
+    create_project as create_personal_project,
+)
+from worksync.work.personal.writer import (
+    update_task as update_personal_task,
+)
 from worksync.work.queue import QueueError
 from worksync.work.reviewer import ReviewerError
 from worksync.work.supertag_write import SupertagWriteError, apply_supertag, remove_supertag
@@ -98,6 +117,16 @@ _STATUS_BY_CODE = {
     "invalid_meeting_status": 422,
     "invalid_meeting_date": 422,
     "invalid_due": 422,
+    "invalid_date": 422,
+    "invalid_time": 422,
+    "invalid_duration": 422,
+    "invalid_priority": 422,
+    "invalid_name": 400,
+    "invalid_text": 400,
+    "invalid_title": 422,
+    "not_personal_task": 422,
+    "unknown_area": 422,
+    "duplicate_id": 409,
     "invalid_op": 422,
     "not_action": 422,
     "unsupported_resolution": 422,
@@ -155,6 +184,7 @@ def dispatch_action(
         ClarificationError,
         KrispAPIError,
         QueueError,
+        PersonalWriteError,
     ) as exc:
         raise _as_action_error(exc) from exc
 
@@ -853,6 +883,169 @@ def _lifecycle_cli(project_id: str, record: str, kind: str, action: str, reason:
     )
 
 
+def _personal_capture(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Quick-capture a personal task; ``reason`` defaults to the operation name."""
+    text = _required(payload, "text", "invalid_text")
+    reason = _personal_reason(payload, f"Quick capture: {text}")
+    reviewer = _reviewer(service)
+    dry_run = bool(payload.get("dry_run"))
+    result = capture_personal_task(
+        service.vault,
+        service.runtime_root,
+        text=text,
+        area=_personal_optional(payload.get("area"), "area"),
+        project=_personal_optional(payload.get("project"), "project"),
+        scheduled_date=_personal_optional(payload.get("scheduled_date"), "scheduled_date"),
+        start_time=_personal_optional(payload.get("start_time"), "start_time"),
+        duration_minutes=payload.get("duration_minutes"),
+        priority=_personal_optional(payload.get("priority"), "priority"),
+        reason=reason,
+        reviewer=reviewer,
+        dry_run=dry_run,
+        confirmed=confirmed,
+    )
+    return _personal_result("personal-capture", result, reviewer=reviewer, reason=reason, dry_run=dry_run)
+
+
+def _personal_create_area(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Create a personal area; ``reason`` defaults to the operation name."""
+    name = _required(payload, "name", "invalid_name")
+    reason = _personal_reason(payload, f"Create area: {name}")
+    reviewer = _reviewer(service)
+    dry_run = bool(payload.get("dry_run"))
+    result = create_personal_area(
+        service.vault,
+        service.runtime_root,
+        name=name,
+        description=_personal_optional(payload.get("description"), "description"),
+        reason=reason,
+        reviewer=reviewer,
+        dry_run=dry_run,
+        confirmed=confirmed,
+    )
+    return _personal_result("personal-create-area", result, reviewer=reviewer, reason=reason, dry_run=dry_run)
+
+
+def _personal_create_project(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Create a personal project; ``reason`` defaults to the operation name."""
+    name = _required(payload, "name", "invalid_name")
+    reason = _personal_reason(payload, f"Create project: {name}")
+    reviewer = _reviewer(service)
+    dry_run = bool(payload.get("dry_run"))
+    result = create_personal_project(
+        service.vault,
+        service.runtime_root,
+        name=name,
+        area=_personal_optional(payload.get("area"), "area"),
+        priority=_personal_optional(payload.get("priority"), "priority"),
+        due=_personal_optional(payload.get("due"), "due"),
+        reason=reason,
+        reviewer=reviewer,
+        dry_run=dry_run,
+        confirmed=confirmed,
+    )
+    return _personal_result("personal-create-project", result, reviewer=reviewer, reason=reason, dry_run=dry_run)
+
+
+def _personal_update_task(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Apply an allowlisted edit to one personal task."""
+    path = _required(payload, "path", "invalid_target")
+    reason = _personal_reason(payload, f"Update task: {_path_stem(path)}")
+    fields = payload.get("fields") or {}
+    if not isinstance(fields, dict):
+        raise ActionError("bad_request", "fields must be a JSON object.", 400)
+    if not fields:
+        raise PersonalWriteError("invalid_op", "Provide at least one field to update.")
+    reviewer = _reviewer(service)
+    dry_run = bool(payload.get("dry_run"))
+    result = update_personal_task(
+        service.vault,
+        service.runtime_root,
+        path,
+        fields=fields,
+        reason=reason,
+        reviewer=reviewer,
+        expected=_personal_expected(payload),
+        today=today,
+        dry_run=dry_run,
+        confirmed=confirmed,
+    )
+    return _personal_result("personal-update-task", result, reviewer=reviewer, reason=reason, dry_run=dry_run)
+
+
+def _personal_complete_task(service: WriteContext, payload: dict, *, confirmed: bool, today: date | None) -> dict:
+    """Mark one personal task done, recording its completion date."""
+    path = _required(payload, "path", "invalid_target")
+    reason = _personal_reason(payload, f"Complete task: {_path_stem(path)}")
+    reviewer = _reviewer(service)
+    dry_run = bool(payload.get("dry_run"))
+    result = complete_personal_task(
+        service.vault,
+        service.runtime_root,
+        path,
+        reason=reason,
+        reviewer=reviewer,
+        expected=_personal_expected(payload),
+        today=today,
+        dry_run=dry_run,
+        confirmed=confirmed,
+    )
+    return _personal_result("personal-complete-task", result, reviewer=reviewer, reason=reason, dry_run=dry_run)
+
+
+def _personal_optional(value: object, field_name: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ActionError("bad_request", f"{field_name} must be a string.", 400)
+    return value.strip() or None
+
+
+def _personal_reason(payload: dict, default: str) -> str:
+    value = payload.get("reason")
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise ActionError("bad_request", "reason must be a string.", 400)
+    return value.strip() or default
+
+
+def _path_stem(path: str) -> str:
+    return Path(path).stem or "task"
+
+
+def _personal_expected(payload: dict) -> str | None:
+    value = payload.get("expected_sha") or payload.get("expected") or payload.get("sha")
+    text = str(value).strip() if value is not None else ""
+    return text or None
+
+
+def _personal_result(
+    action: str,
+    result: PersonalWriteResult,
+    *,
+    reviewer: str,
+    reason: str,
+    dry_run: bool,
+) -> dict:
+    payload: dict[str, Any] = {
+        "state": "ok",
+        "action": action,
+        "committed": result.committed,
+        "dry_run": dry_run,
+        "path": result.path,
+        "reviewer": reviewer,
+        "reason": reason,
+        "sha": result.sha,
+        "fields": result.fields,
+        "changes": [dict(change) for change in result.changes],
+        "equivalent_cli": None,
+    }
+    if dry_run:
+        payload["planned"] = result.planned
+    return payload
+
+
 def _identity_apply_cli(proposal_id: str, reason: str, reviewer: str, decisions: dict | None, confirmed: bool) -> str:
     parts = [
         "worksync",
@@ -982,6 +1175,11 @@ ACTIONS: dict[str, ActionHandler] = {
     "clarification-apply": _clarification_apply,
     "clarification-dismiss": _clarification_dismiss,
     "lifecycle-transition": _lifecycle_transition,
+    "personal-capture": _personal_capture,
+    "personal-create-area": _personal_create_area,
+    "personal-create-project": _personal_create_project,
+    "personal-update-task": _personal_update_task,
+    "personal-complete-task": _personal_complete_task,
 }
 
 
