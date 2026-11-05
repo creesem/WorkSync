@@ -13,3 +13,4 @@ config/worksync.json
 .pre-commit-cache/
 .pytest_cache/
 .ruff_cache/
+.scratch/
